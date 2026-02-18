@@ -8,3 +8,4 @@ notes/
 *.log
 .venv/
 *.pyc
+*.egg-info/
