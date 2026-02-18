@@ -1,5 +1,5 @@
 """
-Ollamaエンドポイントへの簡易HTTPクライアント
+Ollama 簡易 HTTP クライアント
 """
 
 from typing import Any
@@ -17,34 +17,39 @@ def send_chat(
     base_url: str = DEFAULT_BASE_URL,
     model: str = DEFAULT_MODEL,
     timeout: float = DEFAULT_TIMEOUT,
+    format: dict[str, Any] | None = None,
 ) -> str:
     """
-    OpenAI 互換の messages を送り、assistant の 1 件目の content を返す。
+    Ollama ネイティブ API に messages を送り、assistant の content を返す。
 
     Args:
         messages: [{"role": "user"|"assistant"|"system", "content": "..."}, ...]
         base_url: 例 "http://localhost:11434"
         model: 例 "qwen3:4b"
         timeout: リクエストタイムアウト（秒）
+        format: 省略時は自由出力。指定時は JSON Schema（例: Pydantic の model_json_schema()）
+                を渡し、Ollama が GBNF で出力を制約する。
 
     Returns:
-        LLM が返したテキスト（JSON 文字列想定）。エラー時は例外を投げる。
+        LLM が返したテキスト。format 指定時は JSON 文字列。エラー時は例外を投げる。
     """
-    url = f"{base_url.rstrip('/')}/v1/chat/completions"
+    url = f"{base_url.rstrip('/')}/api/chat"
     body: dict[str, Any] = {
         "model": model,
         "messages": messages,
     }
+    if format is not None:
+        body["format"] = format
 
     with httpx.Client(timeout=timeout) as client:
         resp = client.post(url, json=body)
         resp.raise_for_status()
         data = resp.json()
 
-    choices = data.get("choices") or []
-    if not choices:
-        raise ValueError("Ollama の応答に choices が含まれていません")
-    content = choices[0].get("message", {}).get("content")
+    message = data.get("message")
+    if not message:
+        raise ValueError("Ollama の応答に message が含まれていません")
+    content = message.get("content")
     if content is None:
         raise ValueError("Ollama の応答に message.content が含まれていません")
     return content.strip()
