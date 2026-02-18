@@ -2,13 +2,17 @@
 Ollama 簡易 HTTP クライアント
 """
 
+import os
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
 
-DEFAULT_BASE_URL = "http://localhost:11434"
-DEFAULT_MODEL = "qwen3:4b"
-DEFAULT_TIMEOUT = 60.0
+load_dotenv()
+
+DEFAULT_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+DEFAULT_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "60"))
 
 
 def send_chat(
