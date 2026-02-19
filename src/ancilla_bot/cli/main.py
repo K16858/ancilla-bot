@@ -5,11 +5,14 @@ Ancilla-Bot CLIエントリーポイント
 import argparse
 import os
 import sys
+import uuid
 from typing import Any
 
 from dotenv import load_dotenv
 
 from ancilla_bot.core.agent_loop import is_exit_command, run_agent_loop_with_tools
+from ancilla_bot.memory.session_store import append_messages
+from ancilla_bot.memory.short_term import append_and_trim
 from ancilla_bot.utils.logging_config import init_logging
 
 load_dotenv()
@@ -18,6 +21,9 @@ REASONING_THOUGHT_MAX = 200
 REASONING_OBSERVATION_MAX = 100
 DIM = "\033[2m"
 RESET = "\033[0m"
+
+# 履歴最大文字数
+MAX_HISTORY_CHARS = int(os.getenv("ANCILLA_MAX_HISTORY_CHARS", "4000"))
 
 
 def _reasoning_line(text: str, dim: bool) -> str:
@@ -63,6 +69,7 @@ def main() -> None:
     init_logging(level=level, log_file=log_file)
 
     print("Ancilla CLI を起動しました。終了するには 'exit', 'quit', ':q' のいずれかを入力してください。")
+    session_id = os.getenv("ANCILLA_SESSION_ID") or uuid.uuid4().hex
     conversation_history: list[dict[str, str]] = []
 
     on_turn = _print_reasoning if args.show_reasoning else None
@@ -79,8 +86,15 @@ def main() -> None:
             break
 
         response = run_agent_loop_with_tools(user_input, conversation_history, on_turn=on_turn)
-        conversation_history.append({"role": "user", "content": user_input})
-        conversation_history.append({"role": "assistant", "content": response})
+        user_msg = {"role": "user", "content": user_input}
+        assistant_msg = {"role": "assistant", "content": response}
+        dropped = append_and_trim(
+            conversation_history,
+            [user_msg, assistant_msg],
+            max_chars=MAX_HISTORY_CHARS,
+        )
+        if dropped:
+            append_messages(session_id, dropped)
         print(f"Ancilla: {response}")
 
 
