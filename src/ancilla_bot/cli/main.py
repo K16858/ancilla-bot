@@ -4,6 +4,8 @@ Ancilla-Bot CLIエントリーポイント
 
 import argparse
 import os
+import sys
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -12,11 +14,48 @@ from ancilla_bot.utils.logging_config import init_logging
 
 load_dotenv()
 
+REASONING_THOUGHT_MAX = 200
+REASONING_OBSERVATION_MAX = 100
+DIM = "\033[2m"
+RESET = "\033[0m"
+
+
+def _reasoning_line(text: str, dim: bool) -> str:
+    if dim and sys.stderr.isatty():
+        return f"{DIM}{text}{RESET}"
+    return text
+
+
+def _print_reasoning(
+    thought: str,
+    action: str | None,
+    action_input: dict[str, Any] | None,
+    observation: str | None,
+) -> None:
+    dim = True
+    t = (thought or "")[:REASONING_THOUGHT_MAX]
+    if len(thought or "") > REASONING_THOUGHT_MAX:
+        t += "..."
+    if t:
+        print(_reasoning_line(f"  thought: {t}", dim))
+    if action is not None:
+        args_str = str(action_input or {})[:80]
+        if len(str(action_input or {})) > 80:
+            args_str += "..."
+        line = f"  action: {action} ({args_str})"
+        if observation:
+            obs = observation.replace("Observation: ", "", 1)[:REASONING_OBSERVATION_MAX]
+            if len(observation) > REASONING_OBSERVATION_MAX + 12:
+                obs += "..."
+            line += f" → Observation: {obs}"
+        print(_reasoning_line(line, dim))
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ancilla-Bot CLI")
     parser.add_argument("-v", "--verbose", action="store_true", help="DEBUG レベルでログを出力")
     parser.add_argument("--log-file", metavar="PATH", help="ログをファイルにも出力（例: data/logs/ancilla.log）")
+    parser.add_argument("-r", "--show-reasoning", action="store_true", help="thought とツール呼び出しを薄く表示")
     args = parser.parse_args()
 
     level = "DEBUG" if args.verbose else os.getenv("ANCILLA_LOG_LEVEL", "INFO")
@@ -25,6 +64,8 @@ def main() -> None:
 
     print("Ancilla CLI を起動しました。終了するには 'exit', 'quit', ':q' のいずれかを入力してください。")
     conversation_history: list[dict[str, str]] = []
+
+    on_turn = _print_reasoning if args.show_reasoning else None
 
     while True:
         try:
@@ -37,7 +78,7 @@ def main() -> None:
             print("終了コマンドが入力されたため、REPL を終了します。")
             break
 
-        response = run_agent_loop_with_tools(user_input, conversation_history)
+        response = run_agent_loop_with_tools(user_input, conversation_history, on_turn=on_turn)
         conversation_history.append({"role": "user", "content": user_input})
         conversation_history.append({"role": "assistant", "content": response})
         print(f"Ancilla: {response}")
