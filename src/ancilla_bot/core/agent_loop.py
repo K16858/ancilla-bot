@@ -4,8 +4,12 @@ AgentLoop
 
 from typing import Any, Final
 
+from loguru import logger
+
 from ancilla_bot.llm import AgentResponse, AgentResponseWithTools, send_chat
 from ancilla_bot.tools import TOOL_REGISTRY, build_tools_system_prompt
+
+SUMMARY_MAX_LEN = 200
 
 MAX_TOOL_TURNS: Final[int] = 5
 
@@ -63,6 +67,7 @@ def run_agent_loop_with_tools(
     action があればツールを実行し、Observation を LLM に返して再呼び出し。
     final_answer が出るか最大ターン数に達するまで繰り返す。
     """
+    logger.info("user_input={!r}", user_input[:100] + "..." if len(user_input) > 100 else user_input)
     history = list(conversation_history or [])
     messages: list[dict[str, str]] = [
         {"role": "system", "content": build_tools_system_prompt()},
@@ -71,35 +76,47 @@ def run_agent_loop_with_tools(
     ]
     schema = AgentResponseWithTools.model_json_schema()
 
-    for _ in range(MAX_TOOL_TURNS):
+    for turn in range(MAX_TOOL_TURNS):
+        logger.debug("ReAct turn {} messages={}", turn + 1, messages)
         raw = send_chat(messages, format=schema)
+        logger.debug("LLM raw={}", raw[:500] + "..." if len(raw) > 500 else raw)
         try:
             parsed = AgentResponseWithTools.model_validate_json(raw)
-        except Exception:
+        except Exception as e:
+            logger.warning("parse failed: {} raw_len={}", e, len(raw))
             return raw
 
         # final_answer があれば返して終了
         if parsed.final_answer:
+            logger.info("final_answer returned len={}", len(parsed.final_answer))
             return parsed.final_answer
 
         # action が有効ならツール実行
         if parsed.action and parsed.action in TOOL_REGISTRY:
             func = TOOL_REGISTRY[parsed.action]
             args: dict[str, Any] = parsed.action_input or {}
+            logger.info("tool_call action={} args={}", parsed.action, args)
             try:
                 result = func(**args)
                 observation = f"Observation: {result}"
+                summary = result[:SUMMARY_MAX_LEN] + "..." if len(result) > SUMMARY_MAX_LEN else result
+                logger.info("tool_result summary={!r}", summary)
+                logger.debug("tool_result full observation={!r}", observation[:500])
             except Exception as e:
                 observation = f"Observation: Error: {e!s}"
+                logger.warning("tool exception action={} error={}", parsed.action, e)
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": observation})
         else:
             # 未知のツール or action なし
             if parsed.action:
                 observation = f"Observation: Unknown tool: {parsed.action}"
+                logger.warning("unknown tool action={}", parsed.action)
             else:
                 observation = "Observation: action または final_answer を指定してください。"
+                logger.warning("action/final_answer missing")
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": observation})
 
+    logger.warning("max turns reached")
     return "最大思考回数に達しました。"
