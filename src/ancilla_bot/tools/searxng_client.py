@@ -7,6 +7,7 @@ import os
 
 import httpx
 from dotenv import load_dotenv
+from loguru import logger
 
 load_dotenv()
 
@@ -48,14 +49,17 @@ def search(
     url = f"{base_url.rstrip('/')}/search"
     params = {"q": query, "format": "json"}
     auth, headers = _get_auth_and_headers()
+    logger.debug("searxng query={} max_results={}", query, max_results)
 
     try:
         with httpx.Client(timeout=timeout) as client:
             resp = client.get(url, params=params, auth=auth, headers=headers)
             resp.raise_for_status()
     except httpx.ConnectError as e:
+        logger.warning("searxng connect error: {}", e)
         return f"Error: SearXNG に接続できません: {e}"
     except httpx.HTTPStatusError as e:
+        logger.warning("searxng http error: {}", e.response.status_code)
         if e.response.status_code == 403:
             return "Error: SearXNG が JSON 形式を返しません。"
         return f"Error: SearXNG が {e.response.status_code} を返しました。"
@@ -63,9 +67,11 @@ def search(
     try:
         data = resp.json()
     except json.JSONDecodeError:
+        logger.warning("searxng parse error")
         return "Error: 検索結果の解析に失敗しました。"
 
     results = data.get("results") or []
+    logger.debug("searxng results={}", len(results))
     if not results:
         return "検索結果がありませんでした。"
 
