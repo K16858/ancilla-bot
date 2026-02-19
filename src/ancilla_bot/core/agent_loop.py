@@ -2,7 +2,7 @@
 AgentLoop
 """
 
-from typing import Any, Final
+from typing import Any, Callable, Final
 
 from loguru import logger
 
@@ -60,12 +60,19 @@ def run_minimal_agent_loop(
 def run_agent_loop_with_tools(
     user_input: str,
     conversation_history: list[dict[str, str]] | None = None,
+    *,
+    on_turn: Callable[
+        [str, str | None, dict[str, Any] | None, str | None], None
+    ] | None = None,
 ) -> str:
     """
     ツール呼び出しありの ReAct ループ。
 
     action があればツールを実行し、Observation を LLM に返して再呼び出し。
     final_answer が出るか最大ターン数に達するまで繰り返す。
+
+    on_turn が指定されている場合、各ターンで
+    on_turn(thought, action, action_input, observation) を 1 回呼ぶ。
     """
     logger.info("user_input={!r}", user_input[:100] + "..." if len(user_input) > 100 else user_input)
     history = list(conversation_history or [])
@@ -88,6 +95,8 @@ def run_agent_loop_with_tools(
 
         # final_answer があれば返して終了
         if parsed.final_answer:
+            if on_turn is not None:
+                on_turn(parsed.thought, None, None, None)
             logger.info("final_answer returned len={}", len(parsed.final_answer))
             return parsed.final_answer
 
@@ -105,6 +114,8 @@ def run_agent_loop_with_tools(
             except Exception as e:
                 observation = f"Observation: Error: {e!s}"
                 logger.warning("tool exception action={} error={}", parsed.action, e)
+            if on_turn is not None:
+                on_turn(parsed.thought, parsed.action, args, observation)
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": observation})
         else:
@@ -115,6 +126,8 @@ def run_agent_loop_with_tools(
             else:
                 observation = "Observation: action または final_answer を指定してください。"
                 logger.warning("action/final_answer missing")
+            if on_turn is not None:
+                on_turn(parsed.thought, parsed.action, parsed.action_input, observation)
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": observation})
 
