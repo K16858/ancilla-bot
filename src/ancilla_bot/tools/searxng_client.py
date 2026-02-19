@@ -43,11 +43,11 @@ def search(
         base_url: エンドポイント（省略時は .env から）
         timeout: タイムアウト秒
         format_structured: True のとき URL を省き "[1] title\\n  content" 形式で返す（Observation 用）
-        content_max_chars: format_structured 時、1件あたり content の最大文字数。None なら制限なし。
+        content_max_chars: format_structured 時、1件あたり content の最大文字数。None なら制限なし
 
     Returns:
-        成功時: format_structured が False なら "title | url | content" の改行区切り。
-                True なら "[1] title\\n  content" を件数分（URL なし）。
+        成功時: format_structured が False なら "title | url | content" の改行区切り
+                True なら "[1] title\\n  content" を件数分
         失敗時: "Error: <メッセージ>"
         結果なし: "検索結果がありませんでした。"
     """
