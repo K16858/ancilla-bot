@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 from dotenv import load_dotenv
+from loguru import logger
 
 load_dotenv()
 
@@ -46,10 +47,21 @@ def send_chat(
     }
     if format is not None:
         body["format"] = format
+    logger.debug("ollama request url={} model={} messages_count={}", url, model, len(messages))
 
-    with httpx.Client(timeout=timeout) as client:
-        resp = client.post(url, json=body)
-        resp.raise_for_status()
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(url, json=body)
+            resp.raise_for_status()
+    except httpx.ConnectError as e:
+        logger.warning("ollama connect error: {}", e)
+        raise
+    except httpx.HTTPStatusError as e:
+        logger.warning("ollama http error: {} {}", e.response.status_code, e.response.text[:200])
+        raise
+    except httpx.TimeoutException as e:
+        logger.warning("ollama timeout: {}", e)
+        raise
 
     try:
         data = resp.json()
@@ -68,7 +80,9 @@ def send_chat(
                 content_parts.append(part)
         if not content_parts:
             raise ValueError("Ollama の応答に message.content が含まれていません")
-        return "".join(content_parts).strip()
+        content = "".join(content_parts).strip()
+        logger.debug("ollama response (ndjson) len={}", len(content))
+        return content
 
     message = data.get("message")
     if not message:
@@ -76,4 +90,5 @@ def send_chat(
     content = message.get("content")
     if content is None:
         raise ValueError("Ollama の応答に message.content が含まれていません")
+    logger.debug("ollama response len={}", len(content))
     return content.strip()
