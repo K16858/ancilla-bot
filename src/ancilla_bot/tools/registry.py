@@ -5,9 +5,12 @@
 from datetime import datetime
 from typing import Any, Callable
 
+from ancilla_bot.tools.searxng_client import search as searxng_search
+
 # プロンプト用のツール説明
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_time": "現在の日時を返す。action_input は {} でよい。",
+    "web_search": "Web を検索する。action_input は {\"query\": \"検索クエリ\", \"max_results\": 5} の形。max_results は省略可（デフォルト 5）。",
 }
 
 
@@ -19,8 +22,18 @@ def get_time(**kwargs: Any) -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def web_search(query: str, max_results: int = 5, **kwargs: Any) -> str:
+    """
+    SearXNG で Web 検索を行う。
+    action_input: {"query": "検索クエリ", "max_results": 5}
+    """
+    _ = kwargs
+    return searxng_search(query=query, max_results=max_results)
+
+
 TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "get_time": get_time,
+    "web_search": web_search,
 }
 
 
