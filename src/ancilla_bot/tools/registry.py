@@ -28,7 +28,12 @@ def web_search(query: str, max_results: int = 5, **kwargs: Any) -> str:
     action_input: {"query": "検索クエリ", "max_results": 5}
     """
     _ = kwargs
-    return searxng_search(query=query, max_results=max_results)
+    return searxng_search(
+        query=query,
+        max_results=max_results,
+        format_structured=True,
+        content_max_chars=300,
+    )
 
 
 TOOL_REGISTRY: dict[str, Callable[..., str]] = {

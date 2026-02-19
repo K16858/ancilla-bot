@@ -31,6 +31,8 @@ def search(
     *,
     base_url: str = DEFAULT_URL,
     timeout: float = DEFAULT_TIMEOUT,
+    format_structured: bool = False,
+    content_max_chars: int | None = None,
 ) -> str:
     """
     SearXNG で Web 検索を行い、結果を簡潔な文字列で返す。
@@ -40,9 +42,12 @@ def search(
         max_results: 返す件数（デフォルト 5）
         base_url: エンドポイント（省略時は .env から）
         timeout: タイムアウト秒
+        format_structured: True のとき URL を省き "[1] title\\n  content" 形式で返す（Observation 用）
+        content_max_chars: format_structured 時、1件あたり content の最大文字数。None なら制限なし。
 
     Returns:
-        成功時: 各件を "title | url | content" の形式で改行区切りにした文字列
+        成功時: format_structured が False なら "title | url | content" の改行区切り。
+                True なら "[1] title\\n  content" を件数分（URL なし）。
         失敗時: "Error: <メッセージ>"
         結果なし: "検索結果がありませんでした。"
     """
@@ -74,6 +79,16 @@ def search(
     logger.debug("searxng results={}", len(results))
     if not results:
         return "検索結果がありませんでした。"
+
+    if format_structured:
+        parts: list[str] = []
+        for i, r in enumerate(results[:max_results], 1):
+            title = r.get("title", "(no title)")
+            content = (r.get("content") or "").strip()
+            if content_max_chars is not None and len(content) > content_max_chars:
+                content = content[:content_max_chars] + "..."
+            parts.append(f"[{i}] {title}\n  {content}")
+        return "\n\n".join(parts)
 
     lines: list[str] = []
     for r in results[:max_results]:
