@@ -3,17 +3,25 @@ Ancilla-Bot CLIエントリーポイント
 """
 
 import argparse
+import os
+
+from dotenv import load_dotenv
 
 from ancilla_bot.core.agent_loop import is_exit_command, run_agent_loop_with_tools
 from ancilla_bot.utils.logging_config import init_logging
+
+load_dotenv()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ancilla-Bot CLI")
     parser.add_argument("-v", "--verbose", action="store_true", help="DEBUG レベルでログを出力")
+    parser.add_argument("--log-file", metavar="PATH", help="ログをファイルにも出力（例: data/logs/ancilla.log）")
     args = parser.parse_args()
 
-    init_logging(level="DEBUG" if args.verbose else "INFO")
+    level = "DEBUG" if args.verbose else os.getenv("ANCILLA_LOG_LEVEL", "INFO")
+    log_file = args.log_file or os.getenv("ANCILLA_LOG_FILE") or None
+    init_logging(level=level, log_file=log_file)
 
     print("Ancilla CLI を起動しました。終了するには 'exit', 'quit', ':q' のいずれかを入力してください。")
     conversation_history: list[dict[str, str]] = []

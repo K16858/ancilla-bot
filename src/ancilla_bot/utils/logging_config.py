@@ -2,6 +2,7 @@
 ログ設定
 """
 
+import os
 import sys
 
 from loguru import logger
@@ -28,6 +29,9 @@ def init_logging(
         level=level,
     )
     if log_file:
+        parent = os.path.dirname(log_file)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         logger.add(
             log_file,
             format=DEFAULT_FORMAT,
