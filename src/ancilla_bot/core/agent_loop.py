@@ -13,7 +13,7 @@ SUMMARY_MAX_LEN = 200
 
 MAX_TOOL_TURNS: Final[int] = 5
 
-EXIT_COMMANDS: Final[set[str]] = {"exit", "quit", ":q"}
+EXIT_COMMANDS: Final[set[str]] = {"exit", "quit", ":q", "/bye"}
 
 SYSTEM_PROMPT: Final[str] = """あなたは思考過程（thought）と最終回答（final_answer）を、次の JSON 形式だけで出力するアシスタントです。
 - thought: ユーザーの質問の意図を整理し、どう答えるか考える（内部用。短くてよい）。
