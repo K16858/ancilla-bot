@@ -2,7 +2,7 @@
 Ancilla-Bot CLIエントリーポイント
 """
 
-from ancilla_bot.core.agent_loop import is_exit_command, run_minimal_agent_loop
+from ancilla_bot.core.agent_loop import is_exit_command, run_agent_loop_with_tools
 
 
 def main() -> None:
@@ -20,7 +20,7 @@ def main() -> None:
             print("終了コマンドが入力されたため、REPL を終了します。")
             break
 
-        response = run_minimal_agent_loop(user_input, conversation_history)
+        response = run_agent_loop_with_tools(user_input, conversation_history)
         conversation_history.append({"role": "user", "content": user_input})
         conversation_history.append({"role": "assistant", "content": response})
         print(f"Ancilla: {response}")
