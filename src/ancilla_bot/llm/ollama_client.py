@@ -2,6 +2,7 @@
 Ollama 簡易 HTTP クライアント
 """
 
+import json
 import os
 from typing import Any
 
@@ -41,6 +42,7 @@ def send_chat(
     body: dict[str, Any] = {
         "model": model,
         "messages": messages,
+        "stream": False,
     }
     if format is not None:
         body["format"] = format
@@ -48,7 +50,25 @@ def send_chat(
     with httpx.Client(timeout=timeout) as client:
         resp = client.post(url, json=body)
         resp.raise_for_status()
+
+    try:
         data = resp.json()
+    except json.JSONDecodeError:
+        content_parts: list[str] = []
+        for line in resp.text.strip().split("\n"):
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            msg = obj.get("message") or {}
+            part = msg.get("content")
+            if part:
+                content_parts.append(part)
+        if not content_parts:
+            raise ValueError("Ollama の応答に message.content が含まれていません")
+        return "".join(content_parts).strip()
 
     message = data.get("message")
     if not message:
