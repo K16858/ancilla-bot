@@ -2,9 +2,12 @@
 AgentLoop
 """
 
-from typing import Final
+from typing import Any, Final
 
-from ancilla_bot.llm import AgentResponse, send_chat
+from ancilla_bot.llm import AgentResponse, AgentResponseWithTools, send_chat
+from ancilla_bot.tools import TOOL_REGISTRY, build_tools_system_prompt
+
+MAX_TOOL_TURNS: Final[int] = 5
 
 EXIT_COMMANDS: Final[set[str]] = {"exit", "quit", ":q"}
 
@@ -49,3 +52,54 @@ def run_minimal_agent_loop(
     except Exception:
         return raw
 
+
+def run_agent_loop_with_tools(
+    user_input: str,
+    conversation_history: list[dict[str, str]] | None = None,
+) -> str:
+    """
+    ツール呼び出しありの ReAct ループ。
+
+    action があればツールを実行し、Observation を LLM に返して再呼び出し。
+    final_answer が出るか最大ターン数に達するまで繰り返す。
+    """
+    history = list(conversation_history or [])
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": build_tools_system_prompt()},
+        *history,
+        {"role": "user", "content": user_input},
+    ]
+    schema = AgentResponseWithTools.model_json_schema()
+
+    for _ in range(MAX_TOOL_TURNS):
+        raw = send_chat(messages, format=schema)
+        try:
+            parsed = AgentResponseWithTools.model_validate_json(raw)
+        except Exception:
+            return raw
+
+        # final_answer があれば返して終了
+        if parsed.final_answer:
+            return parsed.final_answer
+
+        # action が有効ならツール実行
+        if parsed.action and parsed.action in TOOL_REGISTRY:
+            func = TOOL_REGISTRY[parsed.action]
+            args: dict[str, Any] = parsed.action_input or {}
+            try:
+                result = func(**args)
+                observation = f"Observation: {result}"
+            except Exception as e:
+                observation = f"Observation: Error: {e!s}"
+            messages.append({"role": "assistant", "content": raw})
+            messages.append({"role": "user", "content": observation})
+        else:
+            # 未知のツール or action なし
+            if parsed.action:
+                observation = f"Observation: Unknown tool: {parsed.action}"
+            else:
+                observation = "Observation: action または final_answer を指定してください。"
+            messages.append({"role": "assistant", "content": raw})
+            messages.append({"role": "user", "content": observation})
+
+    return "最大思考回数に達しました。"
