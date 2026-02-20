@@ -9,6 +9,4 @@ notes/
 .venv/
 *.pyc
 *.egg-info/
-data/
-workspace/
-
+sessions/
