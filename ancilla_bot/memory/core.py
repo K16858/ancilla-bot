@@ -51,10 +51,10 @@ def build_core_memory(tools_block: str) -> str:
     if character:
         parts.append(character.strip())
     if agent:
-        parts.append(_section(agent, "# 振る舞い"))
+        parts.append(_section(agent, None))
     if user:
-        parts.append(_section(user, "# ユーザーについて"))
-    parts.append(_section(tools_content, "# 利用可能なツール"))
+        parts.append(_section(user, None))
+    parts.append(_section(tools_content, None))
 
     result = "\n".join(p.strip() for p in parts if p.strip())
     if not result:
