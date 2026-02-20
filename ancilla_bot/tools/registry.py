@@ -5,12 +5,18 @@
 from datetime import datetime
 from typing import Any, Callable
 
+from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.tools.searxng_client import search as searxng_search
+from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
+from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
 
 # プロンプト用のツール説明
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_time": "現在の日時を返す。action_input は {} でよい。",
     "web_search": "Web を検索する。action_input は {\"query\": \"検索クエリ\", \"max_results\": 5} の形。max_results は省略可（デフォルト 5）。",
+    "read_file": "workspace 内のファイルを読み込む。action_input は {\"path\": \"memory/NOTE.md\"} の形。",
+    "write_file": "workspace 内のファイルに書き込む。action_input は {\"path\": \"memory/NOTE.md\", \"content\": \"内容\"} の形。",
+    "update_memory": "主記憶の USER.md または AGENT.md を書き換える。action_input は {\"file\": \"USER\" または \"AGENT\", \"content\": \"書き込む内容\"}。過度に呼ばないこと。",
 }
 
 
@@ -36,28 +42,43 @@ def web_search(query: str, max_results: int = 5, **kwargs: Any) -> str:
     )
 
 
+def read_file(path: str, **kwargs: Any) -> str:
+    """workspace 内のファイルを読み込む。"""
+    return workspace_read_file(path=path, **kwargs)
+
+
+def write_file(path: str, content: str, **kwargs: Any) -> str:
+    """workspace 内のファイルに書き込む。"""
+    return workspace_write_file(path=path, content=content, **kwargs)
+
+
+def update_memory(file: str, content: str, **kwargs: Any) -> str:
+    """
+    workspace/memory の USER.md または AGENT.md を書き換える。
+    file: "USER" または "AGENT"
+    """
+    _ = kwargs
+    if file.upper() not in ("USER", "AGENT"):
+        return "Error: file は USER または AGENT のいずれかを指定してください。"
+    path = f"memory/{file.upper()}.md"
+    return workspace_write_file(path=path, content=content)
+
+
 TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "get_time": get_time,
     "web_search": web_search,
+    "read_file": read_file,
+    "write_file": write_file,
+    "update_memory": update_memory,
 }
 
 
 def build_tools_system_prompt() -> str:
     """
     ツール呼び出し用の System メッセージを組み立てる。
+    主記憶（CHARACTER → AGENT → USER → TOOLS）を連結して返す。
     """
     tools_block = "\n".join(
         f"- {name}: {desc}" for name, desc in TOOL_DESCRIPTIONS.items()
     )
-    return f"""あなたは思考過程（thought）と、必要に応じてツール呼び出し（action, action_input）または最終回答（final_answer）を、次の JSON 形式だけで出力するアシスタントです。
-
-## 利用可能なツール
-
-{tools_block}
-
-## 出力ルール
-
-- thought: 必須。ユーザーの質問の意図を整理し、どう答えるか考える（内部用。短くてよい）。
-- ツールを呼ぶとき: action にツール名、action_input に引数オブジェクトを書く。final_answer は null または省略。
-- ツールを呼ばないとき: action と action_input は null または省略。final_answer にユーザーに表示する日本語の回答を書く。
-- JSON 以外の説明や前後の文章は一切出力しないでください。"""
+    return build_core_memory(tools_block)
