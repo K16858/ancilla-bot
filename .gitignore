@@ -10,4 +10,5 @@ notes/
 *.pyc
 *.egg-info/
 data/
+workspace/
 
