@@ -9,3 +9,5 @@ notes/
 .venv/
 *.pyc
 *.egg-info/
+data/
+
