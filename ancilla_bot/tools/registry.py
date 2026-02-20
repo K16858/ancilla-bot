@@ -10,13 +10,13 @@ from ancilla_bot.tools.searxng_client import search as searxng_search
 from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
 from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
 
-# プロンプト用のツール説明
+# Tool descriptions for prompt (English)
 TOOL_DESCRIPTIONS: dict[str, str] = {
-    "get_time": "現在の日時を返す。action_input は {} でよい。",
-    "web_search": "Web を検索する。action_input は {\"query\": \"検索クエリ\", \"max_results\": 5} の形。max_results は省略可（デフォルト 5）。",
-    "read_file": "workspace 内のファイルを読み込む。action_input は {\"path\": \"memory/NOTE.md\"} の形。",
-    "write_file": "workspace 内のファイルに書き込む。action_input は {\"path\": \"memory/NOTE.md\", \"content\": \"内容\"} の形。",
-    "update_memory": "主記憶の USER.md または AGENT.md を書き換える。action_input は {\"file\": \"USER\" または \"AGENT\", \"content\": \"書き込む内容\"}。過度に呼ばないこと。",
+    "get_time": "Return current date/time. action_input: {}.",
+    "web_search": "Search the web. action_input: {\"query\": \"search query\", \"max_results\": 5}. max_results optional (default 5).",
+    "read_file": "Read a file in workspace. action_input: {\"path\": \"memory/NOTE.md\"}.",
+    "write_file": "Write to a file in workspace. action_input: {\"path\": \"memory/NOTE.md\", \"content\": \"content\"}.",
+    "update_memory": "Update USER.md or AGENT.md. action_input: {\"file\": \"USER\" or \"AGENT\", \"content\": \"content\"}. Use sparingly.",
 }
 
 
