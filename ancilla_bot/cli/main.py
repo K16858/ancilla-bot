@@ -5,13 +5,12 @@ Ancilla-Bot CLIエントリーポイント
 import argparse
 import os
 import sys
-import uuid
 from typing import Any
 
 from dotenv import load_dotenv
 
 from ancilla_bot.core.agent_loop import is_exit_command, run_agent_loop_with_tools
-from ancilla_bot.memory.session_store import append_messages
+from ancilla_bot.memory.conversation_store import append_overflow, load_active_history, save_active_history
 from ancilla_bot.memory.short_term import append_and_trim
 from ancilla_bot.utils.logging_config import init_logging
 
@@ -69,33 +68,35 @@ def main() -> None:
     init_logging(level=level, log_file=log_file)
 
     print("Ancilla CLI を起動しました。終了するには 'exit', 'quit', ':q' のいずれかを入力してください。")
-    session_id = os.getenv("ANCILLA_SESSION_ID") or uuid.uuid4().hex
-    conversation_history: list[dict[str, str]] = []
+    conversation_history: list[dict[str, str]] = load_active_history()
 
     on_turn = _print_reasoning if args.show_reasoning else None
 
-    while True:
-        try:
-            user_input = input("Ancilla CLI > ")
-        except (EOFError, KeyboardInterrupt):
-            print("\n終了します。")
-            break
+    try:
+        while True:
+            try:
+                user_input = input("Ancilla CLI > ")
+            except (EOFError, KeyboardInterrupt):
+                print("\n終了します。")
+                break
 
-        if is_exit_command(user_input):
-            print("終了コマンドが入力されたため、REPL を終了します。")
-            break
+            if is_exit_command(user_input):
+                print("終了コマンドが入力されたため、REPL を終了します。")
+                break
 
-        response = run_agent_loop_with_tools(user_input, conversation_history, on_turn=on_turn)
-        user_msg = {"role": "user", "content": user_input}
-        assistant_msg = {"role": "assistant", "content": response}
-        dropped = append_and_trim(
-            conversation_history,
-            [user_msg, assistant_msg],
-            max_chars=MAX_HISTORY_CHARS,
-        )
-        if dropped:
-            append_messages(session_id, dropped)
-        print(f"Ancilla: {response}")
+            response = run_agent_loop_with_tools(user_input, conversation_history, on_turn=on_turn)
+            user_msg = {"role": "user", "content": user_input}
+            assistant_msg = {"role": "assistant", "content": response}
+            dropped = append_and_trim(
+                conversation_history,
+                [user_msg, assistant_msg],
+                max_chars=MAX_HISTORY_CHARS,
+            )
+            if dropped:
+                append_overflow(dropped)
+            print(f"Ancilla: {response}")
+    finally:
+        save_active_history(conversation_history)
 
 
 if __name__ == "__main__":
