@@ -59,7 +59,7 @@ def build_core_memory(tools_block: str) -> str:
     result = "\n".join(p.strip() for p in parts if p.strip())
     if not result:
         return (
-            "あなたは思考過程（thought）とツール呼び出しまたは最終回答を JSON 形式で出力するアシスタントです。\n\n"
-            "## 利用可能なツール\n\n" + tools_block
+            "You are an assistant that outputs thought and tool calls or final_answer in JSON format.\n\n"
+            "## Available tools\n\n" + tools_block
         )
     return result
