@@ -26,7 +26,7 @@ def _resolve(path_str: str) -> Path | None:
 def read_file(path: str, **kwargs: object) -> str:
     """
     workspace 内のファイルを読み込む。
-    path: workspace からの相対パス（例: memory/NOTE.md）
+    path: workspace からの相対パス（例: NOTE.md）
     """
     _ = kwargs
     resolved = _resolve(path)
@@ -43,7 +43,7 @@ def read_file(path: str, **kwargs: object) -> str:
 def write_file(path: str, content: str, **kwargs: object) -> str:
     """
     workspace 内のファイルに書き込む。
-    path: workspace からの相対パス（例: memory/NOTE.md）
+    path: workspace からの相対パス（例: NOTE.md）
     content: 書き込む内容
     """
     _ = kwargs

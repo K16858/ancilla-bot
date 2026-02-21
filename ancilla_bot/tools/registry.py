@@ -14,8 +14,8 @@ from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_time": "Return current date/time. action_input: {}.",
     "web_search": "Search the web. action_input: {\"query\": \"search query\", \"max_results\": 5}. max_results optional (default 5).",
-    "read_file": "Read a file in workspace. action_input: {\"path\": \"memory/NOTE.md\"}.",
-    "write_file": "Write to a file in workspace. action_input: {\"path\": \"memory/NOTE.md\", \"content\": \"content\"}.",
+    "read_file": "Read a file in workspace. action_input: {\"path\": \"NOTE.md\"}.",
+    "write_file": "Write to a file in workspace. action_input: {\"path\": \"NOTE.md\", \"content\": \"content\"}.",
     "update_memory": "Update USER.md or AGENT.md. action_input: {\"file\": \"USER\" or \"AGENT\", \"content\": \"content\"}. Use sparingly.",
 }
 
@@ -60,7 +60,7 @@ def update_memory(file: str, content: str, **kwargs: Any) -> str:
     _ = kwargs
     if file.upper() not in ("USER", "AGENT"):
         return "Error: file は USER または AGENT のいずれかを指定してください。"
-    path = f"memory/{file.upper()}.md"
+    path = f"{file.upper()}.md"
     return workspace_write_file(path=path, content=content)
 
 

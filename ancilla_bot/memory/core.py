@@ -38,9 +38,9 @@ def build_core_memory(tools_block: str) -> str:
     """
     prompts = DEFAULT_PROMPTS_DIR
     workspace = DEFAULT_WORKSPACE_DIR
-    memory_dir = workspace / "memory"
 
-    agent = _load_file(memory_dir / "AGENT.md")
+    agent = _load_file(workspace / "AGENT.md")
+    user = _load_file(workspace / "USER.md")
     tools_md = _load_file(prompts / "TOOLS.md")
     character = _load_file(prompts / "CHARACTER.md")
 
@@ -49,6 +49,8 @@ def build_core_memory(tools_block: str) -> str:
     parts: list[str] = []
     if agent:
         parts.append(_section(agent, None))
+    if user:
+        parts.append(_section(user, None))
     parts.append(_section(tools_content, None))
     if character:
         parts.append(character.strip())
