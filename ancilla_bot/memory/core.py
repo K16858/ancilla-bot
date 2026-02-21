@@ -40,21 +40,18 @@ def build_core_memory(tools_block: str) -> str:
     workspace = DEFAULT_WORKSPACE_DIR
     memory_dir = workspace / "memory"
 
-    character = _load_file(prompts / "CHARACTER.md")
-    tools_md = _load_file(prompts / "TOOLS.md")
     agent = _load_file(memory_dir / "AGENT.md")
-    user = _load_file(memory_dir / "USER.md")
+    tools_md = _load_file(prompts / "TOOLS.md")
+    character = _load_file(prompts / "CHARACTER.md")
 
     tools_content = tools_md if tools_md else tools_block
 
     parts: list[str] = []
-    if character:
-        parts.append(character.strip())
     if agent:
         parts.append(_section(agent, None))
-    if user:
-        parts.append(_section(user, None))
     parts.append(_section(tools_content, None))
+    if character:
+        parts.append(character.strip())
 
     result = "\n".join(p.strip() for p in parts if p.strip())
     if not result:
