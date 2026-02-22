@@ -2,12 +2,20 @@
 AgentLoop
 """
 
+import os
 from typing import Any, Callable, Final
 
 from loguru import logger
 
+from ancilla_bot.core.reflection import verify_answer
 from ancilla_bot.llm import AgentResponse, AgentResponseWithTools, send_chat
 from ancilla_bot.tools import TOOL_REGISTRY, build_tools_system_prompt
+
+VERIFY_ANSWER = os.getenv("ANCILLA_VERIFY_ANSWER", "true").strip().lower() in ("1", "true", "yes")
+VERIFY_ONLY_AFTER_TOOL = os.getenv("ANCILLA_VERIFY_ONLY_AFTER_TOOL", "true").strip().lower() in ("1", "true", "yes")
+RETRY_USER_MESSAGE: Final[str] = (
+    "Self-verification found the answer insufficient. Call a tool once more or revise and output final_answer again."
+)
 
 SUMMARY_MAX_LEN = 200
 
@@ -82,6 +90,7 @@ def run_agent_loop_with_tools(
         {"role": "user", "content": user_input},
     ]
     schema = AgentResponseWithTools.model_json_schema()
+    retry_after_verify = False
 
     for turn in range(MAX_TOOL_TURNS):
         logger.debug("ReAct turn {} messages={}", turn + 1, messages)
@@ -93,8 +102,16 @@ def run_agent_loop_with_tools(
             logger.warning("parse failed: {} raw_len={}", e, len(raw))
             return raw
 
-        # final_answer があれば返して終了
         if parsed.final_answer:
+            if retry_after_verify:
+                logger.info("final_answer (after retry) returned len={}", len(parsed.final_answer))
+                return parsed.final_answer
+            do_verify = VERIFY_ANSWER and (not VERIFY_ONLY_AFTER_TOOL or turn >= 1)
+            if do_verify and not verify_answer(user_input, parsed.final_answer):
+                messages.append({"role": "assistant", "content": raw})
+                messages.append({"role": "user", "content": RETRY_USER_MESSAGE})
+                retry_after_verify = True
+                continue
             if on_turn is not None:
                 on_turn(parsed.thought, None, None, None)
             logger.info("final_answer returned len={}", len(parsed.final_answer))
