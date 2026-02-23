@@ -71,3 +71,25 @@ def load_active_history() -> list[Message]:
             except json.JSONDecodeError:
                 continue
     return result
+
+
+def load_overflow() -> list[Message]:
+    """
+    overflow.jsonl からオーバーフローしたメッセージを読み込む。ファイルが無ければ空リスト。
+    時系列では active より古い（先に読むべき）側。
+    """
+    p = _path(OVERFLOW_FILE)
+    if not p.exists():
+        return []
+    result: list[Message] = []
+    with p.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+                result.append({"role": rec.get("role", ""), "content": rec.get("content", "")})
+            except json.JSONDecodeError:
+                continue
+    return result
