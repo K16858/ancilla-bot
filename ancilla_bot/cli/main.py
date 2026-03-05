@@ -56,20 +56,13 @@ def _print_reasoning(
         print(_reasoning_line(line, dim))
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Ancilla-Bot CLI")
-    parser.add_argument("-v", "--verbose", action="store_true", help="DEBUG レベルでログを出力")
-    parser.add_argument("--log-file", metavar="PATH", help="ログをファイルにも出力（例: data/logs/ancilla.log）")
-    parser.add_argument("-r", "--show-reasoning", action="store_true", help="thought とツール呼び出しを薄く表示")
-    args = parser.parse_args()
-
+def _run_repl(args: argparse.Namespace) -> None:
     level = "DEBUG" if args.verbose else os.getenv("ANCILLA_LOG_LEVEL", "INFO")
     log_file = args.log_file or os.getenv("ANCILLA_LOG_FILE") or None
     init_logging(level=level, log_file=log_file)
 
     print("Ancilla CLI を起動しました。終了するには 'exit', 'quit', ':q' のいずれかを入力してください。")
     conversation_history: list[dict[str, str]] = load_active_history()
-
     on_turn = _print_reasoning if args.show_reasoning else None
 
     try:
@@ -97,6 +90,33 @@ def main() -> None:
             print(f"Ancilla: {response}")
     finally:
         save_active_history(conversation_history)
+
+
+def _run_batch_summarize() -> None:
+    from ancilla_bot.batch.summarize import run_summarize
+
+    run_summarize()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Ancilla-Bot CLI")
+    parser.add_argument("-v", "--verbose", action="store_true", help="DEBUG レベルでログを出力")
+    parser.add_argument("--log-file", metavar="PATH", help="ログをファイルにも出力（例: data/logs/ancilla.log）")
+    parser.add_argument("-r", "--show-reasoning", action="store_true", help="thought とツール呼び出しを薄く表示")
+    subparsers = parser.add_subparsers(dest="command", help="サブコマンド")
+
+    batch_parser = subparsers.add_parser("batch", help="バッチ処理")
+    batch_sub = batch_parser.add_subparsers(dest="batch_command", required=True)
+    batch_sub.add_parser("summarize", help="会話を結合し summaries に出力")
+
+    args = parser.parse_args()
+
+    if args.command == "batch":
+        if args.batch_command == "summarize":
+            _run_batch_summarize()
+        return
+
+    _run_repl(args)
 
 
 if __name__ == "__main__":

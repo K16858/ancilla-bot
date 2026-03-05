@@ -76,7 +76,6 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
 def build_tools_system_prompt() -> str:
     """
     ツール呼び出し用の System メッセージを組み立てる。
-    主記憶（CHARACTER → AGENT → USER → TOOLS）を連結して返す。
     """
     tools_block = "\n".join(
         f"- {name}: {desc}" for name, desc in TOOL_DESCRIPTIONS.items()
