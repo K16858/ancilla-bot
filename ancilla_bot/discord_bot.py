@@ -81,8 +81,14 @@ def run_bot() -> None:
 
     token = os.getenv("DISCORD_BOT_TOKEN", "").strip()
     if not token:
-        raise SystemExit("DISCORD_BOT_TOKEN を設定してください。")
-    client.run(token)
+        raise SystemExit("DISCORD_BOT_TOKEN を設定してください。.env に Bot トークンを書いてください。")
+    try:
+        client.run(token)
+    except discord.LoginFailure:
+        raise SystemExit(
+            "Discord ログインに失敗しました（401）。DISCORD_BOT_TOKEN が正しいか確認してください。"
+            " Discord 開発者ポータル → アプリ → Bot → Reset Token で再発行できます。"
+        )
 
 
 def main() -> None:
