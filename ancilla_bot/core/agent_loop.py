@@ -8,6 +8,7 @@ from typing import Any, Callable, Final
 from loguru import logger
 
 from ancilla_bot.core.reflection import verify_answer
+from ancilla_bot.heartbeat.db import append_audit_log
 from ancilla_bot.llm import AgentResponse, AgentResponseWithTools, send_chat
 from ancilla_bot.tools import TOOL_REGISTRY, build_tools_system_prompt
 
@@ -122,6 +123,7 @@ def run_agent_loop_with_tools(
             func = TOOL_REGISTRY[parsed.action]
             args: dict[str, Any] = parsed.action_input or {}
             logger.info("tool_call action={} args={}", parsed.action, args)
+            append_audit_log(parsed.action, str(args))
             try:
                 result = func(**args)
                 observation = f"Observation: {result}"

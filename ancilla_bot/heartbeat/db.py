@@ -81,6 +81,21 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_AUDIT_LOG)
 
 
+def append_audit_log(tool_name: str, args_summary: str = "") -> None:
+    """ランタイム用: ツール呼び出し + 引数を記録。"""
+    try:
+        ensure_schema()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        s = (args_summary or "")[:500]
+        with _conn() as c:
+            c.execute(
+                "INSERT INTO audit_log (tool_name, args_summary, created_at) VALUES (?, ?, ?)",
+                (tool_name.strip() or "unknown", s, now),
+            )
+    except Exception:
+        pass
+
+
 def _row_to_dict(cursor: sqlite3.Cursor, row: tuple) -> dict[str, Any]:
     names = [d[0] for d in cursor.description]
     return dict(zip(names, row))
