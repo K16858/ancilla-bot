@@ -1,9 +1,11 @@
 """
-SQLite: tasks / reminders テーブル。
+SQLite: tasks, reminders, finances, audit_log。
+ツールは manage_state 1 本で CRUD。Heartbeat 用は get_due_* / mark_* を利用。
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from datetime import datetime
@@ -13,6 +15,9 @@ from typing import Any
 DEFAULT_CONVERSATION_DIR = Path(
     os.getenv("ANCILLA_CONVERSATION_DIR", "data/conversation")
 )
+
+# ツールから操作可能なテーブル（ホワイトリスト）
+ALLOWED_TABLES = ("tasks", "reminders", "finances", "audit_log")
 
 
 def get_db_path() -> Path:
@@ -46,12 +51,34 @@ CREATE TABLE IF NOT EXISTS reminders (
 )
 """
 
+_SCHEMA_FINANCES = """
+CREATE TABLE IF NOT EXISTS finances (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    amount REAL NOT NULL,
+    category TEXT NOT NULL,
+    memo TEXT NOT NULL DEFAULT '',
+    date TEXT NOT NULL,
+    created_at TEXT NOT NULL
+)
+"""
+
+_SCHEMA_AUDIT_LOG = """
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tool_name TEXT NOT NULL,
+    args_summary TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+)
+"""
+
 
 def ensure_schema() -> None:
-    """tasks / reminders テーブルがなければ作成する。"""
+    """全テーブルがなければ作成する。"""
     with _conn() as c:
         c.executescript(_SCHEMA_TASKS)
         c.executescript(_SCHEMA_REMINDERS)
+        c.executescript(_SCHEMA_FINANCES)
+        c.executescript(_SCHEMA_AUDIT_LOG)
 
 
 def _row_to_dict(cursor: sqlite3.Cursor, row: tuple) -> dict[str, Any]:
@@ -128,46 +155,139 @@ def mark_reminders_completed(reminder_ids: list[int]) -> None:
         )
 
 
-# ツールから操作可能なテーブル
-ALLOWED_TABLES = ("tasks", "reminders")
+def _validate_insert_payload(table: str, payload: dict[str, Any]) -> str | None:
+    """insert 用 payload を検証。エラー時はメッセージ、OK 時は None。"""
+    if table in ("tasks", "reminders"):
+        if not (payload.get("scheduled_at") and payload.get("content")):
+            return "Error: tasks/reminders require scheduled_at and content."
+        return None
+    if table == "finances":
+        if "amount" not in payload or "category" not in payload:
+            return "Error: finances require amount and category. memo and date are optional."
+        return None
+    if table == "audit_log":
+        if not payload.get("tool_name"):
+            return "Error: audit_log requires tool_name. args_summary optional."
+        return None
+    return "Error: unknown table."
 
 
-def db_insert(table: str, scheduled_at: str, content: str) -> str:
+def manage_state(
+    table: str,
+    operation: str,
+    payload: dict[str, Any] | None = None,
+) -> str:
     """
-    指定テーブルに 1 行挿入する。ツール用。
-    table: 'tasks' または 'reminders'。scheduled_at: YYYY-MM-DD HH:MM 等。content: 本文。
+    SQLite の CRUD。テーブルはホワイトリストのみ。
+    table: tasks | reminders | finances | audit_log
+    operation: insert | select | update | delete
+    payload: 操作ごとの引数。insert は行データ、select は limit/条件、update は id+更新項目、delete は id。
     """
+    payload = payload or {}
     table = (table or "").strip().lower()
+    operation = (operation or "").strip().lower()
     if table not in ALLOWED_TABLES:
         return f"Error: table must be one of {list(ALLOWED_TABLES)}."
-    content = (content or "").strip()
-    if not content:
-        return "Error: content is required."
+    if operation not in ("insert", "select", "update", "delete"):
+        return "Error: operation must be insert, select, update, or delete."
+    ensure_schema()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ensure_schema()
-    with _conn() as c:
-        c.execute(
-            f"INSERT INTO {table} (scheduled_at, content, completed, created_at) VALUES (?, ?, 0, ?)",
-            (scheduled_at.strip(), content, now),
-        )
-        row_id = c.lastrowid
-    return f"Inserted into {table} id={row_id}."
 
+    try:
+        with _conn() as conn:
+            c = conn.cursor()
+            if operation == "insert":
+                err = _validate_insert_payload(table, payload)
+                if err:
+                    return err
+                if table in ("tasks", "reminders"):
+                    scheduled_at = str(payload.get("scheduled_at", "")).strip()
+                    content = str(payload.get("content", "")).strip()
+                    if not content:
+                        return "Error: content is required."
+                    c.execute(
+                        f"INSERT INTO {table} (scheduled_at, content, completed, created_at) VALUES (?, ?, 0, ?)",
+                        (scheduled_at, content, now),
+                    )
+                elif table == "finances":
+                    amount = float(payload.get("amount", 0))
+                    category = str(payload.get("category", "")).strip() or "other"
+                    memo = str(payload.get("memo", "")).strip()
+                    date = str(payload.get("date", "")).strip() or now[:10]
+                    c.execute(
+                        "INSERT INTO finances (amount, category, memo, date, created_at) VALUES (?, ?, ?, ?, ?)",
+                        (amount, category, memo, date, now),
+                    )
+                else:  # audit_log
+                    tool_name = str(payload.get("tool_name", "")).strip() or "unknown"
+                    args_summary = str(payload.get("args_summary", "")).strip()[:500]
+                    c.execute(
+                        "INSERT INTO audit_log (tool_name, args_summary, created_at) VALUES (?, ?, ?)",
+                        (tool_name, args_summary, now),
+                    )
+                row_id = c.lastrowid
+                return f"Inserted into {table} id={row_id}."
 
-def db_list(table: str, limit: int = 20) -> list[dict[str, Any]]:
-    """
-    指定テーブルの行を scheduled_at 昇順で返す。ツール用。
-    table: 'tasks' または 'reminders'。limit: 最大件数。
-    """
-    table = (table or "").strip().lower()
-    if table not in ALLOWED_TABLES:
-        return []
-    ensure_schema()
-    limit = max(1, min(limit, 100))
-    with _conn() as c:
-        c.execute(
-            f"SELECT id, scheduled_at, content, completed, created_at FROM {table} ORDER BY scheduled_at ASC LIMIT ?",
-            (limit,),
-        )
-        rows = c.fetchall()
-        return [_row_to_dict(c, r) for r in rows]
+            if operation == "select":
+                limit = max(1, min(int(payload.get("limit", 20)), 100))
+                if table in ("tasks", "reminders"):
+                    order = "ORDER BY scheduled_at ASC"
+                    where = []
+                    params: list[Any] = []
+                    if "completed" in payload:
+                        where.append("completed = ?")
+                        params.append(1 if payload.get("completed") else 0)
+                    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+                    params.append(limit)
+                    c.execute(
+                        f"SELECT id, scheduled_at, content, completed, created_at FROM {table}{where_sql} {order} LIMIT ?",
+                        params,
+                    )
+                elif table == "finances":
+                    c.execute(
+                        "SELECT id, amount, category, memo, date, created_at FROM finances ORDER BY date DESC, id DESC LIMIT ?",
+                        (limit,),
+                    )
+                else:  # audit_log
+                    c.execute(
+                        "SELECT id, tool_name, args_summary, created_at FROM audit_log ORDER BY id DESC LIMIT ?",
+                        (limit,),
+                    )
+                rows = c.fetchall()
+                if not rows:
+                    return f"Table '{table}': no rows."
+                out = [_row_to_dict(c, r) for r in rows]
+                return json.dumps(out, ensure_ascii=False, indent=0)[:4000]
+
+            if operation == "update":
+                row_id = payload.get("id")
+                if row_id is None:
+                    return "Error: update requires id in payload."
+                row_id = int(row_id)
+                allowed_cols = {"completed", "scheduled_at", "content"} if table in ("tasks", "reminders") else {"amount", "category", "memo", "date"} if table == "finances" else set()
+                if not allowed_cols:
+                    return "Error: audit_log does not support update."
+                sets = []
+                params: list[Any] = []
+                for k, v in payload.items():
+                    if k == "id":
+                        continue
+                    if k in allowed_cols:
+                        sets.append(f"{k} = ?")
+                        params.append(v)
+                if not sets:
+                    return "Error: no updatable fields in payload."
+                params.append(row_id)
+                c.execute(f"UPDATE {table} SET {', '.join(sets)} WHERE id = ?", params)
+                return f"Updated {table} id={row_id}."
+
+            if operation == "delete":
+                row_id = payload.get("id")
+                if row_id is None:
+                    return "Error: delete requires id in payload."
+                row_id = int(row_id)
+                c.execute(f"DELETE FROM {table} WHERE id = ?", (row_id,))
+                return f"Deleted {table} id={row_id}."
+    except (ValueError, TypeError, sqlite3.Error) as e:
+        return f"Error: {e!s}"
+    
