@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from typing import List
 
+from ancilla_bot.batch.vector_store import add_summaries_to_store
 from ancilla_bot.llm import send_chat
 from ancilla_bot.memory.short_term import Message, estimate_chars
 
@@ -43,3 +45,31 @@ def summarize_block(messages: List[Message]) -> str:
         return summary[:2000] if summary else ""
     except Exception:
         return text[:200] + ("..." if len(text) > 200 else "")
+
+
+def compress_once(history: List[Message], max_chars: int) -> bool:
+    if not should_compress(history, max_chars):
+        return False
+    block = get_oldest_block(history)
+    if not block:
+        return False
+    summary = summarize_block(block)
+    if not summary:
+        return False
+    for _ in range(len(block)):
+        history.pop(0)
+    history.insert(0, {"role": "system", "content": "[要約] " + summary})
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    record = {
+        "date": date_str,
+        "start_index": 0,
+        "end_index": len(block) - 1,
+        "summary": summary,
+        "message_count": len(block),
+        "tool_used": False,
+    }
+    try:
+        add_summaries_to_store([record])
+    except Exception:
+        pass
+    return True

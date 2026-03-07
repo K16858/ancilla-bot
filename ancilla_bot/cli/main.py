@@ -22,6 +22,7 @@ from ancilla_bot.heartbeat.db import (
     mark_reminders_completed,
     mark_tasks_completed,
 )
+from ancilla_bot.memory.compress import compress_once, should_compress
 from ancilla_bot.memory.conversation_store import append_overflow, load_active_history, save_active_history
 from ancilla_bot.memory.short_term import append_and_trim
 from ancilla_bot.utils.logging_config import init_logging
@@ -196,6 +197,8 @@ def _run_repl(args: argparse.Namespace, *, agent_lock: threading.Lock | None = N
                 )
                 if dropped:
                     append_overflow(dropped)
+                while should_compress(conversation_history, MAX_HISTORY_CHARS):
+                    compress_once(conversation_history, MAX_HISTORY_CHARS)
                 print(f"Ancilla: {response}")
             finally:
                 if agent_lock is not None:
