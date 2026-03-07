@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from ancilla_bot.core.agent_loop import is_exit_command, run_agent_loop_with_tools
+from ancilla_bot.heartbeat.db import get_due_reminders, get_due_tasks, has_due_work
 from ancilla_bot.memory.conversation_store import append_overflow, load_active_history, save_active_history
 from ancilla_bot.memory.short_term import append_and_trim
 from ancilla_bot.utils.logging_config import init_logging
@@ -111,6 +112,48 @@ def _slow_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
         time.sleep(HEARTBEAT_INTERVAL_SEC)
 
 
+def _build_fast_heartbeat_message(tasks: list, reminders: list) -> str:
+    """取得したタスク・リマインダーから擬似メッセージを組み立てる。"""
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    parts = [f"[SYSTEM_EVENT: HEARTBEAT] 現在時刻は{now_str}です。"]
+    for t in tasks:
+        parts.append(f"タスクID #{t['id']}: {t['content']}（予定: {t['scheduled_at']}）")
+    for r in reminders:
+        parts.append(f"リマインダーID #{r['id']}: {r['content']}（予定: {r['scheduled_at']}）")
+    parts.append("ユーザーに適切な通知を行い、タスクを完了状態にしてください。")
+    return "\n".join(parts)
+
+
+def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
+    """該当タスク・リマインダーがあれば擬似メッセージを ReAct に投入。"""
+    while not stop.is_set():
+        try:
+            if not has_due_work():
+                time.sleep(HEARTBEAT_INTERVAL_SEC)
+                continue
+            if not lock.acquire(blocking=False):
+                time.sleep(HEARTBEAT_INTERVAL_SEC)
+                continue
+            try:
+                now = datetime.now()
+                tasks = get_due_tasks(at=now)
+                reminders = get_due_reminders(at=now)
+                if not tasks and not reminders:
+                    time.sleep(HEARTBEAT_INTERVAL_SEC)
+                    continue
+                pseudo = _build_fast_heartbeat_message(tasks, reminders)
+                history = load_active_history()
+                run_agent_loop_with_tools(pseudo, history, on_turn=None)
+                logger.info("fast heartbeat: processed {} tasks, {} reminders", len(tasks), len(reminders))
+            except Exception as e:
+                logger.warning("fast heartbeat run failed: {}", e)
+            finally:
+                lock.release()
+        except Exception as e:
+            logger.warning("fast heartbeat loop error: {}", e)
+        time.sleep(HEARTBEAT_INTERVAL_SEC)
+
+
 def _run_repl(args: argparse.Namespace, *, agent_lock: threading.Lock | None = None) -> None:
     level = "DEBUG" if args.verbose else os.getenv("ANCILLA_LOG_LEVEL", "INFO")
     log_file = args.log_file or os.getenv("ANCILLA_LOG_FILE") or None
@@ -161,21 +204,29 @@ def _run_batch_summarize() -> None:
 
 
 def _run_resident(args: argparse.Namespace) -> None:
-    """常駐モード: REPL と Slow Heartbeat を同一プロセスで動かす。"""
+    """常駐モード: REPL と Fast / Slow Heartbeat を同一プロセスで動かす。"""
     agent_lock = threading.Lock()
     stop = threading.Event()
-    heartbeat_thread = threading.Thread(
+    slow_thread = threading.Thread(
         target=_slow_heartbeat_loop,
         args=(agent_lock, stop),
         daemon=True,
         name="slow_heartbeat",
     )
-    heartbeat_thread.start()
+    fast_thread = threading.Thread(
+        target=_fast_heartbeat_loop,
+        args=(agent_lock, stop),
+        daemon=True,
+        name="fast_heartbeat",
+    )
+    slow_thread.start()
+    fast_thread.start()
     try:
         _run_repl(args, agent_lock=agent_lock)
     finally:
         stop.set()
-        heartbeat_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
+        slow_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
+        fast_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
 
 
 def main() -> None:
