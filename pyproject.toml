@@ -9,6 +9,7 @@ description = "AIエージェント"
 requires-python = ">=3.11"
 dependencies = [
     "chromadb",
+    "discord.py",
     "httpx",
     "pydantic",
     "python-dotenv",
