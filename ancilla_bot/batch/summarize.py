@@ -20,6 +20,7 @@ Message = dict[str, str]
 DEFAULT_CONVERSATION_DIR = Path(os.getenv("ANCILLA_CONVERSATION_DIR", "data/conversation"))
 SUMMARIES_DIR = "summaries"
 TURNS_PER_BLOCK = 5
+MIN_BLOCK_CHARS = 80
 SUMMARY_PROMPT = """Summarize the following conversation block in 1-3 sentences in Japanese. Output only the summary, no other text.
 
 Conversation:
@@ -39,6 +40,12 @@ def _block_text(messages: list[Message]) -> str:
 
 def _tool_used_in_block(messages: list[Message]) -> bool:
     return any(OBSERVATION_MARKER in (m.get("content") or "") for m in messages)
+
+
+def _should_summarize_block(block: list[Message]) -> bool:
+    """極端に短いブロックは要約対象から外す"""
+    total = sum(len((m.get("content") or "").strip()) for m in block)
+    return total >= MIN_BLOCK_CHARS
 
 
 def _summarize_block(block_messages: list[Message]) -> str:
@@ -78,6 +85,9 @@ def run_summarize() -> None:
     for start in range(0, len(combined), block_size):
         end_index = min(start + block_size, len(combined)) - 1
         block = combined[start : end_index + 1]
+        if not _should_summarize_block(block):
+            logger.debug("skip block start={} (below MIN_BLOCK_CHARS)", start)
+            continue
         summary = _summarize_block(block)
         tool_used = _tool_used_in_block(block)
         record = {
