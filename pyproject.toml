@@ -15,5 +15,8 @@ dependencies = [
     "python-dotenv",
 ]
 
+[project.scripts]
+ancilla = "ancilla_bot.cli.main:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
