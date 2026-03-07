@@ -14,6 +14,7 @@ load_dotenv()
 
 DEFAULT_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+DEFAULT_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 DEFAULT_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "60"))
 
 
@@ -93,3 +94,37 @@ def send_chat(
         raise ValueError("Ollama の応答に message.content が含まれていません")
     logger.debug("ollama response len={}", len(content))
     return content.strip()
+
+
+def embed_text(
+    text: str,
+    *,
+    base_url: str = DEFAULT_BASE_URL,
+    model: str = DEFAULT_EMBED_MODEL,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> list[float]:
+    """
+    Ollama /api/embed でテキストの埋め込みベクトルを取得する。
+
+    Args:
+        text: 埋め込み対象のテキスト
+        base_url: 例 "http://localhost:11434"
+        model: 例 "nomic-embed-text"
+        timeout: リクエストタイムアウト（秒）
+
+    Returns:
+        埋め込みベクトル（float のリスト）。エラー時は例外を投げる。
+    """
+    url = f"{base_url.rstrip('/')}/api/embed"
+    body: dict[str, Any] = {"model": model, "input": text}
+    logger.debug("ollama embed url={} model={} text_len={}", url, model, len(text))
+
+    with httpx.Client(timeout=timeout) as client:
+        resp = client.post(url, json=body)
+        resp.raise_for_status()
+
+    data = resp.json()
+    embeddings = data.get("embeddings")
+    if not embeddings:
+        raise ValueError("Ollama embed の応答に embeddings が含まれていません")
+    return [float(x) for x in embeddings[0]]
