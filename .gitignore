@@ -7,7 +7,7 @@ notes/
 .DS_Store
 *.log
 .venv/
-data/vector_store/
+data/
 *.pyc
 *.egg-info/
 sessions/
