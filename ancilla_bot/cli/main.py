@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 from dotenv import load_dotenv
 from loguru import logger
 
@@ -224,6 +225,31 @@ def _run_repl(
             save_active_history(history)
 
 
+def _run_client(args: argparse.Namespace) -> None:
+    host = os.getenv("ANCILLA_API_HOST", "127.0.0.1")
+    port = int(os.getenv("ANCILLA_API_PORT", "8765"))
+    url = f"http://{host}:{port}/chat"
+    print(f"Ancilla クライアント (接続先 {url})。終了: exit / quit / :q")
+    while True:
+        try:
+            user_input = input("Ancilla CLI > ")
+        except (EOFError, KeyboardInterrupt):
+            print("\n終了します。")
+            break
+        if is_exit_command(user_input):
+            print("終了コマンドが入力されたため、終了します。")
+            break
+        try:
+            resp = httpx.post(url, json={"message": user_input}, timeout=60.0)
+            resp.raise_for_status()
+            data = resp.json()
+            print(f"Ancilla: {data.get('response', '')}")
+        except httpx.ConnectError:
+            print("Ancilla: 接続できません。ancilla run が起動しているか確認してください。")
+        except Exception as e:
+            print(f"Ancilla: エラー {e}")
+
+
 def _run_batch_summarize() -> None:
     from ancilla_bot.batch.summarize import run_summarize
 
@@ -277,7 +303,8 @@ def main() -> None:
     parser.add_argument("-r", "--show-reasoning", action="store_true", help="thought とツール呼び出しを薄く表示")
     subparsers = parser.add_subparsers(dest="command", help="サブコマンド")
 
-    subparsers.add_parser("run", help="常駐モード（REPL + Slow Heartbeat）。終了は exit 等。")
+    subparsers.add_parser("run", help="常駐モード（REPL + API + Heartbeat）。終了は exit 等。")
+    subparsers.add_parser("client", help="API に接続する REPL クライアント。先に ancilla run を起動すること。")
 
     batch_parser = subparsers.add_parser("batch", help="バッチ処理")
     batch_sub = batch_parser.add_subparsers(dest="batch_command", required=True)
@@ -287,6 +314,9 @@ def main() -> None:
 
     if args.command == "run":
         _run_resident(args)
+        return
+    if args.command == "client":
+        _run_client(args)
         return
     if args.command == "batch":
         if args.batch_command == "summarize":
