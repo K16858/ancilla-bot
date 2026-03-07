@@ -109,14 +109,14 @@ def get_due_tasks(*, at: datetime | None = None) -> list[dict[str, Any]]:
     at = at or datetime.now()
     ts = at.strftime("%Y-%m-%d %H:%M:%S")
     ensure_schema()
-    with _conn() as c:
-        c.execute(
+    with _conn() as conn:
+        cur = conn.execute(
             "SELECT id, scheduled_at, content, completed, created_at FROM tasks "
             "WHERE scheduled_at <= ? AND completed = 0 ORDER BY scheduled_at ASC",
             (ts,),
         )
-        rows = c.fetchall()
-        return [_row_to_dict(c, r) for r in rows]
+        rows = cur.fetchall()
+        return [_row_to_dict(cur, r) for r in rows]
 
 
 def get_due_reminders(*, at: datetime | None = None) -> list[dict[str, Any]]:
@@ -127,14 +127,14 @@ def get_due_reminders(*, at: datetime | None = None) -> list[dict[str, Any]]:
     at = at or datetime.now()
     ts = at.strftime("%Y-%m-%d %H:%M:%S")
     ensure_schema()
-    with _conn() as c:
-        c.execute(
+    with _conn() as conn:
+        cur = conn.execute(
             "SELECT id, scheduled_at, content, completed, created_at FROM reminders "
             "WHERE scheduled_at <= ? AND completed = 0 ORDER BY scheduled_at ASC",
             (ts,),
         )
-        rows = c.fetchall()
-        return [_row_to_dict(c, r) for r in rows]
+        rows = cur.fetchall()
+        return [_row_to_dict(cur, r) for r in rows]
 
 
 def has_due_work(*, at: datetime | None = None) -> bool:
