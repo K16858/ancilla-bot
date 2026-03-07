@@ -126,3 +126,48 @@ def mark_reminders_completed(reminder_ids: list[int]) -> None:
             f"UPDATE reminders SET completed = 1 WHERE id IN ({placeholders})",
             reminder_ids,
         )
+
+
+# ツールから操作可能なテーブル
+ALLOWED_TABLES = ("tasks", "reminders")
+
+
+def db_insert(table: str, scheduled_at: str, content: str) -> str:
+    """
+    指定テーブルに 1 行挿入する。ツール用。
+    table: 'tasks' または 'reminders'。scheduled_at: YYYY-MM-DD HH:MM 等。content: 本文。
+    """
+    table = (table or "").strip().lower()
+    if table not in ALLOWED_TABLES:
+        return f"Error: table must be one of {list(ALLOWED_TABLES)}."
+    content = (content or "").strip()
+    if not content:
+        return "Error: content is required."
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ensure_schema()
+    with _conn() as c:
+        c.execute(
+            f"INSERT INTO {table} (scheduled_at, content, completed, created_at) VALUES (?, ?, 0, ?)",
+            (scheduled_at.strip(), content, now),
+        )
+        row_id = c.lastrowid
+    return f"Inserted into {table} id={row_id}."
+
+
+def db_list(table: str, limit: int = 20) -> list[dict[str, Any]]:
+    """
+    指定テーブルの行を scheduled_at 昇順で返す。ツール用。
+    table: 'tasks' または 'reminders'。limit: 最大件数。
+    """
+    table = (table or "").strip().lower()
+    if table not in ALLOWED_TABLES:
+        return []
+    ensure_schema()
+    limit = max(1, min(limit, 100))
+    with _conn() as c:
+        c.execute(
+            f"SELECT id, scheduled_at, content, completed, created_at FROM {table} ORDER BY scheduled_at ASC LIMIT ?",
+            (limit,),
+        )
+        rows = c.fetchall()
+        return [_row_to_dict(c, r) for r in rows]

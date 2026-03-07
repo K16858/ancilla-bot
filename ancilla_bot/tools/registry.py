@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Any, Callable
 
 from ancilla_bot.batch.vector_store import search_summaries
+from ancilla_bot.heartbeat.db import db_insert as heartbeat_db_insert
+from ancilla_bot.heartbeat.db import db_list as heartbeat_db_list
 from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.tools.searxng_client import search as searxng_search
 from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
@@ -19,6 +21,8 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "write_file": "Write to a file in workspace. action_input: {\"path\": \"NOTE.md\", \"content\": \"content\"}.",
     "update_memory": "Update USER.md or AGENT.md. action_input: {\"file\": \"USER\" or \"AGENT\", \"content\": \"content\"}. Use sparingly.",
     "search_memory": "Search past conversation summaries (long-term memory). action_input: {\"query\": \"search query\", \"max_results\": 3}. max_results optional (default 3). Use when you need to recall past topics.",
+    "db_insert": "Insert a row into a table. action_input: {\"table\": \"tasks\" or \"reminders\", \"scheduled_at\": \"YYYY-MM-DD HH:MM\" or \"YYYY-MM-DD HH:MM:SS\", \"content\": \"text\"}. Use for adding reminders or scheduled tasks.",
+    "db_list": "List rows from a table. action_input: {\"table\": \"tasks\" or \"reminders\", \"limit\": 20}. limit optional (default 20, max 100). Returns id, scheduled_at, content, completed.",
 }
 
 
@@ -85,6 +89,25 @@ def search_memory(query: str, max_results: int = 3, **kwargs: Any) -> str:
     return "\n\n".join(parts)
 
 
+def db_insert(table: str, scheduled_at: str, content: str, **kwargs: Any) -> str:
+    """テーブル（tasks / reminders）に 1 行挿入。リマインダー・タスク登録用。"""
+    _ = kwargs
+    return heartbeat_db_insert(table=table, scheduled_at=scheduled_at, content=content)
+
+
+def db_list(table: str, limit: int = 20, **kwargs: Any) -> str:
+    """テーブル（tasks / reminders）の行を一覧。id, scheduled_at, content, completed を返す。"""
+    _ = kwargs
+    rows = heartbeat_db_list(table=table, limit=limit)
+    if not rows:
+        return f"Table '{table}': no rows."
+    parts = []
+    for r in rows:
+        comp = "done" if r.get("completed") else "pending"
+        parts.append(f"id={r.get('id')} scheduled_at={r.get('scheduled_at')} content={r.get('content')!r} {comp}")
+    return "\n".join(parts)
+
+
 TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "get_time": get_time,
     "web_search": web_search,
@@ -92,6 +115,8 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "write_file": write_file,
     "update_memory": update_memory,
     "search_memory": search_memory,
+    "db_insert": db_insert,
+    "db_list": db_list,
 }
 
 

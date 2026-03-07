@@ -3,6 +3,9 @@ Heartbeat 用モジュール。
 """
 
 from ancilla_bot.heartbeat.db import (
+    ALLOWED_TABLES,
+    db_insert,
+    db_list,
     ensure_schema,
     get_db_path,
     get_due_reminders,
@@ -13,6 +16,7 @@ from ancilla_bot.heartbeat.db import (
 )
 
 __all__ = [
+    "ALLOWED_TABLES",
     "get_db_path",
     "ensure_schema",
     "get_due_tasks",
@@ -20,4 +24,6 @@ __all__ = [
     "has_due_work",
     "mark_tasks_completed",
     "mark_reminders_completed",
+    "db_insert",
+    "db_list",
 ]
