@@ -8,6 +8,8 @@ from ancilla_bot.heartbeat.db import (
     get_due_reminders,
     get_due_tasks,
     has_due_work,
+    mark_reminders_completed,
+    mark_tasks_completed,
 )
 
 __all__ = [
@@ -16,4 +18,6 @@ __all__ = [
     "get_due_tasks",
     "get_due_reminders",
     "has_due_work",
+    "mark_tasks_completed",
+    "mark_reminders_completed",
 ]

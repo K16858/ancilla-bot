@@ -15,7 +15,13 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from ancilla_bot.core.agent_loop import is_exit_command, run_agent_loop_with_tools
-from ancilla_bot.heartbeat.db import get_due_reminders, get_due_tasks, has_due_work
+from ancilla_bot.heartbeat.db import (
+    get_due_reminders,
+    get_due_tasks,
+    has_due_work,
+    mark_reminders_completed,
+    mark_tasks_completed,
+)
 from ancilla_bot.memory.conversation_store import append_overflow, load_active_history, save_active_history
 from ancilla_bot.memory.short_term import append_and_trim
 from ancilla_bot.utils.logging_config import init_logging
@@ -139,11 +145,12 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 tasks = get_due_tasks(at=now)
                 reminders = get_due_reminders(at=now)
                 if not tasks and not reminders:
-                    time.sleep(HEARTBEAT_INTERVAL_SEC)
                     continue
                 pseudo = _build_fast_heartbeat_message(tasks, reminders)
                 history = load_active_history()
                 run_agent_loop_with_tools(pseudo, history, on_turn=None)
+                mark_tasks_completed([t["id"] for t in tasks])
+                mark_reminders_completed([r["id"] for r in reminders])
                 logger.info("fast heartbeat: processed {} tasks, {} reminders", len(tasks), len(reminders))
             except Exception as e:
                 logger.warning("fast heartbeat run failed: {}", e)

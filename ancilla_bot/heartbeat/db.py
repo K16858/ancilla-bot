@@ -100,3 +100,29 @@ def has_due_work(*, at: datetime | None = None) -> bool:
     tasks = get_due_tasks(at=at)
     reminders = get_due_reminders(at=at)
     return len(tasks) > 0 or len(reminders) > 0
+
+
+def mark_tasks_completed(task_ids: list[int]) -> None:
+    """指定した task id を完了済みにする。Heartbeat が ReAct に渡した後にスクリプト側で呼ぶ。"""
+    if not task_ids:
+        return
+    ensure_schema()
+    with _conn() as c:
+        placeholders = ",".join("?" * len(task_ids))
+        c.execute(
+            f"UPDATE tasks SET completed = 1 WHERE id IN ({placeholders})",
+            task_ids,
+        )
+
+
+def mark_reminders_completed(reminder_ids: list[int]) -> None:
+    """指定した reminder id を完了済みにする。Heartbeat が ReAct に渡した後にスクリプト側で呼ぶ。"""
+    if not reminder_ids:
+        return
+    ensure_schema()
+    with _conn() as c:
+        placeholders = ",".join("?" * len(reminder_ids))
+        c.execute(
+            f"UPDATE reminders SET completed = 1 WHERE id IN ({placeholders})",
+            reminder_ids,
+        )
