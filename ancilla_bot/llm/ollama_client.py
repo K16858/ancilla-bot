@@ -16,15 +16,17 @@ DEFAULT_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
 DEFAULT_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 DEFAULT_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "60"))
+VISION_ENABLED = os.getenv("OLLAMA_VISION_ENABLED", "true").strip().lower() in ("1", "true", "yes")
 
 
 def send_chat(
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     *,
     base_url: str = DEFAULT_BASE_URL,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     timeout: float = DEFAULT_TIMEOUT,
     format: dict[str, Any] | None = None,
+    images: list[str] | None = None,
 ) -> str:
     """
     Ollama ネイティブ API に messages を送り、assistant の content を返す。
@@ -40,16 +42,25 @@ def send_chat(
     Returns:
         LLM が返したテキスト。format 指定時は JSON 文字列。エラー時は例外を投げる。
     """
+    use_model = model if model is not None else DEFAULT_MODEL
+    if images and not VISION_ENABLED:
+        raise ValueError("画像付きリクエストには OLLAMA_VISION_ENABLED=true が必要です")
+    if images and VISION_ENABLED:
+        messages = list(messages)
+        if messages and messages[-1].get("role") == "user":
+            last = dict(messages[-1])
+            last["images"] = images
+            messages = messages[:-1] + [last]
     url = f"{base_url.rstrip('/')}/api/chat"
     body: dict[str, Any] = {
-        "model": model,
+        "model": use_model,
         "messages": messages,
         "stream": False,
         "think": True,
     }
     if format is not None:
         body["format"] = format
-    logger.debug("ollama request url={} model={} messages_count={}", url, model, len(messages))
+    logger.debug("ollama request url={} model={} messages_count={}", url, use_model, len(messages))
 
     try:
         with httpx.Client(timeout=timeout) as client:

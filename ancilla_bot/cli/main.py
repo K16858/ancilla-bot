@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from ancilla_bot.core.agent_loop import is_exit_command, run_agent_loop_with_tools
+from ancilla_bot.llm.ollama_client import VISION_ENABLED
 from ancilla_bot.heartbeat.db import (
     get_due_reminders,
     get_due_tasks,
@@ -170,11 +171,16 @@ def _handle_message(
     agent_lock: threading.Lock | None,
     max_chars: int,
     on_turn: Any,
+    images: list[str] | None = None,
 ) -> str:
     if agent_lock is not None and not agent_lock.acquire(blocking=False):
         return "バックグラウンド処理中です。しばらくお待ちください。"
+    if images and not VISION_ENABLED:
+        return "画像処理は無効です。.env で OLLAMA_VISION_ENABLED=true にしてください（メインモデルが視覚対応の場合）。"
     try:
-        response = run_agent_loop_with_tools(user_input, conversation_history, on_turn=on_turn)
+        response = run_agent_loop_with_tools(
+            user_input, conversation_history, on_turn=on_turn, images=images
+        )
         user_msg = {"role": "user", "content": user_input}
         assistant_msg = {"role": "assistant", "content": response}
         dropped = append_and_trim(
@@ -262,8 +268,10 @@ def _run_resident(args: argparse.Namespace) -> None:
     conversation_history = load_active_history()
     api_port = int(os.getenv("ANCILLA_API_PORT", "8765"))
 
-    def chat_handler(msg: str) -> str:
-        return _handle_message(msg, conversation_history, agent_lock, MAX_HISTORY_CHARS, None)
+    def chat_handler(msg: str, imgs: list[str] | None = None) -> str:
+        return _handle_message(
+            msg, conversation_history, agent_lock, MAX_HISTORY_CHARS, None, images=imgs
+        )
 
     api_thread = threading.Thread(
         target=lambda: run_server("127.0.0.1", api_port, chat_handler),

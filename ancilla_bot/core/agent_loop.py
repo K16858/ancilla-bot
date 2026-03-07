@@ -73,6 +73,7 @@ def run_agent_loop_with_tools(
     on_turn: Callable[
         [str, str | None, dict[str, Any] | None, str | None], None
     ] | None = None,
+    images: list[str] | None = None,
 ) -> str:
     """
     ツール呼び出しありの ReAct ループ。
@@ -95,7 +96,8 @@ def run_agent_loop_with_tools(
 
     for turn in range(MAX_TOOL_TURNS):
         logger.debug("ReAct turn {} messages={}", turn + 1, messages)
-        raw = send_chat(messages, format=schema)
+        send_images = images if turn == 0 else None
+        raw = send_chat(messages, format=schema, images=send_images)
         logger.debug("LLM raw={}", raw[:500] + "..." if len(raw) > 500 else raw)
         try:
             parsed = AgentResponseWithTools.model_validate_json(raw)
