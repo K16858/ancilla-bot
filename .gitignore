@@ -11,3 +11,4 @@ data/
 *.pyc
 *.egg-info/
 sessions/
+*jsonl
