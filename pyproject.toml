@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "AIエージェント"
 requires-python = ">=3.11"
 dependencies = [
+    "chromadb",
     "httpx",
     "pydantic",
     "python-dotenv",
