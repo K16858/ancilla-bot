@@ -44,6 +44,7 @@ def send_chat(
         "model": model,
         "messages": messages,
         "stream": False,
+        "think": True,
     }
     if format is not None:
         body["format"] = format
