@@ -5,9 +5,14 @@ Ancilla-Bot CLIエントリーポイント
 import argparse
 import os
 import sys
+import threading
+import time
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
+from loguru import logger
 
 from ancilla_bot.core.agent_loop import is_exit_command, run_agent_loop_with_tools
 from ancilla_bot.memory.conversation_store import append_overflow, load_active_history, save_active_history
@@ -23,6 +28,10 @@ RESET = "\033[0m"
 
 # 履歴最大文字数
 MAX_HISTORY_CHARS = int(os.getenv("ANCILLA_MAX_HISTORY_CHARS", "4000"))
+
+HEARTBEAT_TIME_STR = os.getenv("ANCILLA_HEARTBEAT_TIME", "03:00")
+HEARTBEAT_INTERVAL_SEC = 60
+DEFAULT_CONVERSATION_DIR = Path(os.getenv("ANCILLA_CONVERSATION_DIR", "data/conversation"))
 
 
 def _reasoning_line(text: str, dim: bool) -> str:
@@ -56,7 +65,53 @@ def _print_reasoning(
         print(_reasoning_line(line, dim))
 
 
-def _run_repl(args: argparse.Namespace) -> None:
+def _parse_heartbeat_time(s: str) -> tuple[int, int]:
+    """ANCILLA_HEARTBEAT_TIME を (hour, minute) にパース。デフォルト (3, 0)。"""
+    s = (s or "03:00").strip()
+    try:
+        parts = s.split(":")
+        hour = int(parts[0]) % 24
+        minute = int(parts[1]) if len(parts) > 1 else 0
+        return (hour, minute)
+    except (ValueError, IndexError):
+        return (3, 0)
+
+
+def _slow_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
+    """1分ごとに時刻を確認し、設定時刻かつ未実行なら run_summarize を実行。"""
+    hour_target, minute_target = _parse_heartbeat_time(HEARTBEAT_TIME_STR)
+    last_run_path = Path(os.getenv("ANCILLA_CONVERSATION_DIR", str(DEFAULT_CONVERSATION_DIR))) / "heartbeat_last_run.txt"
+    last_run_path.parent.mkdir(parents=True, exist_ok=True)
+
+    while not stop.is_set():
+        try:
+            now = datetime.now()
+            today = now.strftime("%Y-%m-%d")
+            if last_run_path.exists():
+                try:
+                    last = last_run_path.read_text(encoding="utf-8").strip()
+                    if last == today:
+                        time.sleep(HEARTBEAT_INTERVAL_SEC)
+                        continue
+                except OSError:
+                    pass
+            if now.hour == hour_target and now.minute == minute_target:
+                if lock.acquire(blocking=False):
+                    try:
+                        from ancilla_bot.batch.summarize import run_summarize
+                        run_summarize()
+                        last_run_path.write_text(today, encoding="utf-8")
+                        logger.info("slow heartbeat: run_summarize done for {}", today)
+                    except Exception as e:
+                        logger.warning("slow heartbeat run_summarize failed: {}", e)
+                    finally:
+                        lock.release()
+        except Exception as e:
+            logger.warning("slow heartbeat loop error: {}", e)
+        time.sleep(HEARTBEAT_INTERVAL_SEC)
+
+
+def _run_repl(args: argparse.Namespace, *, agent_lock: threading.Lock | None = None) -> None:
     level = "DEBUG" if args.verbose else os.getenv("ANCILLA_LOG_LEVEL", "INFO")
     log_file = args.log_file or os.getenv("ANCILLA_LOG_FILE") or None
     init_logging(level=level, log_file=log_file)
@@ -77,17 +132,24 @@ def _run_repl(args: argparse.Namespace) -> None:
                 print("終了コマンドが入力されたため、REPL を終了します。")
                 break
 
-            response = run_agent_loop_with_tools(user_input, conversation_history, on_turn=on_turn)
-            user_msg = {"role": "user", "content": user_input}
-            assistant_msg = {"role": "assistant", "content": response}
-            dropped = append_and_trim(
-                conversation_history,
-                [user_msg, assistant_msg],
-                max_chars=MAX_HISTORY_CHARS,
-            )
-            if dropped:
-                append_overflow(dropped)
-            print(f"Ancilla: {response}")
+            if agent_lock is not None and not agent_lock.acquire(blocking=False):
+                print("Ancilla: バックグラウンド処理中です。しばらくお待ちください。")
+                continue
+            try:
+                response = run_agent_loop_with_tools(user_input, conversation_history, on_turn=on_turn)
+                user_msg = {"role": "user", "content": user_input}
+                assistant_msg = {"role": "assistant", "content": response}
+                dropped = append_and_trim(
+                    conversation_history,
+                    [user_msg, assistant_msg],
+                    max_chars=MAX_HISTORY_CHARS,
+                )
+                if dropped:
+                    append_overflow(dropped)
+                print(f"Ancilla: {response}")
+            finally:
+                if agent_lock is not None:
+                    agent_lock.release()
     finally:
         save_active_history(conversation_history)
 
@@ -98,6 +160,24 @@ def _run_batch_summarize() -> None:
     run_summarize()
 
 
+def _run_resident(args: argparse.Namespace) -> None:
+    """常駐モード: REPL と Slow Heartbeat を同一プロセスで動かす。"""
+    agent_lock = threading.Lock()
+    stop = threading.Event()
+    heartbeat_thread = threading.Thread(
+        target=_slow_heartbeat_loop,
+        args=(agent_lock, stop),
+        daemon=True,
+        name="slow_heartbeat",
+    )
+    heartbeat_thread.start()
+    try:
+        _run_repl(args, agent_lock=agent_lock)
+    finally:
+        stop.set()
+        heartbeat_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ancilla-Bot CLI")
     parser.add_argument("-v", "--verbose", action="store_true", help="DEBUG レベルでログを出力")
@@ -105,18 +185,23 @@ def main() -> None:
     parser.add_argument("-r", "--show-reasoning", action="store_true", help="thought とツール呼び出しを薄く表示")
     subparsers = parser.add_subparsers(dest="command", help="サブコマンド")
 
+    subparsers.add_parser("run", help="常駐モード（REPL + Slow Heartbeat）。終了は exit 等。")
+
     batch_parser = subparsers.add_parser("batch", help="バッチ処理")
     batch_sub = batch_parser.add_subparsers(dest="batch_command", required=True)
     batch_sub.add_parser("summarize", help="会話を結合し summaries に出力")
 
     args = parser.parse_args()
 
+    if args.command == "run":
+        _run_resident(args)
+        return
     if args.command == "batch":
         if args.batch_command == "summarize":
             _run_batch_summarize()
         return
 
-    _run_repl(args)
+    _run_repl(args, agent_lock=None)
 
 
 if __name__ == "__main__":
