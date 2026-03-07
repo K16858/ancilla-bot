@@ -13,6 +13,7 @@ from loguru import logger
 
 from ancilla_bot.llm import send_chat
 from ancilla_bot.memory.conversation_store import load_active_history, load_overflow
+from ancilla_bot.batch.vector_store import add_summaries_to_store
 
 Message = dict[str, str]
 
@@ -94,3 +95,8 @@ def run_summarize() -> None:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     logger.info("batch summarize wrote {} blocks to {}", len(records), out_path)
+
+    try:
+        add_summaries_to_store(records)
+    except Exception as e:
+        logger.warning("vector store add failed: {} (summaries file is saved)", e)
