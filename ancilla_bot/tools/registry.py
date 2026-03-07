@@ -5,6 +5,7 @@
 from datetime import datetime
 from typing import Any, Callable
 
+from ancilla_bot.batch.vector_store import search_summaries
 from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.tools.searxng_client import search as searxng_search
 from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
@@ -17,6 +18,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "read_file": "Read a file in workspace. action_input: {\"path\": \"NOTE.md\"}.",
     "write_file": "Write to a file in workspace. action_input: {\"path\": \"NOTE.md\", \"content\": \"content\"}.",
     "update_memory": "Update USER.md or AGENT.md. action_input: {\"file\": \"USER\" or \"AGENT\", \"content\": \"content\"}. Use sparingly.",
+    "search_memory": "Search past conversation summaries (long-term memory). action_input: {\"query\": \"search query\", \"max_results\": 3}. max_results optional (default 3). Use when you need to recall past topics.",
 }
 
 
@@ -64,12 +66,32 @@ def update_memory(file: str, content: str, **kwargs: Any) -> str:
     return workspace_write_file(path=path, content=content)
 
 
+def search_memory(query: str, max_results: int = 3, **kwargs: Any) -> str:
+    """
+    長期記憶（要約）をベクトル検索する
+    action_input: {"query": "検索クエリ", "max_results": 3}
+    """
+    _ = kwargs
+    results = search_summaries(query, n_results=max_results)
+    if not results:
+        return "No matching past summaries found."
+    max_chars_per = 400
+    parts = []
+    for i, item in enumerate(results, 1):
+        doc = (item.get("document") or "")[:max_chars_per]
+        if len(item.get("document") or "") > max_chars_per:
+            doc += "..."
+        parts.append(f"[{i}] {doc}")
+    return "\n\n".join(parts)
+
+
 TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "get_time": get_time,
     "web_search": web_search,
     "read_file": read_file,
     "write_file": write_file,
     "update_memory": update_memory,
+    "search_memory": search_memory,
 }
 
 
