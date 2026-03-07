@@ -22,6 +22,7 @@ from ancilla_bot.heartbeat.db import (
     mark_reminders_completed,
     mark_tasks_completed,
 )
+from ancilla_bot.api.server import run_server
 from ancilla_bot.memory.compress import compress_once, should_compress
 from ancilla_bot.memory.conversation_store import append_overflow, load_active_history, save_active_history
 from ancilla_bot.memory.short_term import append_and_trim
@@ -162,13 +163,46 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
         time.sleep(HEARTBEAT_INTERVAL_SEC)
 
 
-def _run_repl(args: argparse.Namespace, *, agent_lock: threading.Lock | None = None) -> None:
+def _handle_message(
+    user_input: str,
+    conversation_history: list[dict[str, str]],
+    agent_lock: threading.Lock | None,
+    max_chars: int,
+    on_turn: Any,
+) -> str:
+    if agent_lock is not None and not agent_lock.acquire(blocking=False):
+        return "バックグラウンド処理中です。しばらくお待ちください。"
+    try:
+        response = run_agent_loop_with_tools(user_input, conversation_history, on_turn=on_turn)
+        user_msg = {"role": "user", "content": user_input}
+        assistant_msg = {"role": "assistant", "content": response}
+        dropped = append_and_trim(
+            conversation_history,
+            [user_msg, assistant_msg],
+            max_chars=max_chars,
+        )
+        if dropped:
+            append_overflow(dropped)
+        while should_compress(conversation_history, max_chars):
+            compress_once(conversation_history, max_chars)
+        return response
+    finally:
+        if agent_lock is not None:
+            agent_lock.release()
+
+
+def _run_repl(
+    args: argparse.Namespace,
+    *,
+    agent_lock: threading.Lock | None = None,
+    conversation_history: list[dict[str, str]] | None = None,
+) -> None:
     level = "DEBUG" if args.verbose else os.getenv("ANCILLA_LOG_LEVEL", "INFO")
     log_file = args.log_file or os.getenv("ANCILLA_LOG_FILE") or None
     init_logging(level=level, log_file=log_file)
 
     print("Ancilla CLI を起動しました。終了するには 'exit', 'quit', ':q' のいずれかを入力してください。")
-    conversation_history: list[dict[str, str]] = load_active_history()
+    history = conversation_history if conversation_history is not None else load_active_history()
     on_turn = _print_reasoning if args.show_reasoning else None
 
     try:
@@ -183,28 +217,11 @@ def _run_repl(args: argparse.Namespace, *, agent_lock: threading.Lock | None = N
                 print("終了コマンドが入力されたため、REPL を終了します。")
                 break
 
-            if agent_lock is not None and not agent_lock.acquire(blocking=False):
-                print("Ancilla: バックグラウンド処理中です。しばらくお待ちください。")
-                continue
-            try:
-                response = run_agent_loop_with_tools(user_input, conversation_history, on_turn=on_turn)
-                user_msg = {"role": "user", "content": user_input}
-                assistant_msg = {"role": "assistant", "content": response}
-                dropped = append_and_trim(
-                    conversation_history,
-                    [user_msg, assistant_msg],
-                    max_chars=MAX_HISTORY_CHARS,
-                )
-                if dropped:
-                    append_overflow(dropped)
-                while should_compress(conversation_history, MAX_HISTORY_CHARS):
-                    compress_once(conversation_history, MAX_HISTORY_CHARS)
-                print(f"Ancilla: {response}")
-            finally:
-                if agent_lock is not None:
-                    agent_lock.release()
+            response = _handle_message(user_input, history, agent_lock, MAX_HISTORY_CHARS, on_turn)
+            print(f"Ancilla: {response}")
     finally:
-        save_active_history(conversation_history)
+        if conversation_history is None:
+            save_active_history(history)
 
 
 def _run_batch_summarize() -> None:
@@ -214,9 +231,22 @@ def _run_batch_summarize() -> None:
 
 
 def _run_resident(args: argparse.Namespace) -> None:
-    """常駐モード: REPL と Fast / Slow Heartbeat を同一プロセスで動かす。"""
     agent_lock = threading.Lock()
     stop = threading.Event()
+    conversation_history = load_active_history()
+    api_port = int(os.getenv("ANCILLA_API_PORT", "8765"))
+
+    def chat_handler(msg: str) -> str:
+        return _handle_message(msg, conversation_history, agent_lock, MAX_HISTORY_CHARS, None)
+
+    api_thread = threading.Thread(
+        target=lambda: run_server("127.0.0.1", api_port, chat_handler),
+        daemon=True,
+        name="api",
+    )
+    api_thread.start()
+    logger.info("API http://127.0.0.1:{}/chat", api_port)
+
     slow_thread = threading.Thread(
         target=_slow_heartbeat_loop,
         args=(agent_lock, stop),
@@ -232,8 +262,9 @@ def _run_resident(args: argparse.Namespace) -> None:
     slow_thread.start()
     fast_thread.start()
     try:
-        _run_repl(args, agent_lock=agent_lock)
+        _run_repl(args, agent_lock=agent_lock, conversation_history=conversation_history)
     finally:
+        save_active_history(conversation_history)
         stop.set()
         slow_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
         fast_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
