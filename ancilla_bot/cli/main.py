@@ -104,7 +104,7 @@ def _slow_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 try:
                     last = last_run_path.read_text(encoding="utf-8").strip()
                     if last == today:
-                        time.sleep(HEARTBEAT_INTERVAL_SEC)
+                        stop.wait(HEARTBEAT_INTERVAL_SEC)
                         continue
                 except OSError:
                     pass
@@ -121,7 +121,7 @@ def _slow_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                         lock.release()
         except Exception as e:
             logger.warning("slow heartbeat loop error: {}", e)
-        time.sleep(HEARTBEAT_INTERVAL_SEC)
+        stop.wait(HEARTBEAT_INTERVAL_SEC)
 
 
 def _build_fast_heartbeat_message(tasks: list, reminders: list) -> str:
@@ -141,10 +141,10 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
     while not stop.is_set():
         try:
             if not has_due_work():
-                time.sleep(HEARTBEAT_INTERVAL_SEC)
+                stop.wait(HEARTBEAT_INTERVAL_SEC)
                 continue
             if not lock.acquire(blocking=False):
-                time.sleep(HEARTBEAT_INTERVAL_SEC)
+                stop.wait(HEARTBEAT_INTERVAL_SEC)
                 continue
             try:
                 now = datetime.now()
@@ -164,7 +164,7 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 lock.release()
         except Exception as e:
             logger.warning("fast heartbeat loop error: {}", e)
-        time.sleep(HEARTBEAT_INTERVAL_SEC)
+        stop.wait(HEARTBEAT_INTERVAL_SEC)
 
 
 def _handle_message(
