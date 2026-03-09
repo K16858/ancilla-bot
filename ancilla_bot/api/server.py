@@ -4,6 +4,8 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 
+from loguru import logger
+
 
 def run_server(
     host: str, port: int, handler: Callable[[str, list[str] | None], str]
@@ -27,10 +29,13 @@ def run_server(
                 self.send_error(400, "Bad Request")
                 return
             response_text = handler(message, images)
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(json.dumps({"response": response_text}, ensure_ascii=False).encode("utf-8"))
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"response": response_text}, ensure_ascii=False).encode("utf-8"))
+            except (BrokenPipeError, ConnectionResetError) as e:
+                logger.debug("client closed connection before response was sent: {}", e)
 
         def log_message(self, format, *args):
             pass
