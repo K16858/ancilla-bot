@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import json
 import os
+from pathlib import Path
 
 import discord
 import httpx
 
 MAX_RESPONSE_CHARS = 1900
+NOTIFY_POLL_INTERVAL = 30
+NOTIFY_MAX_MESSAGE_CHARS = 1900
 API_HOST = os.getenv("ANCILLA_API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("ANCILLA_API_PORT", "8765"))
+NOTIFICATIONS_DIR = Path(
+    os.getenv("ANCILLA_NOTIFICATIONS_DIR", "data/notifications")
+)
+PENDING_FILE = "pending.jsonl"
 
 
 def _get_api_url() -> str:
@@ -47,6 +56,73 @@ async def _download_images(attachments: list[discord.Attachment]) -> list[str]:
     return out[:4]
 
 
+def _pending_path() -> Path:
+    return NOTIFICATIONS_DIR / PENDING_FILE
+
+
+async def _notify_loop(client: discord.Client) -> None:
+    """
+    pending.jsonl をポーリングし、通知を送信してからファイルを空にする。
+    届け先は DISCORD_NOTIFY_CHANNEL_ID または DISCORD_NOTIFY_USER_ID のどちらか。
+    """
+    channel_id = os.getenv("DISCORD_NOTIFY_CHANNEL_ID", "").strip()
+    user_id = os.getenv("DISCORD_NOTIFY_USER_ID", "").strip()
+    if not channel_id and not user_id:
+        return
+    destination = None
+    if channel_id:
+        try:
+            ch = await client.fetch_channel(int(channel_id))
+            destination = ("channel", ch)
+        except (ValueError, discord.NotFound, discord.Forbidden):
+            pass
+    if destination is None and user_id:
+        try:
+            user = await client.fetch_user(int(user_id))
+            destination = ("user", user)
+        except (ValueError, discord.NotFound):
+            pass
+    if destination is None:
+        return
+
+    path = _pending_path()
+    while True:
+        await asyncio.sleep(NOTIFY_POLL_INTERVAL)
+        if not path.exists():
+            continue
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        if not lines:
+            continue
+        sent = 0
+        for line in lines:
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            msg = (rec.get("message") or "").strip()
+            if not msg:
+                continue
+            if len(msg) > NOTIFY_MAX_MESSAGE_CHARS:
+                msg = msg[:NOTIFY_MAX_MESSAGE_CHARS] + "..."
+            try:
+                if destination[0] == "channel" and destination[1]:
+                    await destination[1].send(msg)
+                elif destination[0] == "user" and destination[1]:
+                    await destination[1].send(msg)
+                sent += 1
+            except (discord.Forbidden, discord.HTTPException):
+                break
+        if sent > 0:
+            try:
+                path.write_text("", encoding="utf-8")
+            except OSError:
+                pass
+
+
 def run_bot() -> None:
     intents = discord.Intents.default()
     intents.message_content = True
@@ -56,6 +132,8 @@ def run_bot() -> None:
     @client.event
     async def on_ready():
         print(f"Discord にログイン: {client.user}")
+        if os.getenv("DISCORD_NOTIFY_CHANNEL_ID") or os.getenv("DISCORD_NOTIFY_USER_ID"):
+            asyncio.create_task(_notify_loop(client))
 
     @client.event
     async def on_message(message: discord.Message):
