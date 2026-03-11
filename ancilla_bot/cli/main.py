@@ -155,22 +155,18 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                     continue
                 pseudo = _build_fast_heartbeat_message(tasks, reminders)
                 history = load_active_history()
-                run_agent_loop_with_tools(pseudo, history, on_turn=None)
+                response = run_agent_loop_with_tools(pseudo, history, on_turn=None)
                 mark_tasks_completed([t["id"] for t in tasks])
                 mark_reminders_completed([r["id"] for r in reminders])
-                # 通知キューに 1 件追加
-                parts = []
-                for t in tasks:
-                    parts.append(f"タスク: {t.get('content', '')[:80]}")
-                for r in reminders:
-                    parts.append(f"リマインダー: {r.get('content', '')[:80]}")
-                if parts:
-                    append_notification(
-                        " / ".join(parts),
-                        source="heartbeat",
-                        level="info",
-                        detail=f"tasks={len(tasks)}, reminders={len(reminders)}",
-                    )
+                if isinstance(response, str):
+                    msg = response.strip()
+                    if msg:
+                        append_notification(
+                            msg,
+                            source="heartbeat",
+                            level="info",
+                            detail=f"tasks={len(tasks)}, reminders={len(reminders)}",
+                        )
                 logger.info("fast heartbeat: processed {} tasks, {} reminders", len(tasks), len(reminders))
             except Exception as e:
                 logger.warning("fast heartbeat run failed: {}", e)
