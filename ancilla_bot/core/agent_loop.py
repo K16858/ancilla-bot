@@ -3,6 +3,7 @@ AgentLoop
 """
 
 import os
+from datetime import datetime
 from typing import Any, Callable, Final
 
 from loguru import logger
@@ -28,6 +29,32 @@ SYSTEM_PROMPT: Final[str] = """あなたは思考過程（thought）と最終回
 - thought: ユーザーの質問の意図を整理し、どう答えるか考える（内部用。短くてよい）。
 - final_answer: ユーザーに表示する日本語の回答本文。
 JSON 以外の説明や前後の文章は一切出力しないでください。"""
+
+
+def _inject_time_note(messages: list[dict[str, str]]) -> None:
+    """
+    messages の末尾にあるユーザーメッセージの直前に、現在時刻の System Note を挿入する。
+    ユーザーメッセージが見つからない場合は末尾に追加する。
+    """
+    if not messages:
+        return
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    content = f"[System Note: 現在時刻: {now_str}]"
+    note = {"role": "system", "content": content}
+
+    # 最後の user メッセージを探す（通常は末尾）
+    last_user_idx = None
+    for idx in range(len(messages) - 1, -1, -1):
+        msg = messages[idx]
+        if msg.get("role") == "user":
+            last_user_idx = idx
+            break
+
+    if last_user_idx is None:
+        messages.append(note)
+        return
+
+    messages.insert(last_user_idx, note)
 
 
 def is_exit_command(text: str) -> bool:
@@ -91,6 +118,7 @@ def run_agent_loop_with_tools(
         *history,
         {"role": "user", "content": user_input},
     ]
+    _inject_time_note(messages)
     schema = AgentResponseWithTools.model_json_schema()
     retry_after_verify = False
 
