@@ -104,6 +104,7 @@ ancilla batch summarize
 
 - `get_time` … 現在日時
 - `web_search` … Web 検索（SearXNG）
+- `fetch_page` … 指定 URL のページ本文取得（HTML 除去、http/https のみ）
 - `read_file` / `write_file` … workspace 内ファイル
 - `update_memory` … USER.md / AGENT.md 更新
 - `search_memory` … 長期記憶（要約）のベクトル検索
