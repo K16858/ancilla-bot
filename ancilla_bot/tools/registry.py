@@ -8,6 +8,7 @@ from typing import Any, Callable
 from ancilla_bot.batch.vector_store import search_summaries
 from ancilla_bot.heartbeat.db import manage_state as heartbeat_manage_state
 from ancilla_bot.memory.core import build_core_memory
+from ancilla_bot.tools.fetch_page import fetch_page
 from ancilla_bot.tools.searxng_client import search as searxng_search
 from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
 from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
@@ -16,6 +17,7 @@ from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_time": "Return current date/time. action_input: {}.",
     "web_search": "Search the web. action_input: {\"query\": \"search query\", \"max_results\": 5}. max_results optional (default 5).",
+    "fetch_page": "Get the main text of a web page. action_input: {\"url\": \"https://example.com/page\", \"max_chars\": 8000}. max_chars optional (default from config). Only http/https URLs are allowed.",
     "read_file": "Read a file in workspace. action_input: {\"path\": \"NOTE.md\"}.",
     "write_file": "Write to a file in workspace. action_input: {\"path\": \"NOTE.md\", \"content\": \"content\"}.",
     "update_memory": "Update USER.md or AGENT.md. action_input: {\"file\": \"USER\" or \"AGENT\", \"content\": \"content\"}. Use sparingly.",
@@ -96,6 +98,7 @@ def manage_state(table: str, operation: str, payload: dict[str, Any] | None = No
 TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "get_time": get_time,
     "web_search": web_search,
+    "fetch_page": fetch_page,
     "read_file": read_file,
     "write_file": write_file,
     "update_memory": update_memory,
