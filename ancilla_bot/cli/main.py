@@ -187,9 +187,13 @@ def _handle_message(
     max_chars: int,
     on_turn: Any,
     images: list[str] | None = None,
+    *,
+    source: str | None = None,
 ) -> str:
     if agent_lock is not None and not agent_lock.acquire(blocking=False):
-        PENDING_MESSAGES.append({"input": user_input, "images": images})
+        PENDING_MESSAGES.append(
+            {"input": user_input, "images": images, "source": source or "unknown"}
+        )
         return "バックグラウンド処理中です。しばらくお待ちください。"
     try:
         return _process_message_core(
@@ -281,7 +285,14 @@ def _run_repl(
                 print("終了コマンドが入力されたため、REPL を終了します。")
                 break
 
-            response = _handle_message(user_input, history, agent_lock, MAX_HISTORY_CHARS, on_turn)
+            response = _handle_message(
+                user_input,
+                history,
+                agent_lock,
+                MAX_HISTORY_CHARS,
+                on_turn,
+                source="repl",
+            )
             print(f"Ancilla: {response}")
     finally:
         if conversation_history is None:
@@ -327,7 +338,13 @@ def _run_resident(args: argparse.Namespace) -> None:
 
     def chat_handler(msg: str, imgs: list[str] | None = None) -> str:
         return _handle_message(
-            msg, conversation_history, agent_lock, MAX_HISTORY_CHARS, None, images=imgs
+            msg,
+            conversation_history,
+            agent_lock,
+            MAX_HISTORY_CHARS,
+            None,
+            images=imgs,
+            source="api",
         )
 
     api_thread = threading.Thread(
