@@ -47,6 +47,9 @@ HEARTBEAT_TIME_STR = os.getenv("ANCILLA_HEARTBEAT_TIME", "03:00")
 HEARTBEAT_INTERVAL_SEC = 60
 DEFAULT_CONVERSATION_DIR = Path(os.getenv("ANCILLA_CONVERSATION_DIR", "data/conversation"))
 
+# メッセージ待ち行列
+PENDING_MESSAGES: list[dict[str, Any]] = []
+
 
 def _reasoning_line(text: str, dim: bool) -> str:
     if dim and sys.stderr.isatty():
@@ -186,6 +189,7 @@ def _handle_message(
     images: list[str] | None = None,
 ) -> str:
     if agent_lock is not None and not agent_lock.acquire(blocking=False):
+        PENDING_MESSAGES.append({"input": user_input, "images": images})
         return "バックグラウンド処理中です。しばらくお待ちください。"
     if images and not VISION_ENABLED:
         return "画像処理は無効です。.env で OLLAMA_VISION_ENABLED=true にしてください（メインモデルが視覚対応の場合）。"
