@@ -191,27 +191,47 @@ def _handle_message(
     if agent_lock is not None and not agent_lock.acquire(blocking=False):
         PENDING_MESSAGES.append({"input": user_input, "images": images})
         return "バックグラウンド処理中です。しばらくお待ちください。"
-    if images and not VISION_ENABLED:
-        return "画像処理は無効です。.env で OLLAMA_VISION_ENABLED=true にしてください（メインモデルが視覚対応の場合）。"
     try:
-        response = run_agent_loop_with_tools(
-            user_input, conversation_history, on_turn=on_turn, images=images
-        )
-        user_msg = {"role": "user", "content": user_input}
-        assistant_msg = {"role": "assistant", "content": response}
-        dropped = append_and_trim(
+        return _process_message_core(
+            user_input,
             conversation_history,
-            [user_msg, assistant_msg],
             max_chars=max_chars,
+            on_turn=on_turn,
+            images=images,
         )
-        if dropped:
-            append_overflow(dropped)
-        while should_compress(conversation_history, max_chars):
-            compress_once(conversation_history, max_chars)
-        return response
     finally:
         if agent_lock is not None:
             agent_lock.release()
+
+
+def _process_message_core(
+    user_input: str,
+    conversation_history: list[dict[str, str]],
+    *,
+    max_chars: int,
+    on_turn: Any,
+    images: list[str] | None = None,
+) -> str:
+    """
+    Lock を取得済みであることを前提に、1 メッセージ分の処理を行う。
+    """
+    if images and not VISION_ENABLED:
+        return "画像処理は無効です。.env で OLLAMA_VISION_ENABLED=true にしてください（メインモデルが視覚対応の場合）。"
+    response = run_agent_loop_with_tools(
+        user_input, conversation_history, on_turn=on_turn, images=images
+    )
+    user_msg = {"role": "user", "content": user_input}
+    assistant_msg = {"role": "assistant", "content": response}
+    dropped = append_and_trim(
+        conversation_history,
+        [user_msg, assistant_msg],
+        max_chars=max_chars,
+    )
+    if dropped:
+        append_overflow(dropped)
+    while should_compress(conversation_history, max_chars):
+        compress_once(conversation_history, max_chars)
+    return response
 
 
 def _run_repl(
@@ -230,6 +250,27 @@ def _run_repl(
 
     try:
         while True:
+            # まずキューに溜まったメッセージを処理する（REPL 起動中のみ）
+            while PENDING_MESSAGES:
+                pending = PENDING_MESSAGES.pop(0)
+                # Lock があれば取得してから処理する
+                if agent_lock is not None and not agent_lock.acquire(blocking=False):
+                    # まだ処理できないので先頭に戻して後回し
+                    PENDING_MESSAGES.insert(0, pending)
+                    break
+                try:
+                    response = _process_message_core(
+                        pending.get("input", ""),
+                        history,
+                        max_chars=MAX_HISTORY_CHARS,
+                        on_turn=on_turn,
+                        images=pending.get("images"),
+                    )
+                    print(f"Ancilla (queued): {response}")
+                finally:
+                    if agent_lock is not None and agent_lock.locked():
+                        agent_lock.release()
+
             try:
                 user_input = input("Ancilla CLI > ")
             except (EOFError, KeyboardInterrupt):
