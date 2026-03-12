@@ -204,6 +204,19 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
         stop.wait(HEARTBEAT_INTERVAL_SEC)
 
 
+def _build_idle_reflection_message() -> str:
+    """
+    Idle Reflection メッセージを組み立てる。
+    """
+    return (
+        "[SYSTEM_EVENT: IDLE_REFLECTION] 現在はアイドルタイムです。"
+        "ユーザーとの本日の会話履歴（Tier 2）や現在のタスク（Tier 3）を振り返ってください。"
+        "ユーザーの目標達成や明日の作業を支援するために、あなたが「自発的に行っておくべきこと」はありますか？ "
+        "必要であれば Web 検索や各種ツールを使って行動して構いません。"
+        "特に何もなければ、何もせず終了して構いません。"
+    )
+
+
 def _handle_message(
     user_input: str,
     conversation_history: list[dict[str, str]],
