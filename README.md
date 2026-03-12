@@ -109,7 +109,4 @@ ancilla batch summarize
 - `update_memory` … USER.md / AGENT.md 更新
 - `search_memory` … 長期記憶（要約）のベクトル検索
 - `manage_state` … SQLite（tasks, reminders, finances, audit_log）の CRUD
-
-## ライセンス
-
-未定
+- `notify_user` … Discord への能動通知（message, source(system/report/email), level(info/notice/warning/critical), title を指定）
