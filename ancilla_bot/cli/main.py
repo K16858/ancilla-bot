@@ -50,6 +50,9 @@ DEFAULT_CONVERSATION_DIR = Path(os.getenv("ANCILLA_CONVERSATION_DIR", "data/conv
 # メッセージ待ち行列
 PENDING_MESSAGES: list[dict[str, Any]] = []
 
+# Fast Heartbeat 用の直近日付（YYYY-MM-DD）。プロセス内でのみ保持する。
+_LAST_HEARTBEAT_DATE: str | None = None
+
 
 def _reasoning_line(text: str, dim: bool) -> str:
     if dim and sys.stderr.isatty():
@@ -128,10 +131,21 @@ def _slow_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
         stop.wait(HEARTBEAT_INTERVAL_SEC)
 
 
-def _build_fast_heartbeat_message(tasks: list, reminders: list) -> str:
-    """取得したタスク・リマインダーから擬似メッセージを組み立てる。"""
+def _build_fast_heartbeat_message(
+    tasks: list,
+    reminders: list,
+    *,
+    date_changed: bool,
+    today: str,
+) -> str:
+    """取得したタスク・リマインダーと日付変更イベントから擬似メッセージを組み立てる。"""
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    parts = [f"[SYSTEM_EVENT: HEARTBEAT] 現在時刻は{now_str}です。"]
+    if date_changed:
+        parts = [
+            f"[SYSTEM_EVENT] 日付が {today} に変更されました。現在時刻は{now_str}です。"
+        ]
+    else:
+        parts = [f"[SYSTEM_EVENT] 現在時刻は{now_str}です。"]
     for t in tasks:
         parts.append(f"タスクID #{t['id']}: {t['content']}（予定: {t['scheduled_at']}）")
     for r in reminders:
@@ -144,19 +158,29 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
     """該当タスク・リマインダーがあれば擬似メッセージを ReAct に投入。"""
     while not stop.is_set():
         try:
-            if not has_due_work():
+            now = datetime.now()
+            today = now.strftime("%Y-%m-%d")
+            global _LAST_HEARTBEAT_DATE
+            date_changed = _LAST_HEARTBEAT_DATE is not None and today != _LAST_HEARTBEAT_DATE
+            _LAST_HEARTBEAT_DATE = today
+
+            if not date_changed and not has_due_work(at=now):
                 stop.wait(HEARTBEAT_INTERVAL_SEC)
                 continue
             if not lock.acquire(blocking=False):
                 stop.wait(HEARTBEAT_INTERVAL_SEC)
                 continue
             try:
-                now = datetime.now()
                 tasks = get_due_tasks(at=now)
                 reminders = get_due_reminders(at=now)
-                if not tasks and not reminders:
+                if not date_changed and not tasks and not reminders:
                     continue
-                pseudo = _build_fast_heartbeat_message(tasks, reminders)
+                pseudo = _build_fast_heartbeat_message(
+                    tasks,
+                    reminders,
+                    date_changed=date_changed,
+                    today=today,
+                )
                 history = load_active_history()
                 response = run_agent_loop_with_tools(pseudo, history, on_turn=None)
                 mark_tasks_completed([t["id"] for t in tasks])
