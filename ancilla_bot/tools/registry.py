@@ -9,6 +9,7 @@ from ancilla_bot.batch.vector_store import search_summaries
 from ancilla_bot.heartbeat.db import manage_state as heartbeat_manage_state
 from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.tools.fetch_page import fetch_page
+from ancilla_bot.tools.notify_user import notify_user
 from ancilla_bot.tools.searxng_client import search as searxng_search
 from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
 from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
@@ -23,6 +24,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "update_memory": "Update USER.md or AGENT.md. action_input: {\"file\": \"USER\" or \"AGENT\", \"content\": \"content\"}. Use sparingly.",
     "search_memory": "Search past conversation summaries (long-term memory). action_input: {\"query\": \"search query\", \"max_results\": 3}. max_results optional (default 3). Use when you need to recall past topics.",
     "manage_state": "SQLite CRUD: table (tasks|reminders|finances|audit_log), operation (insert|select|update|delete), payload (dict). insert tasks/reminders: {scheduled_at, content}. insert finances: {amount, category, memo?, date?}. select: {limit?, completed?}. update: {id, ...fields}. delete: {id}.",
+    "notify_user": "Send a proactive notification to the user via Discord. action_input: {\"message\": \"text\", \"source\": \"system|report|email\", \"level\": \"info|notice|warning|critical\", \"title\": \"optional title\"}. source optional (default \"report\"), level optional (default \"info\").",
 }
 
 
@@ -104,6 +106,7 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "update_memory": update_memory,
     "search_memory": search_memory,
     "manage_state": manage_state,
+    "notify_user": notify_user,
 }
 
 
