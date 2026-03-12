@@ -106,6 +106,9 @@ async def _notify_loop(client: discord.Client) -> None:
             msg = (rec.get("message") or "").strip()
             if not msg:
                 continue
+            title = (rec.get("title") or "").strip()
+            if title:
+                msg = f"**[{title}]**\n{msg}"
             if len(msg) > NOTIFY_MAX_MESSAGE_CHARS:
                 msg = msg[:NOTIFY_MAX_MESSAGE_CHARS] + "..."
             try:
