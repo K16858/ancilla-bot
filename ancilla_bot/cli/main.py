@@ -119,15 +119,26 @@ def _slow_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 if lock.acquire(blocking=False):
                     try:
                         from ancilla_bot.batch.summarize import run_summarize
+
+                        # その日の要約・ベクトル化
                         run_summarize()
                         last_run_path.write_text(today, encoding="utf-8")
-                        logger.info("slow heartbeat: run_summarize done for {}", today)
+                        logger.info("run_summarize done for {}", today)
+
+                        # Idle Reflection（Open Reflection）を 1 回だけ実行
+                        idle_msg = _build_idle_reflection_message()
+                        history = load_active_history()
+                        try:
+                            _ = run_agent_loop_with_tools(idle_msg, history, on_turn=None)
+                            logger.info("idle reflection completed for {}", today)
+                        except Exception as e:
+                            logger.warning("idle reflection failed: {}", e)
                     except Exception as e:
-                        logger.warning("slow heartbeat run_summarize failed: {}", e)
+                        logger.warning("run_summarize failed: {}", e)
                     finally:
                         lock.release()
         except Exception as e:
-            logger.warning("slow heartbeat loop error: {}", e)
+            logger.warning("loop error: {}", e)
         stop.wait(HEARTBEAT_INTERVAL_SEC)
 
 
