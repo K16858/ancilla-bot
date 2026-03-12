@@ -28,9 +28,10 @@ def append_notification(
     source: str = "heartbeat",
     level: str = "info",
     detail: str | None = None,
+    title: str | None = None,
 ) -> None:
     """
-    送信待ちの通知を 1 件、pending.jsonl に追記する。
+    送信待ちの通知を 1 件、pending.jsonl に追記する
     """
     path = _pending_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -41,6 +42,8 @@ def append_notification(
         "level": level,
         "message": message,
     }
+    if title is not None:
+        record["title"] = title
     if detail is not None:
         record["detail"] = detail
     with path.open("a", encoding="utf-8") as f:
