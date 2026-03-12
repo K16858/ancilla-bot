@@ -31,7 +31,7 @@ def append_notification(
     title: str | None = None,
 ) -> None:
     """
-    送信待ちの通知を 1 件、pending.jsonl に追記する
+    送信待ちの通知を 1 件、pending.jsonl に追記する。
     """
     path = _pending_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -48,3 +48,16 @@ def append_notification(
         record["detail"] = detail
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def append_report(title: str, message: str, detail: str | None = None) -> None:
+    """
+    自律的な報告・共有をキューに追加するヘルパー
+    """
+    append_notification(
+        message=message,
+        source="proposal_box",
+        level="info",
+        detail=detail,
+        title=title,
+    )
