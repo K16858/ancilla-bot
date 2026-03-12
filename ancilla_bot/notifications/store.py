@@ -25,13 +25,15 @@ def _pending_path() -> Path:
 
 def append_notification(
     message: str,
-    source: str = "heartbeat",
+    source: str = "system",
     level: str = "info",
     detail: str | None = None,
     title: str | None = None,
 ) -> None:
     """
-    送信待ちの通知を 1 件、pending.jsonl に追記する。
+    送信待ちの能動通知を 1 件、pending.jsonl に追記する。
+
+    source は system / report / email などを想定する。
     """
     path = _pending_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -52,12 +54,6 @@ def append_notification(
 
 def append_report(title: str, message: str, detail: str | None = None) -> None:
     """
-    自律的な報告・共有をキューに追加するヘルパー
+    自律的な報告・共有（提案箱相当）をキューに追加するヘルパー
     """
-    append_notification(
-        message=message,
-        source="proposal_box",
-        level="info",
-        detail=detail,
-        title=title,
-    )
+    append_notification(message=message, source="report", level="info", detail=detail, title=title)

@@ -166,7 +166,7 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                     if msg:
                         append_notification(
                             msg,
-                            source="heartbeat",
+                            source="system",
                             level="info",
                             detail=f"tasks={len(tasks)}, reminders={len(reminders)}",
                         )

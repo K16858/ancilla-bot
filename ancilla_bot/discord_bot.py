@@ -107,8 +107,18 @@ async def _notify_loop(client: discord.Client) -> None:
             if not msg:
                 continue
             title = (rec.get("title") or "").strip()
+            source = (rec.get("source") or "").strip()
+            prefix = ""
+            if source == "system":
+                prefix = "[システム] "
+            elif source == "report":
+                prefix = "[報告] "
+            elif source == "email":
+                prefix = "[メール] "
             if title:
-                msg = f"**[{title}]**\n{msg}"
+                msg = f"{prefix}**[{title}]**\n{msg}"
+            elif prefix:
+                msg = prefix + msg
             if len(msg) > NOTIFY_MAX_MESSAGE_CHARS:
                 msg = msg[:NOTIFY_MAX_MESSAGE_CHARS] + "..."
             try:
