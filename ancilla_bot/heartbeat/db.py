@@ -1,5 +1,5 @@
 """
-SQLite: tasks, reminders, finances, audit_log。
+SQLite: user_tasks, agent_tasks, reminders, finances, audit_log。
 ツールは manage_state 1 本で CRUD。Heartbeat 用は get_due_* / mark_* を利用。
 """
 
@@ -17,7 +17,7 @@ DEFAULT_CONVERSATION_DIR = Path(
 )
 
 # ツールから操作可能なテーブル（ホワイトリスト）
-ALLOWED_TABLES = ("tasks", "reminders", "finances", "audit_log")
+ALLOWED_TABLES = ("user_tasks", "agent_tasks", "reminders", "finances", "audit_log")
 
 
 def get_db_path() -> Path:
@@ -31,8 +31,18 @@ def _conn() -> sqlite3.Connection:
     return sqlite3.connect(str(path))
 
 
-_SCHEMA_TASKS = """
-CREATE TABLE IF NOT EXISTS tasks (
+_SCHEMA_USER_TASKS = """
+CREATE TABLE IF NOT EXISTS user_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scheduled_at TEXT NOT NULL,
+    content TEXT NOT NULL,
+    completed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+)
+"""
+
+_SCHEMA_AGENT_TASKS = """
+CREATE TABLE IF NOT EXISTS agent_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     scheduled_at TEXT NOT NULL,
     content TEXT NOT NULL,
@@ -75,7 +85,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
 def ensure_schema() -> None:
     """全テーブルがなければ作成する。"""
     with _conn() as c:
-        c.executescript(_SCHEMA_TASKS)
+        c.executescript(_SCHEMA_USER_TASKS)
+        c.executescript(_SCHEMA_AGENT_TASKS)
         c.executescript(_SCHEMA_REMINDERS)
         c.executescript(_SCHEMA_FINANCES)
         c.executescript(_SCHEMA_AUDIT_LOG)
@@ -101,22 +112,30 @@ def _row_to_dict(cursor: sqlite3.Cursor, row: tuple) -> dict[str, Any]:
     return dict(zip(names, row))
 
 
-def get_due_tasks(*, at: datetime | None = None) -> list[dict[str, Any]]:
-    """
-    実行予定時刻 <= at かつ未完了の tasks を返す。
-    at 省略時は現在時刻。0 件なら LLM に触れず return する用途。
-    """
+def _get_due_from_table(table: str, *, at: datetime | None = None) -> list[dict[str, Any]]:
+    """共通: 指定テーブルから due 行を取得（tasks 系・reminders 用）。"""
     at = at or datetime.now()
     ts = at.strftime("%Y-%m-%d %H:%M:%S")
     ensure_schema()
     with _conn() as conn:
         cur = conn.execute(
-            "SELECT id, scheduled_at, content, completed, created_at FROM tasks "
+            f"SELECT id, scheduled_at, content, completed, created_at FROM {table} "
             "WHERE scheduled_at <= ? AND completed = 0 ORDER BY scheduled_at ASC",
             (ts,),
         )
         rows = cur.fetchall()
         return [_row_to_dict(cur, r) for r in rows]
+
+
+def get_due_tasks(*, at: datetime | None = None) -> list[dict[str, Any]]:
+    """
+    実行予定時刻 <= at かつ未完了の user_tasks / agent_tasks をまとめて返す。
+    at 省略時は現在時刻。0 件なら LLM に触れず return する用途。
+    """
+    tasks: list[dict[str, Any]] = []
+    tasks.extend(_get_due_from_table("user_tasks", at=at))
+    tasks.extend(_get_due_from_table("agent_tasks", at=at))
+    return tasks
 
 
 def get_due_reminders(*, at: datetime | None = None) -> list[dict[str, Any]]:
@@ -124,17 +143,7 @@ def get_due_reminders(*, at: datetime | None = None) -> list[dict[str, Any]]:
     実行予定時刻 <= at かつ未完了の reminders を返す。
     at 省略時は現在時刻。
     """
-    at = at or datetime.now()
-    ts = at.strftime("%Y-%m-%d %H:%M:%S")
-    ensure_schema()
-    with _conn() as conn:
-        cur = conn.execute(
-            "SELECT id, scheduled_at, content, completed, created_at FROM reminders "
-            "WHERE scheduled_at <= ? AND completed = 0 ORDER BY scheduled_at ASC",
-            (ts,),
-        )
-        rows = cur.fetchall()
-        return [_row_to_dict(cur, r) for r in rows]
+    return _get_due_from_table("reminders", at=at)
 
 
 def has_due_work(*, at: datetime | None = None) -> bool:
@@ -145,15 +154,22 @@ def has_due_work(*, at: datetime | None = None) -> bool:
 
 
 def mark_tasks_completed(task_ids: list[int]) -> None:
-    """指定した task id を完了済みにする。Heartbeat が ReAct に渡した後にスクリプト側で呼ぶ。"""
+    """指定した task id を完了済みにする。user_tasks / agent_tasks の両方を対象とする。"""
     if not task_ids:
         return
     ensure_schema()
     with _conn() as c:
         placeholders = ",".join("?" * len(task_ids))
+        params = task_ids
+        # user_tasks
         c.execute(
-            f"UPDATE tasks SET completed = 1 WHERE id IN ({placeholders})",
-            task_ids,
+            f"UPDATE user_tasks SET completed = 1 WHERE id IN ({placeholders})",
+            params,
+        )
+        # agent_tasks
+        c.execute(
+            f"UPDATE agent_tasks SET completed = 1 WHERE id IN ({placeholders})",
+            params,
         )
 
 
@@ -172,7 +188,7 @@ def mark_reminders_completed(reminder_ids: list[int]) -> None:
 
 def _validate_insert_payload(table: str, payload: dict[str, Any]) -> str | None:
     """insert 用 payload を検証。エラー時はメッセージ、OK 時は None。"""
-    if table in ("tasks", "reminders"):
+    if table in ("user_tasks", "agent_tasks", "reminders"):
         if not (payload.get("scheduled_at") and payload.get("content")):
             return "Error: tasks/reminders require scheduled_at and content."
         return None
@@ -194,7 +210,7 @@ def manage_state(
 ) -> str:
     """
     SQLite の CRUD。テーブルはホワイトリストのみ。
-    table: tasks | reminders | finances | audit_log
+    table: user_tasks | agent_tasks | reminders | finances | audit_log
     operation: insert | select | update | delete
     payload: 操作ごとの引数。insert は行データ、select は limit/条件、update は id+更新項目、delete は id。
     """
@@ -215,7 +231,7 @@ def manage_state(
                 err = _validate_insert_payload(table, payload)
                 if err:
                     return err
-                if table in ("tasks", "reminders"):
+                if table in ("user_tasks", "agent_tasks", "reminders"):
                     scheduled_at = str(payload.get("scheduled_at", "")).strip()
                     content = str(payload.get("content", "")).strip()
                     if not content:
@@ -245,7 +261,7 @@ def manage_state(
 
             if operation == "select":
                 limit = max(1, min(int(payload.get("limit", 20)), 100))
-                if table in ("tasks", "reminders"):
+                if table in ("user_tasks", "agent_tasks", "reminders"):
                     order = "ORDER BY scheduled_at ASC"
                     where = []
                     params: list[Any] = []
