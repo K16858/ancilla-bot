@@ -30,15 +30,18 @@ async def _call_daemon(message: str, images: list[str] | None = None) -> str:
     if images:
         payload["images"] = images[:4]
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
             return (data.get("response") or "")[:MAX_RESPONSE_CHARS]
     except httpx.ConnectError:
         return "デーモンに接続できません。ancilla run が起動しているか確認してください。"
+    except httpx.TimeoutException:
+        return "エラー: 応答がタイムアウトしました。処理に時間がかかっている可能性があります。"
     except Exception as e:
-        return f"エラー: {e}"
+        err_msg = str(e).strip() if e else ""
+        return f"エラー: {err_msg}" if err_msg else "エラー: 応答の取得に失敗しました。"
 
 
 async def _download_images(attachments: list[discord.Attachment]) -> list[str]:
