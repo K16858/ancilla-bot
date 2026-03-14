@@ -295,9 +295,9 @@ def manage_state(
                 if row_id is None:
                     return "Error: update requires id in payload."
                 row_id = int(row_id)
-                allowed_cols = {"completed", "scheduled_at", "content"} if table in ("tasks", "reminders") else {"amount", "category", "memo", "date"} if table == "finances" else set()
+                allowed_cols = {"completed", "scheduled_at", "content"} if table in ("user_tasks", "agent_tasks", "reminders") else {"amount", "category", "memo", "date"} if table == "finances" else set()
                 if not allowed_cols:
-                    return "Error: audit_log does not support update."
+                    return f"Error: {table} does not support update."
                 sets = []
                 params: list[Any] = []
                 for k, v in payload.items():
