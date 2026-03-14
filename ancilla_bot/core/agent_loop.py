@@ -65,6 +65,13 @@ def is_exit_command(text: str) -> bool:
     return normalized in EXIT_COMMANDS
 
 
+def _is_system_event_prompt(user_input: str) -> bool:
+    """
+    擬似ユーザーメッセージ（Fast Heartbeat / Idle Reflection 等）かどうか
+    """
+    return (user_input or "").strip().startswith("[SYSTEM_EVENT]")
+
+
 def run_minimal_agent_loop(
     user_input: str,
     conversation_history: list[dict[str, str]] | None = None,
@@ -137,7 +144,11 @@ def run_agent_loop_with_tools(
             if retry_after_verify:
                 logger.info("final_answer (after retry) returned len={}", len(parsed.final_answer))
                 return parsed.final_answer
-            do_verify = VERIFY_ANSWER and (not VERIFY_ONLY_AFTER_TOOL or turn >= 1)
+            do_verify = (
+                VERIFY_ANSWER
+                and not _is_system_event_prompt(user_input)
+                and (not VERIFY_ONLY_AFTER_TOOL or turn >= 1)
+            )
             if do_verify and not verify_answer(user_input, parsed.final_answer):
                 messages.append({"role": "assistant", "content": raw})
                 messages.append({"role": "user", "content": RETRY_USER_MESSAGE})
