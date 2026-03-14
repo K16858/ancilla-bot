@@ -305,7 +305,10 @@ def manage_state(
                         continue
                     if k in allowed_cols:
                         sets.append(f"{k} = ?")
-                        params.append(v)
+                        if k == "completed" and isinstance(v, bool):
+                            params.append(1 if v else 0)
+                        else:
+                            params.append(v)
                 if not sets:
                     return "Error: no updatable fields in payload."
                 params.append(row_id)
