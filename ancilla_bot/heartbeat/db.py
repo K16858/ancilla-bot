@@ -1,5 +1,5 @@
 """
-SQLite: user_tasks, agent_tasks, reminders, finances, audit_log。
+SQLite: user_tasks, agent_tasks, reminders, finances, interests, audit_log。
 ツールは manage_state 1 本で CRUD。Heartbeat 用は get_due_* / mark_* を利用。
 """
 
@@ -17,7 +17,7 @@ DEFAULT_CONVERSATION_DIR = Path(
 )
 
 # ツールから操作可能なテーブル（ホワイトリスト）
-ALLOWED_TABLES = ("user_tasks", "agent_tasks", "reminders", "finances", "audit_log")
+ALLOWED_TABLES = ("user_tasks", "agent_tasks", "reminders", "finances", "interests", "audit_log")
 
 
 def get_db_path() -> Path:
@@ -72,6 +72,17 @@ CREATE TABLE IF NOT EXISTS finances (
 )
 """
 
+_SCHEMA_INTERESTS = """
+CREATE TABLE IF NOT EXISTS interests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'interested',
+    url TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+)
+"""
+
 _SCHEMA_AUDIT_LOG = """
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,6 +100,7 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_AGENT_TASKS)
         c.executescript(_SCHEMA_REMINDERS)
         c.executescript(_SCHEMA_FINANCES)
+        c.executescript(_SCHEMA_INTERESTS)
         c.executescript(_SCHEMA_AUDIT_LOG)
 
 
@@ -196,6 +208,10 @@ def _validate_insert_payload(table: str, payload: dict[str, Any]) -> str | None:
         if "amount" not in payload or "category" not in payload:
             return "Error: finances require amount and category. memo and date are optional."
         return None
+    if table == "interests":
+        if not payload.get("name"):
+            return "Error: interests require name. description, status, url are optional."
+        return None
     if table == "audit_log":
         if not payload.get("tool_name"):
             return "Error: audit_log requires tool_name. args_summary optional."
@@ -210,7 +226,7 @@ def manage_state(
 ) -> str:
     """
     SQLite の CRUD。テーブルはホワイトリストのみ。
-    table: user_tasks | agent_tasks | reminders | finances | audit_log
+    table: user_tasks | agent_tasks | reminders | finances | interests | audit_log
     operation: insert | select | update | delete
     payload: 操作ごとの引数。insert は行データ、select は limit/条件、update は id+更新項目、delete は id。
     """
@@ -249,6 +265,17 @@ def manage_state(
                         "INSERT INTO finances (amount, category, memo, date, created_at) VALUES (?, ?, ?, ?, ?)",
                         (amount, category, memo, date, now),
                     )
+                elif table == "interests":
+                    name = str(payload.get("name", "")).strip()
+                    if not name:
+                        return "Error: name is required."
+                    description = str(payload.get("description", "")).strip()[:2000]
+                    status = str(payload.get("status", "")).strip() or "interested"
+                    url = str(payload.get("url", "")).strip()[:2000]
+                    c.execute(
+                        "INSERT INTO interests (name, description, status, url, created_at) VALUES (?, ?, ?, ?, ?)",
+                        (name, description, status, url, now),
+                    )
                 else:  # audit_log
                     tool_name = str(payload.get("tool_name", "")).strip() or "unknown"
                     args_summary = str(payload.get("args_summary", "")).strip()[:500]
@@ -279,6 +306,11 @@ def manage_state(
                         "SELECT id, amount, category, memo, date, created_at FROM finances ORDER BY date DESC, id DESC LIMIT ?",
                         (limit,),
                     )
+                elif table == "interests":
+                    c.execute(
+                        "SELECT id, name, description, status, url, created_at FROM interests ORDER BY id DESC LIMIT ?",
+                        (limit,),
+                    )
                 else:  # audit_log
                     c.execute(
                         "SELECT id, tool_name, args_summary, created_at FROM audit_log ORDER BY id DESC LIMIT ?",
@@ -295,7 +327,12 @@ def manage_state(
                 if row_id is None:
                     return "Error: update requires id in payload."
                 row_id = int(row_id)
-                allowed_cols = {"completed", "scheduled_at", "content"} if table in ("user_tasks", "agent_tasks", "reminders") else {"amount", "category", "memo", "date"} if table == "finances" else set()
+                allowed_cols = (
+                    {"completed", "scheduled_at", "content"} if table in ("user_tasks", "agent_tasks", "reminders")
+                    else {"amount", "category", "memo", "date"} if table == "finances"
+                    else {"name", "description", "status", "url"} if table == "interests"
+                    else set()
+                )
                 if not allowed_cols:
                     return f"Error: {table} does not support update."
                 sets = []

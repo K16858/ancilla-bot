@@ -23,7 +23,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "write_file": "Write to a file in workspace. action_input: {\"path\": \"NOTE.md\", \"content\": \"content\"}.",
     "update_memory": "Update USER.md or AGENT.md. action_input: {\"file\": \"USER\" or \"AGENT\", \"content\": \"content\"}. Use sparingly.",
     "search_memory": "Search past conversation summaries (long-term memory). action_input: {\"query\": \"search query\", \"max_results\": 3}. max_results optional (default 3). Use when you need to recall past topics.",
-    "manage_state": "SQLite CRUD: table (user_tasks|agent_tasks|reminders|finances|audit_log), operation (insert|select|update|delete), payload (dict). insert tasks/reminders: {scheduled_at, content}. insert finances: {amount, category, memo?, date?}. select: {limit?, completed?}. update: {id, ...fields}. delete: {id}.",
+    "manage_state": "SQLite CRUD: table (user_tasks|agent_tasks|reminders|finances|interests|audit_log), operation (insert|select|update|delete), payload (dict). insert tasks/reminders: {scheduled_at, content}. insert finances: {amount, category, memo?, date?}. insert interests: {name}, optional {description, status, url}. select: {limit?, completed?} for tasks/reminders, {limit} for others. update: {id, ...fields}. delete: {id}.",
     "notify_user": "Send a proactive notification to the user via Discord. action_input: {\"message\": \"text\", \"source\": \"system|report|email\", \"level\": \"info|notice|warning|critical\", \"title\": \"optional title\"}. source optional (default \"report\"), level optional (default \"info\").",
 }
 

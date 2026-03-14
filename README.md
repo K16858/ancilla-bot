@@ -108,5 +108,5 @@ ancilla batch summarize
 - `read_file` / `write_file` … workspace 内ファイル
 - `update_memory` … USER.md / AGENT.md 更新
 - `search_memory` … 長期記憶（要約）のベクトル検索
-- `manage_state` … SQLite（user_tasks, agent_tasks, reminders, finances, audit_log）の CRUD
+- `manage_state` … SQLite（user_tasks, agent_tasks, reminders, finances, interests, audit_log）の CRUD
 - `notify_user` … Discord への能動通知（message, source(system/report/email), level(info/notice/warning/critical), title を指定）
