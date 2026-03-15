@@ -13,6 +13,7 @@ dependencies = [
     "httpx",
     "pydantic",
     "python-dotenv",
+    "websockets",
 ]
 
 [project.scripts]
