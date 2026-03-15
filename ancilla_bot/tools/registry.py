@@ -11,6 +11,8 @@ from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.tools.fetch_page import fetch_page
 from ancilla_bot.tools.notify_user import notify_user
 from ancilla_bot.tools.searxng_client import search as searxng_search
+from ancilla_bot.tools.workspace_io import edit_file_safe as workspace_edit_file_safe
+from ancilla_bot.tools.workspace_io import list_workspace as workspace_list_workspace
 from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
 from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
 
@@ -19,6 +21,8 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_time": "Return current date/time. action_input: {}.",
     "web_search": "Search the web. action_input: {\"query\": \"search query\", \"max_results\": 5}. max_results optional (default 5).",
     "fetch_page": "Get the main text of a web page. action_input: {\"url\": \"https://example.com/page\", \"max_chars\": 8000}. max_chars optional (default from config). Only http/https URLs are allowed.",
+    "list_workspace": "List files and directories in workspace. action_input: {\"path\": \"\" or \"docs\"}, optional {\"max_entries\": 100, \"max_depth\": 4}. Returns relative paths (use as path in read_file).",
+    "edit_file_safe": "Append or replace in a file (no full overwrite). action_input: {\"path\": \"...\", \"operation\": \"append\"|\"replace\"}. append: {\"content\": \"...\"}. replace (string): {\"old\": \"...\", \"new\": \"...\"} (old can be multiline). replace (lines): {\"start_line\": N, \"end_line\": M, \"new\": \"...\"} (1-based).",
     "read_file": "Read a file in workspace. action_input: {\"path\": \"NOTE.md\"}.",
     "write_file": "Write to a file in workspace. action_input: {\"path\": \"NOTE.md\", \"content\": \"content\"}.",
     "update_memory": "Update USER.md or AGENT.md. action_input: {\"file\": \"USER\" or \"AGENT\", \"content\": \"content\"}. Use sparingly.",
@@ -50,9 +54,47 @@ def web_search(query: str, max_results: int = 5, **kwargs: Any) -> str:
     )
 
 
+def list_workspace(
+    path: str = "",
+    max_entries: int = 100,
+    max_depth: int = 4,
+    **kwargs: Any,
+) -> str:
+    """workspace 内のファイル・ディレクトリ一覧を返す。"""
+    return workspace_list_workspace(
+        path=path,
+        max_entries=max_entries,
+        max_depth=max_depth,
+        **kwargs,
+    )
+
+
 def read_file(path: str, **kwargs: Any) -> str:
     """workspace 内のファイルを読み込む。"""
     return workspace_read_file(path=path, **kwargs)
+
+
+def edit_file_safe(
+    path: str,
+    operation: str,
+    content: str | None = None,
+    old: str | None = None,
+    new: str | None = None,
+    start_line: int | None = None,
+    end_line: int | None = None,
+    **kwargs: Any,
+) -> str:
+    """workspace 内のファイルに追記または置換（全上書きは禁止）。"""
+    return workspace_edit_file_safe(
+        path=path,
+        operation=operation,
+        content=content,
+        old=old,
+        new=new,
+        start_line=start_line,
+        end_line=end_line,
+        **kwargs,
+    )
 
 
 def write_file(path: str, content: str, **kwargs: Any) -> str:
@@ -101,6 +143,8 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "get_time": get_time,
     "web_search": web_search,
     "fetch_page": fetch_page,
+    "list_workspace": list_workspace,
+    "edit_file_safe": edit_file_safe,
     "read_file": read_file,
     "write_file": write_file,
     "update_memory": update_memory,
