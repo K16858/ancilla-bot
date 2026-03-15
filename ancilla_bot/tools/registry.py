@@ -24,7 +24,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "list_workspace": "List files and directories in workspace. action_input: {\"path\": \"\" or \"docs\"}, optional {\"max_entries\": 100, \"max_depth\": 4}. Returns relative paths (use as path in read_file).",
     "edit_file_safe": "Append or replace in a file (no full overwrite). action_input: {\"path\": \"...\", \"operation\": \"append\"|\"replace\"}. append: {\"content\": \"...\"}. replace (string): {\"old\": \"...\", \"new\": \"...\"} (old can be multiline). replace (lines): {\"start_line\": N, \"end_line\": M, \"new\": \"...\"} (1-based).",
     "run_python_script": "Run a .py file in workspace. action_input: {\"path\": \"scripts/foo.py\"}, optional {\"timeout_sec\": 60, \"args\": [\"--x\", \"y\"], \"stdin_text\": \"...\"}. Timeout required. Returns stdout+stderr.",
-    "read_file": "Read a file in workspace. action_input: {\"path\": \"NOTE.md\"}.",
+    "read_file": "Read a file in workspace. action_input: {\"path\": \"NOTE.md\"}, optional {\"max_lines\": 2000}. Truncates after max_lines to avoid context overflow.",
     "write_file": "Write to a file in workspace. action_input: {\"path\": \"NOTE.md\", \"content\": \"content\"}.",
     "update_memory": "Update USER.md or AGENT.md. action_input: {\"file\": \"USER\" or \"AGENT\", \"content\": \"content\"}. Use sparingly.",
     "search_memory": "Search past conversation summaries (long-term memory). action_input: {\"query\": \"search query\", \"max_results\": 3}. max_results optional (default 3). Use when you need to recall past topics.",
@@ -70,9 +70,9 @@ def list_workspace(
     )
 
 
-def read_file(path: str, **kwargs: Any) -> str:
-    """workspace 内のファイルを読み込む。"""
-    return workspace_read_file(path=path, **kwargs)
+def read_file(path: str, max_lines: int | None = None, **kwargs: Any) -> str:
+    """workspace 内のファイルを読み込む。max_lines で行数制限（省略時 2000）。"""
+    return workspace_read_file(path=path, max_lines=max_lines, **kwargs)
 
 
 def edit_file_safe(

@@ -23,10 +23,15 @@ def _resolve(path_str: str) -> Path | None:
     return p
 
 
-def read_file(path: str, **kwargs: object) -> str:
+DEFAULT_READ_MAX_LINES = 2000
+MAX_READ_LINES_LIMIT = 10000
+
+
+def read_file(path: str, max_lines: int | None = None, **kwargs: object) -> str:
     """
     workspace 内のファイルを読み込む。
     path: workspace からの相対パス（例: NOTE.md）
+    max_lines: 最大行数。超過分は切り捨てて末尾に "... (truncated, max_lines=N)" を付与。省略時は DEFAULT_READ_MAX_LINES。
     """
     _ = kwargs
     resolved = _resolve(path)
@@ -35,9 +40,16 @@ def read_file(path: str, **kwargs: object) -> str:
     if not resolved.exists():
         return f"Error: ファイルが存在しません: {path}"
     try:
-        return resolved.read_text(encoding="utf-8")
+        text = resolved.read_text(encoding="utf-8")
     except OSError as e:
         return f"Error: 読み込みに失敗しました: {e}"
+    limit = max_lines if max_lines is not None else DEFAULT_READ_MAX_LINES
+    limit = min(max(limit, 1), MAX_READ_LINES_LIMIT)
+    lines = text.splitlines(keepends=True)
+    if len(lines) <= limit:
+        return text
+    head = "".join(lines[:limit])
+    return head + f"\n... (truncated, max_lines={limit})"
 
 
 DEFAULT_LIST_MAX_ENTRIES = 100
