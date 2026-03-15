@@ -105,7 +105,10 @@ ancilla batch summarize
 - `get_time` … 現在日時
 - `web_search` … Web 検索（SearXNG）
 - `fetch_page` … 指定 URL のページ本文取得（HTML 除去、http/https のみ）
-- `read_file` / `write_file` … workspace 内ファイル
+- `list_workspace` … workspace 内のファイル・ディレクトリ一覧（path, max_entries, max_depth）。相対パスで返すので read_file にそのまま渡せる
+- `read_file` / `write_file` … workspace 内ファイル。`read_file` は `max_lines` で行数制限可能（省略時 2000、コンテキスト枯渇防止）
+- `edit_file_safe` … 追記（append）・置換（replace）のみ。全上書きは禁止。重要な編集はこちらを推奨
+- `run_python_script` … workspace 内の .py を実行（path, timeout_sec, args, stdin_text）。タイムアウト必須
 - `update_memory` … USER.md / AGENT.md 更新
 - `search_memory` … 長期記憶（要約）のベクトル検索
 - `manage_state` … SQLite（user_tasks, agent_tasks, reminders, finances, interests, audit_log）の CRUD
