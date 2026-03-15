@@ -27,6 +27,7 @@ from ancilla_bot.heartbeat.db import (
     mark_tasks_completed,
 )
 from ancilla_bot.api.server import run_server
+from ancilla_bot.api.ws_server import run_ws_server
 from ancilla_bot.memory.compress import compress_once, should_compress
 from ancilla_bot.memory.conversation_store import append_overflow, load_active_history, save_active_history
 from ancilla_bot.memory.short_term import append_and_trim
@@ -402,6 +403,16 @@ def _run_resident(args: argparse.Namespace) -> None:
     )
     api_thread.start()
     logger.info("API http://127.0.0.1:{}/chat", api_port)
+
+    ws_port = int(os.getenv("ANCILLA_WS_PORT", "8766"))
+    ws_thread = threading.Thread(
+        target=run_ws_server,
+        args=("127.0.0.1", ws_port),
+        daemon=True,
+        name="ws",
+    )
+    ws_thread.start()
+    logger.info("WebSocket ws://127.0.0.1:{}", ws_port)
 
     slow_thread = threading.Thread(
         target=_slow_heartbeat_loop,
