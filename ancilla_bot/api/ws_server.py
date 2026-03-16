@@ -21,7 +21,7 @@ UPLINK_EVENTS = ("audio_input", "vision_input", "status_update", "session_end")
 
 _current_connection: ServerConnection | None = None
 _downlink_queue: queue.Queue[tuple[str, dict]] = queue.Queue()
-_run_react_cb: Callable[[str, list[dict[str, str]]], str] | None = None
+_run_react_cb: Callable[[str, list[dict[str, str]]], tuple[str, str | None]] | None = None
 _session_mode: Literal["main", "dedicated"] = "main"
 _dedicated_history: list[dict[str, str]] = []
 
@@ -127,21 +127,23 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                             response_text = "音声を認識できませんでした。"
                                         elif _run_react_cb:
                                             try:
-                                                response_text = await loop.run_in_executor(
+                                                response_text, emotion = await loop.run_in_executor(
                                                     None,
                                                     lambda t=text: _run_react_cb(t, _dedicated_history),
                                                 )
                                             except Exception as e:
                                                 logger.warning("ws audio_input ReAct failed: {}", e)
                                                 response_text = "処理中にエラーが発生しました。"
+                                                emotion = None
                                         else:
                                             response_text = text.strip()
+                                            emotion = None
                                     else:
                                         response_text = "音声データのデコードに失敗しました。"
                                 else:
                                     response_text = "音声データがありません。"
                                 if response_text:
-                                    payload = {"emotion_tag": "Neutral", "text": response_text}
+                                    payload = {"emotion": (locals().get("emotion") or "Neutral"), "text": response_text}
                                     wav_bytes = await loop.run_in_executor(
                                         None,
                                         lambda: tts_client.synthesize(response_text),
@@ -184,7 +186,7 @@ async def _handle_connection(websocket: ServerConnection) -> None:
 def run_ws_server(
     host: str,
     port: int,
-    run_react: Callable[[str, list[dict[str, str]]], str] | None = None,
+    run_react: Callable[[str, list[dict[str, str]]], tuple[str, str | None]] | None = None,
 ) -> None:
     """WebSocket サーバーを起動する。run_react(text, history) が渡されていれば audio_input で ReAct を実行する。"""
     global _run_react_cb

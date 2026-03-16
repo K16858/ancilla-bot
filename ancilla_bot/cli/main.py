@@ -445,8 +445,10 @@ def _run_resident(args: argparse.Namespace) -> None:
     logger.info("API http://127.0.0.1:{}/chat", api_port)
 
     ws_port = int(os.getenv("ANCILLA_WS_PORT", "8766"))
-    def run_react_ws(text: str, history: list | None = None) -> str:
-        return _handle_message(
+
+    def run_react_ws(text: str, history: list | None = None) -> tuple[str, str | None]:
+        """WS 用: (answer, emotion) を返す。emotion は None なら Neutral 扱い。"""
+        answer = _handle_message(
             text,
             history if history is not None else [],
             agent_lock,
@@ -454,6 +456,7 @@ def _run_resident(args: argparse.Namespace) -> None:
             None,
             source="ws",
         )
+        return answer, None
     ws_thread = threading.Thread(
         target=run_ws_server,
         args=("127.0.0.1", ws_port),
