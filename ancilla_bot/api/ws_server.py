@@ -17,7 +17,7 @@ from ancilla_bot.api import stt_client, tts_client
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
-UPLINK_EVENTS = ("audio_input", "vision_input", "status_update")
+UPLINK_EVENTS = ("audio_input", "vision_input", "status_update", "session_end")
 
 _current_connection: ServerConnection | None = None
 _downlink_queue: queue.Queue[tuple[str, dict]] = queue.Queue()
@@ -36,6 +36,23 @@ def _get_downlink(timeout: float = 0.2) -> tuple[str, dict] | None:
         return _downlink_queue.get(timeout=timeout)
     except queue.Empty:
         return None
+
+
+def _reset_session_state() -> None:
+    """セッション状態を main に戻し、専用履歴をクリアする"""
+    global _session_mode, _dedicated_history
+    _session_mode = "main"
+    _dedicated_history = []
+
+
+def _end_dedicated_session(send_hide: bool = True) -> None:
+    """専用セッションを終了し、main に戻す。send_hide が True なら hide_avatar を送る。"""
+    global _session_mode, _dedicated_history
+    if _session_mode == "dedicated":
+        _session_mode = "main"
+        _dedicated_history = []
+        if send_hide:
+            send_downlink("ui_control", {"command": "hide_avatar"})
 
 
 async def _handle_connection(websocket: ServerConnection) -> None:
@@ -75,12 +92,19 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                         if event in UPLINK_EVENTS:
                             logger.info("ws event: {}", event)
                             if event == "status_update":
-                                send_downlink("ui_control", {"command": "show_avatar"})
+                                state = data.get("state") if isinstance(data, dict) else None
+                                if state == "disconnected":
+                                    _end_dedicated_session()
+                                else:
+                                    send_downlink("ui_control", {"command": "show_avatar"})
+                            elif event == "session_end":
+                                _end_dedicated_session()
                             elif event == "audio_input":
                                 global _session_mode, _dedicated_history
                                 if _session_mode == "main":
                                     _session_mode = "dedicated"
                                     _dedicated_history = []
+                                    send_downlink("ui_control", {"command": "show_avatar"})
                                 b64 = data.get("data") if isinstance(data.get("data"), str) else None
                                 response_text = ""
                                 if b64:
@@ -148,6 +172,7 @@ async def _handle_connection(websocket: ServerConnection) -> None:
     finally:
         if _current_connection is websocket:
             _current_connection = None
+            _reset_session_state()
         logger.info("ws client disconnected")
 
 
