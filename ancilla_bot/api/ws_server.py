@@ -66,6 +66,8 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                         event = data.get("event") if isinstance(data, dict) else None
                         if event in UPLINK_EVENTS:
                             logger.info("ws event: {}", event)
+                            if event == "status_update":
+                                send_downlink("ui_control", {"command": "show_avatar"})
                         elif event is not None:
                             logger.debug("ws event (unhandled): {}", event)
                     except json.JSONDecodeError:
