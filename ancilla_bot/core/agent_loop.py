@@ -135,6 +135,9 @@ def run_agent_loop_with_tools(
         raw = send_chat(messages, format=schema, images=send_images)
         logger.debug("LLM raw={}", raw[:500] + "..." if len(raw) > 500 else raw)
         try:
+            if not raw or not raw.strip():
+                logger.warning("LLM returned empty response for AgentResponseWithTools")
+                return "内部エラーが発生しました（空の応答）。少し待ってからもう一度試してください。"
             parsed = AgentResponseWithTools.model_validate_json(raw)
         except Exception as e:
             logger.warning("parse failed: {} raw_len={}", e, len(raw))
