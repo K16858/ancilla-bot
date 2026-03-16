@@ -9,6 +9,7 @@ import base64
 import json
 import queue
 from collections.abc import Callable
+from typing import Literal
 
 from loguru import logger
 
@@ -20,7 +21,9 @@ UPLINK_EVENTS = ("audio_input", "vision_input", "status_update")
 
 _current_connection: ServerConnection | None = None
 _downlink_queue: queue.Queue[tuple[str, dict]] = queue.Queue()
-_run_react_cb: Callable[[str], str] | None = None
+_run_react_cb: Callable[[str, list[dict[str, str]]], str] | None = None
+_session_mode: Literal["main", "dedicated"] = "main"
+_dedicated_history: list[dict[str, str]] = []
 
 
 def send_downlink(event: str, payload: dict) -> None:
@@ -74,6 +77,10 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                             if event == "status_update":
                                 send_downlink("ui_control", {"command": "show_avatar"})
                             elif event == "audio_input":
+                                global _session_mode, _dedicated_history
+                                if _session_mode == "main":
+                                    _session_mode = "dedicated"
+                                    _dedicated_history = []
                                 b64 = data.get("data") if isinstance(data.get("data"), str) else None
                                 response_text = ""
                                 if b64:
@@ -93,7 +100,7 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                             try:
                                                 response_text = await loop.run_in_executor(
                                                     None,
-                                                    lambda t=text: _run_react_cb(t),
+                                                    lambda t=text: _run_react_cb(t, _dedicated_history),
                                                 )
                                             except Exception as e:
                                                 logger.warning("ws audio_input ReAct failed: {}", e)
@@ -147,9 +154,9 @@ async def _handle_connection(websocket: ServerConnection) -> None:
 def run_ws_server(
     host: str,
     port: int,
-    run_react: Callable[[str], str] | None = None,
+    run_react: Callable[[str, list[dict[str, str]]], str] | None = None,
 ) -> None:
-    """WebSocket サーバーを起動する。run_react が渡されていれば audio_input で ReAct を実行する。"""
+    """WebSocket サーバーを起動する。run_react(text, history) が渡されていれば audio_input で ReAct を実行する。"""
     global _run_react_cb
     _run_react_cb = run_react
 
