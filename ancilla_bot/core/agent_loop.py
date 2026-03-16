@@ -108,7 +108,7 @@ def run_agent_loop_with_tools(
         [str, str | None, dict[str, Any] | None, str | None], None
     ] | None = None,
     images: list[str] | None = None,
-) -> str:
+) -> tuple[str, str | None]:
     """
     ツール呼び出しありの ReAct ループ。
 
@@ -137,16 +137,19 @@ def run_agent_loop_with_tools(
         try:
             if not raw or not raw.strip():
                 logger.warning("LLM returned empty response for AgentResponseWithTools")
-                return "内部エラーが発生しました（空の応答）。少し待ってからもう一度試してください。"
+                return (
+                    "内部エラーが発生しました（空の応答）。少し待ってからもう一度試してください。",
+                    None,
+                )
             parsed = AgentResponseWithTools.model_validate_json(raw)
         except Exception as e:
             logger.warning("parse failed: {} raw_len={}", e, len(raw))
-            return raw
+            return raw, None
 
         if parsed.final_answer:
             if retry_after_verify:
                 logger.info("final_answer (after retry) returned len={}", len(parsed.final_answer))
-                return parsed.final_answer
+                return parsed.final_answer, parsed.emotion
             do_verify = (
                 VERIFY_ANSWER
                 and not _is_system_event_prompt(user_input)
@@ -160,7 +163,7 @@ def run_agent_loop_with_tools(
             if on_turn is not None:
                 on_turn(parsed.thought, None, None, None)
             logger.info("final_answer returned len={}", len(parsed.final_answer))
-            return parsed.final_answer
+            return parsed.final_answer, parsed.emotion
 
         # action が有効ならツール実行
         if parsed.action and parsed.action in TOOL_REGISTRY:
@@ -195,4 +198,4 @@ def run_agent_loop_with_tools(
             messages.append({"role": "user", "content": observation})
 
     logger.warning("max turns reached")
-    return "最大思考回数に達しました。"
+    return "最大思考回数に達しました。", None

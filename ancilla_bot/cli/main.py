@@ -133,7 +133,7 @@ def _slow_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                         idle_msg = _build_idle_reflection_message()
                         history = load_active_history()
                         try:
-                            _ = run_agent_loop_with_tools(idle_msg, history, on_turn=None)
+                            _response, _emotion = run_agent_loop_with_tools(idle_msg, history, on_turn=None)
                             logger.info("idle reflection completed for {}", today)
                         except Exception as e:
                             logger.warning("idle reflection failed: {}", e)
@@ -200,7 +200,7 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                     today=today,
                 )
                 history = load_active_history()
-                response = run_agent_loop_with_tools(pseudo, history, on_turn=None)
+                response, _emotion = run_agent_loop_with_tools(pseudo, history, on_turn=None)
                 mark_tasks_completed([t["id"] for t in tasks])
                 mark_reminders_completed([r["id"] for r in reminders])
                 if isinstance(response, str):
@@ -286,7 +286,7 @@ def _process_message_core(
     """
     if images and not VISION_ENABLED:
         return "画像処理は無効です。.env で OLLAMA_VISION_ENABLED=true にしてください（メインモデルが視覚対応の場合）。"
-    response = run_agent_loop_with_tools(
+    response, _emotion = run_agent_loop_with_tools(
         user_input, conversation_history, on_turn=on_turn, images=images
     )
     user_msg = {"role": "user", "content": user_input}
