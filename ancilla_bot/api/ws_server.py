@@ -31,6 +31,11 @@ def send_downlink(event: str, payload: dict) -> None:
     _downlink_queue.put((event, payload))
 
 
+def is_dedicated_session() -> bool:
+    """現在が専用セッションかどうか"""
+    return _session_mode == "dedicated"
+
+
 def _get_downlink(timeout: float = 0.2) -> tuple[str, dict] | None:
     try:
         return _downlink_queue.get(timeout=timeout)
