@@ -245,13 +245,23 @@ def _handle_message(
         )
         return "バックグラウンド処理中です。しばらくお待ちください。"
     try:
-        return _process_message_core(
+        result = _process_message_core(
             user_input,
             conversation_history,
             max_chars=max_chars,
             on_turn=on_turn,
             images=images,
         )
+        if agent_lock is not None:
+            threading.Thread(
+                target=_run_compress_with_lock,
+                args=(conversation_history, max_chars, agent_lock),
+                daemon=True,
+                name="compress",
+            ).start()
+        else:
+            _run_compress_loop(conversation_history, max_chars)
+        return result
     finally:
         if agent_lock is not None:
             agent_lock.release()
@@ -282,9 +292,24 @@ def _process_message_core(
     )
     if dropped:
         append_overflow(dropped)
-    while should_compress(conversation_history, max_chars):
-        compress_once(conversation_history, max_chars)
     return response
+
+
+def _run_compress_loop(history: list[dict[str, str]], max_chars: int) -> None:
+    """会話履歴が閾値を超えていれば要約・長期記憶書き込みを繰り返す。"""
+    while should_compress(history, max_chars):
+        compress_once(history, max_chars)
+
+
+def _run_compress_with_lock(
+    history: list[dict[str, str]], max_chars: int, lock: threading.Lock
+) -> None:
+    """agent_lock を取得してから _run_compress_loop を実行する（バックグラウンド用）。"""
+    lock.acquire()
+    try:
+        _run_compress_loop(history, max_chars)
+    finally:
+        lock.release()
 
 
 def _run_repl(
@@ -319,6 +344,15 @@ def _run_repl(
                         on_turn=on_turn,
                         images=pending.get("images"),
                     )
+                    if agent_lock is not None:
+                        threading.Thread(
+                            target=_run_compress_with_lock,
+                            args=(history, MAX_HISTORY_CHARS, agent_lock),
+                            daemon=True,
+                            name="compress",
+                        ).start()
+                    else:
+                        _run_compress_loop(history, MAX_HISTORY_CHARS)
                     print(f"Ancilla (queued): {response}")
                 finally:
                     if agent_lock is not None and agent_lock.locked():
