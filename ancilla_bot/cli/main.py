@@ -447,16 +447,32 @@ def _run_resident(args: argparse.Namespace) -> None:
     ws_port = int(os.getenv("ANCILLA_WS_PORT", "8766"))
 
     def run_react_ws(text: str, history: list | None = None) -> tuple[str, str | None]:
-        """WS 用: (answer, emotion) を返す。emotion は None なら Neutral 扱い。"""
-        answer = _handle_message(
-            text,
-            history if history is not None else [],
-            agent_lock,
-            MAX_HISTORY_CHARS,
-            None,
-            source="ws",
-        )
-        return answer, None
+        """
+        WS 用: (answer, emotion) を返す
+        """
+        conv_history: list[dict[str, str]] = history if history is not None else []
+        if agent_lock is not None and not agent_lock.acquire(blocking=False):
+            return "バックグラウンド処理中です。しばらくお待ちください。", None
+        try:
+            answer, emotion = run_agent_loop_with_tools(
+                text,
+                conv_history,
+                on_turn=None,
+                images=None,
+            )
+            if agent_lock is not None:
+                threading.Thread(
+                    target=_run_compress_with_lock,
+                    args=(conv_history, MAX_HISTORY_CHARS, agent_lock),
+                    daemon=True,
+                    name="compress",
+                ).start()
+            else:
+                _run_compress_loop(conv_history, MAX_HISTORY_CHARS)
+            return answer, emotion
+        finally:
+            if agent_lock is not None:
+                agent_lock.release()
     ws_thread = threading.Thread(
         target=run_ws_server,
         args=("127.0.0.1", ws_port),
