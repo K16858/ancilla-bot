@@ -8,10 +8,11 @@ import asyncio
 import base64
 import json
 import queue
+from collections.abc import Callable
 
 from loguru import logger
 
-from ancilla_bot.api import stt_client
+from ancilla_bot.api import stt_client, tts_client
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
@@ -19,6 +20,7 @@ UPLINK_EVENTS = ("audio_input", "vision_input", "status_update")
 
 _current_connection: ServerConnection | None = None
 _downlink_queue: queue.Queue[tuple[str, dict]] = queue.Queue()
+_run_react_cb: Callable[[str], str] | None = None
 
 
 def send_downlink(event: str, payload: dict) -> None:
@@ -73,6 +75,7 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                 send_downlink("ui_control", {"command": "show_avatar"})
                             elif event == "audio_input":
                                 b64 = data.get("data") if isinstance(data.get("data"), str) else None
+                                response_text = ""
                                 if b64:
                                     try:
                                         audio_bytes = base64.b64decode(b64)
@@ -84,6 +87,33 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                             lambda: stt_client.transcribe(audio_bytes, "audio/wav"),
                                         )
                                         logger.info("ws audio_input STT: {}", text or "(empty)")
+                                        if not (text or "").strip():
+                                            response_text = "音声を認識できませんでした。"
+                                        elif _run_react_cb:
+                                            try:
+                                                response_text = await loop.run_in_executor(
+                                                    None,
+                                                    lambda t=text: _run_react_cb(t),
+                                                )
+                                            except Exception as e:
+                                                logger.warning("ws audio_input ReAct failed: {}", e)
+                                                response_text = "処理中にエラーが発生しました。"
+                                        else:
+                                            response_text = text.strip()
+                                    else:
+                                        response_text = "音声データのデコードに失敗しました。"
+                                else:
+                                    response_text = "音声データがありません。"
+                                if response_text:
+                                    payload = {"emotion_tag": "Neutral", "text": response_text}
+                                    wav_bytes = await loop.run_in_executor(
+                                        None,
+                                        lambda: tts_client.synthesize(response_text),
+                                    )
+                                    if wav_bytes:
+                                        payload["audio_format"] = "wav"
+                                        payload["audio_data"] = base64.b64encode(wav_bytes).decode("ascii")
+                                    send_downlink("agent_response", payload)
                                 else:
                                     logger.debug("ws audio_input: no data")
                         elif event is not None:
@@ -114,8 +144,15 @@ async def _handle_connection(websocket: ServerConnection) -> None:
         logger.info("ws client disconnected")
 
 
-def run_ws_server(host: str, port: int) -> None:
-    """WebSocket サーバーを起動する"""
+def run_ws_server(
+    host: str,
+    port: int,
+    run_react: Callable[[str], str] | None = None,
+) -> None:
+    """WebSocket サーバーを起動する。run_react が渡されていれば audio_input で ReAct を実行する。"""
+    global _run_react_cb
+    _run_react_cb = run_react
+
     async def _serve() -> None:
         async with serve(_handle_connection, host, port) as ws_server:
             logger.info("WebSocket server listening on ws://{}:{}", host, port)

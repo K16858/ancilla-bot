@@ -439,9 +439,13 @@ def _run_resident(args: argparse.Namespace) -> None:
     logger.info("API http://127.0.0.1:{}/chat", api_port)
 
     ws_port = int(os.getenv("ANCILLA_WS_PORT", "8766"))
+    run_react_ws = lambda text: _handle_message(
+        text, [], agent_lock, MAX_HISTORY_CHARS, None, source="ws"
+    )
     ws_thread = threading.Thread(
         target=run_ws_server,
         args=("127.0.0.1", ws_port),
+        kwargs={"run_react": run_react_ws},
         daemon=True,
         name="ws",
     )
