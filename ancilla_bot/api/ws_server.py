@@ -5,10 +5,13 @@ WebSocket サーバー
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import queue
 
 from loguru import logger
+
+from ancilla_bot.api import stt_client
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
@@ -68,6 +71,21 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                             logger.info("ws event: {}", event)
                             if event == "status_update":
                                 send_downlink("ui_control", {"command": "show_avatar"})
+                            elif event == "audio_input":
+                                b64 = data.get("data") if isinstance(data.get("data"), str) else None
+                                if b64:
+                                    try:
+                                        audio_bytes = base64.b64decode(b64)
+                                    except Exception:
+                                        audio_bytes = b""
+                                    if audio_bytes:
+                                        text = await loop.run_in_executor(
+                                            None,
+                                            lambda: stt_client.transcribe(audio_bytes, "audio/wav"),
+                                        )
+                                        logger.info("ws audio_input STT: {}", text or "(empty)")
+                                else:
+                                    logger.debug("ws audio_input: no data")
                         elif event is not None:
                             logger.debug("ws event (unhandled): {}", event)
                     except json.JSONDecodeError:
