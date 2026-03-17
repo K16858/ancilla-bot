@@ -14,6 +14,7 @@ from ancilla_bot.tools.run_script import run_python_script as run_script_impl
 from ancilla_bot.tools.searxng_client import search as searxng_search
 from ancilla_bot.tools.workspace_io import edit_file_safe as workspace_edit_file_safe
 from ancilla_bot.tools.workspace_io import list_workspace as workspace_list_workspace
+from ancilla_bot.tools.use_edgedevice import use_edgedevice
 from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
 from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
 
@@ -30,6 +31,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "search_memory": "Search past conversation summaries (long-term memory). action_input: {\"query\": \"search query\", \"max_results\": 3}. max_results optional (default 3). Use when you need to recall past topics.",
     "manage_state": "SQLite CRUD: table (user_tasks|agent_tasks|reminders|finances|interests|audit_log), operation (insert|select|update|delete), payload (dict). insert tasks/reminders: {scheduled_at, content}. insert finances: {amount, category, memo?, date?}. insert interests: {name}, optional {description, status, url}. select: {limit?, completed?} for tasks/reminders, {limit} for others. update: {id, ...fields}. delete: {id}.",
     "notify_user": "Send a proactive notification to the user via Discord. action_input: {\"message\": \"text\", \"source\": \"system|report|email\", \"level\": \"info|notice|warning|critical\", \"title\": \"optional title\"}. source optional (default \"report\"), level optional (default \"info\").",
+    "use_edgedevice": "Switch to dedicated session so the user can use microphone and camera. action_input: {\"target\": \"\", \"reason\": \"\"} (optional). Use when the user wants to talk by voice or use camera.",
 }
 
 
@@ -170,6 +172,7 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "search_memory": search_memory,
     "manage_state": manage_state,
     "notify_user": notify_user,
+    "use_edgedevice": use_edgedevice,
 }
 
 

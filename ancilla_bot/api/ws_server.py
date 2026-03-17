@@ -60,6 +60,17 @@ def _end_dedicated_session(send_hide: bool = True) -> None:
             send_downlink("ui_control", {"command": "hide_avatar"})
 
 
+def switch_to_dedicated_session_if_needed() -> bool:
+    """現在 main なら専用セッションに切り替え、show_avatar を送る。切り替えた場合 True。"""
+    global _session_mode, _dedicated_history
+    if _session_mode == "main":
+        _session_mode = "dedicated"
+        _dedicated_history = []
+        send_downlink("ui_control", {"command": "show_avatar"})
+        return True
+    return False
+
+
 async def _handle_connection(websocket: ServerConnection) -> None:
     global _current_connection
     if _current_connection is not None and _current_connection.open:
@@ -105,11 +116,7 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                             elif event == "session_end":
                                 _end_dedicated_session()
                             elif event == "audio_input":
-                                global _session_mode, _dedicated_history
-                                if _session_mode == "main":
-                                    _session_mode = "dedicated"
-                                    _dedicated_history = []
-                                    send_downlink("ui_control", {"command": "show_avatar"})
+                                switch_to_dedicated_session_if_needed()
                                 b64 = data.get("data") if isinstance(data.get("data"), str) else None
                                 response_text = ""
                                 if b64:
