@@ -14,6 +14,8 @@ from typing import Literal
 from loguru import logger
 
 from ancilla_bot.api import stt_client, tts_client
+from ancilla_bot.batch.vector_store import add_summaries_to_store
+from ancilla_bot.llm import send_chat
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
@@ -50,10 +52,45 @@ def _reset_session_state() -> None:
     _edge_history = []
 
 
+def _summarize_edge_history_and_store() -> None:
+    """エッジセッションの履歴を要約"""
+    global _edge_history
+    history = list(_edge_history)
+    if not history:
+        return
+    parts: list[str] = []
+    for m in history:
+        role = m.get("role", "")
+        content = (m.get("content", "") or "").strip()
+        if content:
+            parts.append(f"{role}: {content}")
+    text = "\n".join(parts)
+    if not text.strip():
+        return
+    prompt = "次の対話内容を1-3文で日本語要約してください。出力は要約本文のみとし、前後に説明を付けないでください。\n\n" + text
+    try:
+        raw = send_chat([{"role": "user", "content": prompt}], format=None)
+        summary = (raw or "").strip()
+        if not summary:
+            return
+        record = {
+            "date": "",
+            "start_index": 0,
+            "end_index": len(history) - 1,
+            "summary": summary,
+            "message_count": len(history),
+            "tool_used": True,
+        }
+        add_summaries_to_store([record])
+    except Exception:
+        return
+
+
 def _end_edge_session(send_hide: bool = True) -> None:
     """エッジセッションを終了し、main に戻す。send_hide が True なら hide_avatar を送る。"""
     global _session_mode, _edge_history
     if _session_mode == "edge":
+        _summarize_edge_history_and_store()
         _session_mode = "main"
         _edge_history = []
         if send_hide:
