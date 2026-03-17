@@ -27,7 +27,7 @@ from ancilla_bot.heartbeat.db import (
     mark_tasks_completed,
 )
 from ancilla_bot.api.server import run_server
-from ancilla_bot.api.ws_server import is_dedicated_session, run_ws_server
+from ancilla_bot.api.ws_server import is_edge_session, run_ws_server
 from ancilla_bot.memory.compress import compress_once, should_compress
 from ancilla_bot.memory.conversation_store import append_overflow, load_active_history, save_active_history
 from ancilla_bot.memory.short_term import append_and_trim
@@ -117,7 +117,7 @@ def _slow_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 except OSError:
                     pass
             if now.hour == hour_target and now.minute == minute_target:
-                if is_dedicated_session():
+                if is_edge_session():
                     stop.wait(HEARTBEAT_INTERVAL_SEC)
                     continue
                 if lock.acquire(blocking=False):
@@ -129,7 +129,7 @@ def _slow_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                         last_run_path.write_text(today, encoding="utf-8")
                         logger.info("run_summarize done for {}", today)
 
-                        # Idle Reflection（Open Reflection）を 1 回だけ実行（専用セッション中はスキップ済み）
+                        # Idle Reflection（Open Reflection）を 1 回だけ実行（エッジセッション中はスキップ済み）
                         idle_msg = _build_idle_reflection_message()
                         history = load_active_history()
                         try:
@@ -173,7 +173,7 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
     """該当タスク・リマインダーがあれば擬似メッセージを ReAct に投入"""
     while not stop.is_set():
         try:
-            if is_dedicated_session():
+            if is_edge_session():
                 stop.wait(HEARTBEAT_INTERVAL_SEC)
                 continue
             now = datetime.now()

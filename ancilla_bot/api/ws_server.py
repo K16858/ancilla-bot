@@ -22,8 +22,8 @@ UPLINK_EVENTS = ("audio_input", "vision_input", "status_update", "session_end")
 _current_connection: ServerConnection | None = None
 _downlink_queue: queue.Queue[tuple[str, dict]] = queue.Queue()
 _run_react_cb: Callable[[str, list[dict[str, str]]], tuple[str, str | None]] | None = None
-_session_mode: Literal["main", "dedicated"] = "main"
-_dedicated_history: list[dict[str, str]] = []
+_session_mode: Literal["main", "edge"] = "main"
+_edge_history: list[dict[str, str]] = []
 
 
 def send_downlink(event: str, payload: dict) -> None:
@@ -31,9 +31,9 @@ def send_downlink(event: str, payload: dict) -> None:
     _downlink_queue.put((event, payload))
 
 
-def is_dedicated_session() -> bool:
-    """現在が専用セッションかどうか"""
-    return _session_mode == "dedicated"
+def is_edge_session() -> bool:
+    """現在がエッジセッションかどうか"""
+    return _session_mode == "edge"
 
 
 def _get_downlink(timeout: float = 0.2) -> tuple[str, dict] | None:
@@ -44,28 +44,28 @@ def _get_downlink(timeout: float = 0.2) -> tuple[str, dict] | None:
 
 
 def _reset_session_state() -> None:
-    """セッション状態を main に戻し、専用履歴をクリアする"""
-    global _session_mode, _dedicated_history
+    """セッション状態を main に戻し、エッジ履歴をクリアする"""
+    global _session_mode, _edge_history
     _session_mode = "main"
-    _dedicated_history = []
+    _edge_history = []
 
 
-def _end_dedicated_session(send_hide: bool = True) -> None:
-    """専用セッションを終了し、main に戻す。send_hide が True なら hide_avatar を送る。"""
-    global _session_mode, _dedicated_history
-    if _session_mode == "dedicated":
+def _end_edge_session(send_hide: bool = True) -> None:
+    """エッジセッションを終了し、main に戻す。send_hide が True なら hide_avatar を送る。"""
+    global _session_mode, _edge_history
+    if _session_mode == "edge":
         _session_mode = "main"
-        _dedicated_history = []
+        _edge_history = []
         if send_hide:
             send_downlink("ui_control", {"command": "hide_avatar"})
 
 
-def switch_to_dedicated_session_if_needed() -> bool:
-    """現在 main なら専用セッションに切り替え、show_avatar を送る。切り替えた場合 True。"""
-    global _session_mode, _dedicated_history
+def switch_to_edge_session_if_needed() -> bool:
+    """現在 main ならエッジセッションに切り替え、show_avatar を送る。切り替えた場合 True。"""
+    global _session_mode, _edge_history
     if _session_mode == "main":
-        _session_mode = "dedicated"
-        _dedicated_history = []
+        _session_mode = "edge"
+        _edge_history = []
         send_downlink("ui_control", {"command": "show_avatar"})
         return True
     return False
@@ -110,13 +110,13 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                             if event == "status_update":
                                 state = data.get("state") if isinstance(data, dict) else None
                                 if state == "disconnected":
-                                    _end_dedicated_session()
+                                    _end_edge_session()
                                 else:
                                     send_downlink("ui_control", {"command": "show_avatar"})
                             elif event == "session_end":
-                                _end_dedicated_session()
+                                _end_edge_session()
                             elif event == "audio_input":
-                                switch_to_dedicated_session_if_needed()
+                                switch_to_edge_session_if_needed()
                                 b64 = data.get("data") if isinstance(data.get("data"), str) else None
                                 response_text = ""
                                 if b64:
@@ -136,7 +136,7 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                             try:
                                                 response_text, emotion = await loop.run_in_executor(
                                                     None,
-                                                    lambda t=text: _run_react_cb(t, _dedicated_history),
+                                                    lambda t=text: _run_react_cb(t, _edge_history),
                                                 )
                                             except Exception as e:
                                                 logger.warning("ws audio_input ReAct failed: {}", e)

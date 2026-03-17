@@ -8,6 +8,7 @@ from typing import Any, Callable
 from ancilla_bot.batch.vector_store import search_summaries
 from ancilla_bot.heartbeat.db import manage_state as heartbeat_manage_state
 from ancilla_bot.memory.core import build_core_memory
+from ancilla_bot.tools.end_edge_session import end_edge_session
 from ancilla_bot.tools.fetch_page import fetch_page
 from ancilla_bot.tools.notify_user import notify_user
 from ancilla_bot.tools.run_script import run_python_script as run_script_impl
@@ -31,7 +32,8 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "search_memory": "Search past conversation summaries (long-term memory). action_input: {\"query\": \"search query\", \"max_results\": 3}. max_results optional (default 3). Use when you need to recall past topics.",
     "manage_state": "SQLite CRUD: table (user_tasks|agent_tasks|reminders|finances|interests|audit_log), operation (insert|select|update|delete), payload (dict). insert tasks/reminders: {scheduled_at, content}. insert finances: {amount, category, memo?, date?}. insert interests: {name}, optional {description, status, url}. select: {limit?, completed?} for tasks/reminders, {limit} for others. update: {id, ...fields}. delete: {id}.",
     "notify_user": "Send a proactive notification to the user via Discord. action_input: {\"message\": \"text\", \"source\": \"system|report|email\", \"level\": \"info|notice|warning|critical\", \"title\": \"optional title\"}. source optional (default \"report\"), level optional (default \"info\").",
-    "use_edgedevice": "Switch to dedicated session so the user can use microphone and camera. action_input: {\"target\": \"\", \"reason\": \"\"} (optional). Use when the user wants to talk by voice or use camera.",
+    "use_edgedevice": "Switch to edge session so the user can use microphone and camera. action_input: {\"target\": \"\", \"reason\": \"\"} (optional). Use when the user wants to talk by voice or use camera.",
+    "end_edge_session": "End the edge session and return to main session. action_input: {}. Use when the agent decides the edge session is finished.",
 }
 
 
@@ -172,6 +174,7 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "search_memory": search_memory,
     "manage_state": manage_state,
     "notify_user": notify_user,
+    "end_edge_session": end_edge_session,
     "use_edgedevice": use_edgedevice,
 }
 
