@@ -26,6 +26,7 @@ _downlink_queue: queue.Queue[tuple[str, dict]] = queue.Queue()
 _run_react_cb: Callable[[str, list[dict[str, str]]], tuple[str, str | None]] | None = None
 _session_mode: Literal["main", "edge"] = "main"
 _edge_history: list[dict[str, str]] = []
+_latest_vision_image: str | None = None
 
 
 def send_downlink(event: str, payload: dict) -> None:
@@ -36,6 +37,11 @@ def send_downlink(event: str, payload: dict) -> None:
 def is_edge_session() -> bool:
     """現在がエッジセッションかどうか"""
     return _session_mode == "edge"
+
+
+def get_latest_vision_image() -> str | None:
+    """最新の vision_input 画像（base64）を返す。なければ None。"""
+    return _latest_vision_image
 
 
 def _get_downlink(timeout: float = 0.2) -> tuple[str, dict] | None:
@@ -152,6 +158,11 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                     send_downlink("ui_control", {"command": "show_avatar"})
                             elif event == "session_end":
                                 _end_edge_session()
+                            elif event == "vision_input":
+                                data_field = data.get("data") if isinstance(data.get("data"), str) else None
+                                if data_field:
+                                    global _latest_vision_image
+                                    _latest_vision_image = data_field
                             elif event == "audio_input":
                                 switch_to_edge_session_if_needed()
                                 b64 = data.get("data") if isinstance(data.get("data"), str) else None
