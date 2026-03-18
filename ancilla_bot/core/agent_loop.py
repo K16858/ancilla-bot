@@ -8,6 +8,7 @@ from typing import Any, Callable, Final
 
 from loguru import logger
 
+from ancilla_bot.api.ws_server import take_staged_vlm_images
 from ancilla_bot.core.reflection import verify_answer
 from ancilla_bot.heartbeat.db import append_audit_log
 from ancilla_bot.llm import AgentResponse, AgentResponseWithTools, send_chat
@@ -131,7 +132,12 @@ def run_agent_loop_with_tools(
 
     for turn in range(MAX_TOOL_TURNS):
         logger.debug("ReAct turn {} messages={}", turn + 1, messages)
-        send_images = images if turn == 0 else None
+        send_images: list[str] | None = None
+        if turn == 0 and images:
+            send_images = images
+        staged = take_staged_vlm_images()
+        if staged:
+            send_images = staged
         raw = send_chat(messages, format=schema, images=send_images)
         logger.debug("LLM raw={}", raw[:500] + "..." if len(raw) > 500 else raw)
         try:

@@ -10,7 +10,8 @@ from ancilla_bot.heartbeat.db import manage_state as heartbeat_manage_state
 from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.tools.end_edge_session import end_edge_session
 from ancilla_bot.tools.fetch_page import fetch_page
-from ancilla_bot.tools.get_image_from_camera import get_image_from_camera
+from ancilla_bot.tools.get_audio import get_audio
+from ancilla_bot.tools.get_image import get_image
 from ancilla_bot.tools.notify_user import notify_user
 from ancilla_bot.tools.run_script import run_python_script as run_script_impl
 from ancilla_bot.tools.searxng_client import search as searxng_search
@@ -35,7 +36,8 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "notify_user": "Send a proactive notification to the user via Discord. action_input: {\"message\": \"text\", \"source\": \"system|report|email\", \"level\": \"info|notice|warning|critical\", \"title\": \"optional title\"}. source optional (default \"report\"), level optional (default \"info\").",
     "use_edgedevice": "Switch to edge session so the user can use microphone and camera. action_input: {\"target\": \"\", \"reason\": \"\"} (optional). Use when the user wants to talk by voice or use camera.",
     "end_edge_session": "End the edge session and return to main session. action_input: {}. Use when the agent decides the edge session is finished.",
-    "get_image_from_camera": "In an edge session, check if a latest camera image (vision_input) is available. action_input: {\"reason\": \"\"} (optional). Returns a status string describing availability.",
+    "get_image": "Agent-initiated camera capture in edge session. Sends media_request; device must reply with vision_input carrying the same request_id and image base64. action_input: {\"reason\": \"\", \"timeout_sec\": 60}. Next LLM turn receives the image as vision input.",
+    "get_audio": "Agent-initiated microphone capture in edge session. Sends media_request; device must reply with audio_input (same request_id, WAV base64). Returns STT text. Spontaneous mic (no request_id) is separate: STT+ReAct. action_input: {\"reason\": \"\", \"timeout_sec\": 60}.",
 }
 
 
@@ -178,7 +180,8 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "notify_user": notify_user,
     "end_edge_session": end_edge_session,
     "use_edgedevice": use_edgedevice,
-    "get_image_from_camera": get_image_from_camera,
+    "get_image": get_image,
+    "get_audio": get_audio,
 }
 
 

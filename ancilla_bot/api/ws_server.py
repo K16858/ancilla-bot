@@ -1,5 +1,11 @@
 """
 WebSocket サーバー
+
+メディア取得:
+- エージェントが get_image / get_audio で media_request（request_id 付き）を送り、
+  デバイスが同じ request_id で vision_input / audio_input を返すまで待つ（エージェント主導）。
+- 自発の vision_input: 最新画像バッファのみ更新（通常のメッセージ化はしない）。
+- 自発の audio_input（request_id なし）: STT → ReAct → TTS（従来どおり）。
 """
 
 from __future__ import annotations
@@ -8,6 +14,7 @@ import asyncio
 import base64
 import json
 import queue
+import threading
 from collections.abc import Callable
 from typing import Literal
 
@@ -26,7 +33,16 @@ _downlink_queue: queue.Queue[tuple[str, dict]] = queue.Queue()
 _run_react_cb: Callable[[str, list[dict[str, str]]], tuple[str, str | None]] | None = None
 _session_mode: Literal["main", "edge"] = "main"
 _edge_history: list[dict[str, str]] = []
+# デバイス自発の vision_input の最新（エージェント取得とは別）
 _latest_vision_image: str | None = None
+
+_media_lock = threading.Lock()
+# media_request に対する応答待ち（request_id -> 1 件だけ受け取るキュー）
+_camera_waiters: dict[str, queue.Queue[str]] = {}
+_mic_waiters: dict[str, queue.Queue[str]] = {}
+
+_vlm_stage_lock = threading.Lock()
+_staged_vlm_images: list[str] | None = None
 
 
 def send_downlink(event: str, payload: dict) -> None:
@@ -40,8 +56,54 @@ def is_edge_session() -> bool:
 
 
 def get_latest_vision_image() -> str | None:
-    """最新の vision_input 画像（base64）を返す。なければ None。"""
+    """自発 vision_input の最新画像（base64）。エージェント pull とは別。"""
     return _latest_vision_image
+
+
+def register_camera_waiter(request_id: str) -> queue.Queue[str]:
+    q: queue.Queue[str] = queue.Queue(maxsize=1)
+    with _media_lock:
+        _camera_waiters[request_id] = q
+    return q
+
+
+def unregister_camera_waiter(request_id: str) -> None:
+    with _media_lock:
+        _camera_waiters.pop(request_id, None)
+
+
+def register_mic_waiter(request_id: str) -> queue.Queue[str]:
+    q: queue.Queue[str] = queue.Queue(maxsize=1)
+    with _media_lock:
+        _mic_waiters[request_id] = q
+    return q
+
+
+def unregister_mic_waiter(request_id: str) -> None:
+    with _media_lock:
+        _mic_waiters.pop(request_id, None)
+
+
+def stage_vlm_images(b64_list: list[str]) -> None:
+    """次の LLM 呼び出しで渡す画像（get_image 成功時）。"""
+    global _staged_vlm_images
+    with _vlm_stage_lock:
+        _staged_vlm_images = list(b64_list)
+
+
+def take_staged_vlm_images() -> list[str] | None:
+    """ステージ済み画像を取り出してクリア。なければ None。"""
+    global _staged_vlm_images
+    with _vlm_stage_lock:
+        x = _staged_vlm_images
+        _staged_vlm_images = None
+    return x
+
+
+def _clear_media_waiters() -> None:
+    with _media_lock:
+        _camera_waiters.clear()
+        _mic_waiters.clear()
 
 
 def _get_downlink(timeout: float = 0.2) -> tuple[str, dict] | None:
@@ -56,6 +118,10 @@ def _reset_session_state() -> None:
     global _session_mode, _edge_history
     _session_mode = "main"
     _edge_history = []
+    _clear_media_waiters()
+    with _vlm_stage_lock:
+        global _staged_vlm_images
+        _staged_vlm_images = None
 
 
 def _summarize_edge_history_and_store() -> None:
@@ -99,6 +165,10 @@ def _end_edge_session(send_hide: bool = True) -> None:
         _summarize_edge_history_and_store()
         _session_mode = "main"
         _edge_history = []
+        _clear_media_waiters()
+        with _vlm_stage_lock:
+            global _staged_vlm_images
+            _staged_vlm_images = None
         if send_hide:
             send_downlink("ui_control", {"command": "hide_avatar"})
 
@@ -109,6 +179,7 @@ def switch_to_edge_session_if_needed() -> bool:
     if _session_mode == "main":
         _session_mode = "edge"
         _edge_history = []
+        _clear_media_waiters()
         send_downlink("ui_control", {"command": "show_avatar"})
         return True
     return False
@@ -160,12 +231,52 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                 _end_edge_session()
                             elif event == "vision_input":
                                 data_field = data.get("data") if isinstance(data.get("data"), str) else None
-                                if data_field:
+                                rid = data.get("request_id") if isinstance(data.get("request_id"), str) else None
+                                if data_field and rid:
+                                    with _media_lock:
+                                        cq = _camera_waiters.get(rid)
+                                    if cq is not None:
+                                        try:
+                                            cq.put_nowait(data_field)
+                                        except queue.Full:
+                                            pass
+                                    else:
+                                        global _latest_vision_image
+                                        _latest_vision_image = data_field
+                                elif data_field:
                                     global _latest_vision_image
                                     _latest_vision_image = data_field
                             elif event == "audio_input":
-                                switch_to_edge_session_if_needed()
+                                rid = data.get("request_id") if isinstance(data.get("request_id"), str) else None
                                 b64 = data.get("data") if isinstance(data.get("data"), str) else None
+                                # エージェント主導 get_audio への応答（ReAct は回さない）
+                                if rid and b64:
+                                    with _media_lock:
+                                        mq = _mic_waiters.get(rid)
+                                    if mq is not None:
+                                        try:
+                                            audio_bytes = base64.b64decode(b64)
+                                        except Exception:
+                                            audio_bytes = b""
+                                        if audio_bytes:
+                                            text = await loop.run_in_executor(
+                                                None,
+                                                lambda: stt_client.transcribe(audio_bytes, "audio/wav"),
+                                            )
+                                            st = (text or "").strip()
+                                            try:
+                                                mq.put_nowait(st or "(空の認識結果)")
+                                            except queue.Full:
+                                                pass
+                                        else:
+                                            try:
+                                                mq.put_nowait("(デコード失敗)")
+                                            except queue.Full:
+                                                pass
+                                        recv_task = asyncio.create_task(websocket.recv())
+                                        continue
+                                # --- 自発のマイク入力: STT → ReAct → TTS ---
+                                switch_to_edge_session_if_needed()
                                 response_text = ""
                                 if b64:
                                     try:
