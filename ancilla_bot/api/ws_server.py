@@ -186,7 +186,7 @@ def switch_to_edge_session_if_needed() -> bool:
 
 
 async def _handle_connection(websocket: ServerConnection) -> None:
-    global _current_connection
+    global _current_connection, _latest_vision_image
     if _current_connection is not None and _current_connection.open:
         _current_connection.close()
         await _current_connection.wait_closed()
@@ -195,9 +195,7 @@ async def _handle_connection(websocket: ServerConnection) -> None:
     loop = asyncio.get_running_loop()
     try:
         recv_task: asyncio.Task | None = asyncio.create_task(websocket.recv())
-        queue_task: asyncio.Task | None = asyncio.create_task(
-            loop.run_in_executor(None, lambda: _get_downlink(0.2))
-        )
+        queue_task = loop.run_in_executor(None, lambda: _get_downlink(0.2))
         connection_closed = False
         while True:
             done, pending = await asyncio.wait(
@@ -241,10 +239,8 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                         except queue.Full:
                                             pass
                                     else:
-                                        global _latest_vision_image
                                         _latest_vision_image = data_field
                                 elif data_field:
-                                    global _latest_vision_image
                                     _latest_vision_image = data_field
                             elif event == "audio_input":
                                 rid = data.get("request_id") if isinstance(data.get("request_id"), str) else None
@@ -334,9 +330,7 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                         event, payload = item
                         msg = json.dumps({"event": event, **payload}, ensure_ascii=False)
                         await websocket.send(msg)
-                    queue_task = asyncio.create_task(
-                        loop.run_in_executor(None, lambda: _get_downlink(0.2))
-                    )
+                    queue_task = loop.run_in_executor(None, lambda: _get_downlink(0.2))
             if connection_closed:
                 break
         for t in (recv_task, queue_task):
