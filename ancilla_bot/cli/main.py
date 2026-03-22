@@ -27,7 +27,7 @@ from ancilla_bot.heartbeat.db import (
     mark_tasks_completed,
 )
 from ancilla_bot.api.server import run_server
-from ancilla_bot.api.ws_server import is_edge_session, run_ws_server
+from ancilla_bot.api.ws_server import is_device_connected, is_edge_session, run_ws_server
 from ancilla_bot.memory.compress import compress_once, should_compress
 from ancilla_bot.memory.conversation_store import append_overflow, load_active_history, save_active_history
 from ancilla_bot.memory.short_term import append_and_trim
@@ -161,6 +161,11 @@ def _build_fast_heartbeat_message(
         ]
     else:
         parts = [f"[SYSTEM_EVENT] 現在時刻は{now_str}です。"]
+    if is_device_connected():
+        parts.append(
+            "[エッジデバイス接続中] カメラ・マイク付きのデバイスが現在接続されています。"
+            "必要と判断した場合は use_edgedevice ツールでデバイスとやりとりできます。"
+        )
     for t in tasks:
         parts.append(f"タスクID #{t['id']}: {t['content']}（予定: {t['scheduled_at']}）")
     for r in reminders:
@@ -226,11 +231,18 @@ def _build_idle_reflection_message() -> str:
     """
     Idle Reflection メッセージを組み立てる。
     """
+    device_note = (
+        "なお、現在エッジデバイス（カメラ・マイク）が接続されています。"
+        "必要と判断した場合は use_edgedevice ツールでデバイスとやりとりできます。"
+        if is_device_connected()
+        else ""
+    )
     return (
         "[SYSTEM_EVENT: IDLE_REFLECTION] 現在はアイドルタイムです。"
         "ユーザーとの本日の会話履歴（Tier 2）や現在のタスク（Tier 3）を振り返ってください。"
         "ユーザーの目標達成や明日の作業を支援するために、あなたが「自発的に行っておくべきこと」はありますか？ "
         "必要であれば Web 検索や各種ツールを使って行動して構いません。"
+        f"{device_note}"
         "特に何もなければ、何もせず終了して構いません。"
     )
 
