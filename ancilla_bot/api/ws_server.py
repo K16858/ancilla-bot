@@ -362,7 +362,9 @@ def run_ws_server(
     _run_react_cb = run_react
 
     async def _serve() -> None:
-        async with serve(_handle_connection, host, port) as ws_server:
+        async with serve(
+            _handle_connection, host, port, max_size=16 * 1024 * 1024
+        ) as ws_server:
             logger.info("WebSocket server listening on ws://{}:{}", host, port)
             await asyncio.Future()
 
