@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import queue
 import threading
@@ -110,6 +111,39 @@ def _clear_media_waiters() -> None:
     with _media_lock:
         _camera_waiters.clear()
         _mic_waiters.clear()
+
+
+async def _run_with_downlink_pump(
+    loop: asyncio.AbstractEventLoop,
+    websocket: ServerConnection,
+    func: Callable,
+) -> any:
+    """func を executor で実行しながら downlink キューを並行してクライアントに転送する。
+
+    ReAct 内の get_image / get_audio ツールが send_downlink() で media_request を積んでも
+    _handle_connection が await run_in_executor 中で詰まるため届かない問題を解消する。
+    """
+
+    async def _pump() -> None:
+        while True:
+            item = await loop.run_in_executor(None, lambda: _get_downlink(0.1))
+            if item is not None:
+                event, payload = item
+                msg = json.dumps({"event": event, **payload}, ensure_ascii=False)
+                try:
+                    await websocket.send(msg)
+                    logger.debug("downlink pump sent: {}", event)
+                except Exception as exc:
+                    logger.warning("downlink pump send failed: {}", exc)
+                    break
+
+    pump_task = asyncio.create_task(_pump())
+    try:
+        return await loop.run_in_executor(None, func)
+    finally:
+        pump_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await pump_task
 
 
 def _get_downlink(timeout: float = 0.2) -> tuple[str, dict] | None:
@@ -298,8 +332,9 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                                 stage_vlm_images([_latest_vision_image])
                                                 logger.debug("ws audio_input: staged latest vision image")
                                             try:
-                                                response_text, emotion = await loop.run_in_executor(
-                                                    None,
+                                                response_text, emotion = await _run_with_downlink_pump(
+                                                    loop,
+                                                    websocket,
                                                     lambda t=text: _run_react_cb(t, _edge_history),
                                                 )
                                             except Exception as e:
