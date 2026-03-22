@@ -55,6 +55,11 @@ def is_edge_session() -> bool:
     return _session_mode == "edge"
 
 
+def is_device_connected() -> bool:
+    """エッジデバイスが WebSocket で接続中かどうか"""
+    return _current_connection is not None and _current_connection.open
+
+
 def get_latest_vision_image() -> str | None:
     """自発 vision_input の最新画像（base64）。エージェント pull とは別。"""
     return _latest_vision_image
