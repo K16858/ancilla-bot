@@ -5,7 +5,7 @@ WebSocket サーバー
 - エージェントが get_image / get_audio で media_request（request_id 付き）を送り、
   デバイスが同じ request_id で vision_input / audio_input を返すまで待つ（エージェント主導）。
 - 自発の vision_input: 最新画像バッファのみ更新（通常のメッセージ化はしない）。
-- 自発の audio_input（request_id なし）: STT → ReAct → TTS（従来どおり）。
+- 自発の audio_input（request_id なし）: STT → 最新画像があれば自動添付 → ReAct → TTS。
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from loguru import logger
 from ancilla_bot.api import stt_client, tts_client
 from ancilla_bot.batch.vector_store import add_summaries_to_store
 from ancilla_bot.llm import send_chat
+from ancilla_bot.llm.ollama_client import VISION_ENABLED
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
@@ -293,6 +294,9 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                         if not (text or "").strip():
                                             response_text = "音声を認識できませんでした。"
                                         elif _run_react_cb:
+                                            if VISION_ENABLED and _latest_vision_image:
+                                                stage_vlm_images([_latest_vision_image])
+                                                logger.debug("ws audio_input: staged latest vision image")
                                             try:
                                                 response_text, emotion = await loop.run_in_executor(
                                                     None,
