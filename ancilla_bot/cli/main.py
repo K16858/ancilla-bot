@@ -18,7 +18,9 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from ancilla_bot.core.agent_loop import is_exit_command, run_agent_loop_with_tools
+from ancilla_bot.llm import send_chat
 from ancilla_bot.llm.ollama_client import VISION_ENABLED
+from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.heartbeat.db import (
     get_due_reminders,
     get_due_tasks,
@@ -27,7 +29,12 @@ from ancilla_bot.heartbeat.db import (
     mark_tasks_completed,
 )
 from ancilla_bot.api.server import run_server
-from ancilla_bot.api.ws_server import is_device_connected, is_edge_session, run_ws_server
+from ancilla_bot.api.ws_server import (
+    ObservationConfig,
+    is_device_connected,
+    is_edge_session,
+    run_ws_server,
+)
 from ancilla_bot.memory.compress import compress_once, should_compress
 from ancilla_bot.memory.conversation_store import append_overflow, load_active_history, save_active_history
 from ancilla_bot.memory.short_term import append_and_trim
@@ -485,10 +492,41 @@ def _run_resident(args: argparse.Namespace) -> None:
         finally:
             if agent_lock is not None:
                 agent_lock.release()
+
+    def _run_observe_ws(image_b64: str) -> str | None:
+        """エージェント自律観察: 画像を見て短いコメントを生成する（ReAct なし）。"""
+        if agent_lock is not None and not agent_lock.acquire(blocking=False):
+            return None
+        try:
+            system_prompt = build_core_memory("")
+            msgs = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "今の状況を見て、自然に一言どうぞ。"},
+            ]
+            result = send_chat(msgs, images=[image_b64])
+            return (result or "").strip() or None
+        except Exception as exc:
+            logger.warning("observe ws error: {}", exc)
+            return None
+        finally:
+            if agent_lock is not None:
+                agent_lock.release()
+
+    obs_cfg = ObservationConfig(
+        enabled=os.getenv("ANCILLA_OBS_ENABLED", "true").strip().lower() in ("1", "true", "yes"),
+        poll_interval_sec=float(os.getenv("ANCILLA_OBS_POLL_SEC", "10")),
+        min_comment_interval_sec=float(os.getenv("ANCILLA_OBS_MIN_INTERVAL_SEC", "45")),
+        max_comment_interval_sec=float(os.getenv("ANCILLA_OBS_MAX_INTERVAL_SEC", "180")),
+    )
+
     ws_thread = threading.Thread(
         target=run_ws_server,
         args=("127.0.0.1", ws_port),
-        kwargs={"run_react": run_react_ws},
+        kwargs={
+            "run_react": run_react_ws,
+            "run_observe": _run_observe_ws if VISION_ENABLED else None,
+            "observe_cfg": obs_cfg,
+        },
         daemon=True,
         name="ws",
     )

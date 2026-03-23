@@ -13,10 +13,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import hashlib
 import json
 import queue
 import threading
+import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Literal
 
 from loguru import logger
@@ -30,9 +33,22 @@ from websockets.exceptions import ConnectionClosed
 
 UPLINK_EVENTS = ("audio_input", "vision_input", "status_update", "session_end")
 
+
+@dataclass
+class ObservationConfig:
+    """自律観察ループの設定。すべて環境変数でオーバーライド可能。"""
+
+    enabled: bool = True
+    poll_interval_sec: float = 10.0
+    min_comment_interval_sec: float = 45.0
+    max_comment_interval_sec: float = 180.0
+
+
 _current_connection: ServerConnection | None = None
 _downlink_queue: queue.Queue[tuple[str, dict]] = queue.Queue()
 _run_react_cb: Callable[[str, list[dict[str, str]]], tuple[str, str | None]] | None = None
+_run_observe_cb: Callable[[str], str | None] | None = None
+_observe_cfg: ObservationConfig = ObservationConfig()
 _session_mode: Literal["main", "edge"] = "main"
 _edge_history: list[dict[str, str]] = []
 # デバイス自発の vision_input の最新（エージェント取得とは別）
@@ -45,6 +61,11 @@ _mic_waiters: dict[str, queue.Queue[str]] = {}
 
 _vlm_stage_lock = threading.Lock()
 _staged_vlm_images: list[str] | None = None
+
+# 観察ループ状態
+_is_react_running: bool = False
+_last_observe_time: float = 0.0
+_prev_vision_hash: str = ""
 
 
 def send_downlink(event: str, payload: dict) -> None:
@@ -153,6 +174,89 @@ def _get_downlink(timeout: float = 0.2) -> tuple[str, dict] | None:
         return None
 
 
+def _image_hash(b64: str) -> str:
+    """画像の変化検出用ハッシュ。PIL が使える場合は縮小グレースケール比較、なければ先頭バイト MD5。"""
+    try:
+        import io
+
+        from PIL import Image
+
+        raw = base64.b64decode(b64)
+        img = Image.open(io.BytesIO(raw)).convert("L").resize((32, 32), Image.BILINEAR)
+        return hashlib.md5(img.tobytes()).hexdigest()
+    except Exception:
+        raw_bytes = b64.encode("ascii")
+        return hashlib.md5(raw_bytes[:4096]).hexdigest()
+
+
+async def _observation_loop(
+    loop: asyncio.AbstractEventLoop,
+    websocket: ServerConnection,
+    cfg: ObservationConfig,
+) -> None:
+    """エッジセッション中、定期的に画面を観察してコメントを生成する自律ループ。"""
+    global _is_react_running, _last_observe_time, _prev_vision_hash
+
+    logger.debug("observation loop started (poll={}s)", cfg.poll_interval_sec)
+    try:
+        while True:
+            await asyncio.sleep(cfg.poll_interval_sec)
+
+            if _is_react_running:
+                continue
+            if _run_observe_cb is None:
+                continue
+            image = _latest_vision_image
+            if image is None:
+                continue
+
+            now = time.monotonic()
+            elapsed = now - _last_observe_time
+            new_hash = _image_hash(image)
+            changed = new_hash != _prev_vision_hash
+
+            should_comment = (changed and elapsed >= cfg.min_comment_interval_sec) or (
+                elapsed >= cfg.max_comment_interval_sec
+            )
+
+            if not should_comment:
+                if changed:
+                    _prev_vision_hash = new_hash
+                continue
+
+            _prev_vision_hash = new_hash
+            _last_observe_time = now
+            _is_react_running = True
+            logger.info("observation: generating comment (elapsed={:.0f}s, changed={})", elapsed, changed)
+            try:
+                response_text = await loop.run_in_executor(
+                    None, lambda img=image: _run_observe_cb(img)
+                )
+            except Exception as exc:
+                logger.warning("observation cb error: {}", exc)
+                response_text = None
+            finally:
+                _is_react_running = False
+
+            if response_text:
+                payload: dict = {"emotion": "Neutral", "text": response_text}
+                try:
+                    wav_bytes = await loop.run_in_executor(
+                        None, lambda: tts_client.synthesize(response_text)
+                    )
+                    if wav_bytes:
+                        payload["audio_format"] = "wav"
+                        payload["audio_data"] = base64.b64encode(wav_bytes).decode("ascii")
+                except Exception as exc:
+                    logger.warning("observation TTS error: {}", exc)
+                _edge_history.append({"role": "assistant", "content": response_text})
+                send_downlink("agent_response", payload)
+                logger.info("observation: sent comment: {}", response_text[:80])
+    except asyncio.CancelledError:
+        logger.debug("observation loop cancelled")
+        raise
+
+
 def _reset_session_state() -> None:
     """セッション状態を main に戻し、エッジ履歴をクリアする"""
     global _session_mode, _edge_history
@@ -226,13 +330,25 @@ def switch_to_edge_session_if_needed() -> bool:
 
 
 async def _handle_connection(websocket: ServerConnection) -> None:
-    global _current_connection, _latest_vision_image
+    global _current_connection, _latest_vision_image, _is_react_running
+    global _last_observe_time, _prev_vision_hash
     if _current_connection is not None and _current_connection.open:
         _current_connection.close()
         await _current_connection.wait_closed()
     _current_connection = websocket
+    _is_react_running = False
+    _last_observe_time = 0.0
+    _prev_vision_hash = ""
     logger.info("ws client connected")
     loop = asyncio.get_running_loop()
+
+    observation_task: asyncio.Task | None = None
+    if _run_observe_cb is not None and VISION_ENABLED and _observe_cfg.enabled:
+        observation_task = asyncio.create_task(
+            _observation_loop(loop, websocket, _observe_cfg),
+            name="observation",
+        )
+
     try:
         recv_task: asyncio.Task | None = asyncio.create_task(websocket.recv())
         queue_task = loop.run_in_executor(None, lambda: _get_downlink(0.2))
@@ -331,6 +447,7 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                             if VISION_ENABLED and _latest_vision_image:
                                                 stage_vlm_images([_latest_vision_image])
                                                 logger.debug("ws audio_input: staged latest vision image")
+                                            _is_react_running = True
                                             try:
                                                 response_text, emotion = await _run_with_downlink_pump(
                                                     loop,
@@ -341,6 +458,8 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                                 logger.warning("ws audio_input ReAct failed: {}", e)
                                                 response_text = "処理中にエラーが発生しました。"
                                                 emotion = None
+                                            finally:
+                                                _is_react_running = False
                                         else:
                                             response_text = text.strip()
                                             emotion = None
@@ -381,6 +500,10 @@ async def _handle_connection(websocket: ServerConnection) -> None:
             if t is not None and not t.done():
                 t.cancel()
     finally:
+        if observation_task is not None and not observation_task.done():
+            observation_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await observation_task
         if _current_connection is websocket:
             _current_connection = None
             _reset_session_state()
@@ -391,10 +514,21 @@ def run_ws_server(
     host: str,
     port: int,
     run_react: Callable[[str, list[dict[str, str]]], tuple[str, str | None]] | None = None,
+    run_observe: Callable[[str], str | None] | None = None,
+    observe_cfg: ObservationConfig | None = None,
 ) -> None:
-    """WebSocket サーバーを起動する。run_react(text, history) が渡されていれば audio_input で ReAct を実行する。"""
-    global _run_react_cb
+    """WebSocket サーバーを起動する。
+
+    Args:
+        run_react: audio_input 受信時に呼ぶ ReAct コールバック (text, history) -> (answer, emotion)
+        run_observe: 自律観察ループが画像変化を検知したとき呼ぶコールバック (image_b64) -> comment | None
+        observe_cfg: 観察ループの設定。None の場合はデフォルト値を使用。
+    """
+    global _run_react_cb, _run_observe_cb, _observe_cfg
     _run_react_cb = run_react
+    _run_observe_cb = run_observe
+    if observe_cfg is not None:
+        _observe_cfg = observe_cfg
 
     async def _serve() -> None:
         async with serve(
