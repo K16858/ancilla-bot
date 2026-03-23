@@ -493,16 +493,16 @@ def _run_resident(args: argparse.Namespace) -> None:
             if agent_lock is not None:
                 agent_lock.release()
 
-    def _run_observe_ws(image_b64: str) -> str | None:
+    def _run_observe_ws(image_b64: str, history: list[dict[str, str]] | None = None) -> str | None:
         """エージェント自律観察: 画像を見て短いコメントを生成する（ReAct なし）。"""
         if agent_lock is not None and not agent_lock.acquire(blocking=False):
             return None
         try:
             system_prompt = build_character_prompt()
-            msgs = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": "今の状況を見て、自然に一言どうぞ。"},
-            ]
+            recent = (history or [])[-6:]  # 直近6件までをコンテキストとして挿入
+            msgs: list[dict] = [{"role": "system", "content": system_prompt}]
+            msgs.extend(recent)
+            msgs.append({"role": "user", "content": "今の状況を見て、自然に一言どうぞ。"})
             result = send_chat(msgs, images=[image_b64])
             return (result or "").strip() or None
         except Exception as exc:

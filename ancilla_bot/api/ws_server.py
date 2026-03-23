@@ -47,7 +47,7 @@ class ObservationConfig:
 _current_connection: ServerConnection | None = None
 _downlink_queue: queue.Queue[tuple[str, dict]] = queue.Queue()
 _run_react_cb: Callable[[str, list[dict[str, str]]], tuple[str, str | None]] | None = None
-_run_observe_cb: Callable[[str], str | None] | None = None
+_run_observe_cb: Callable[[str, list[dict[str, str]]], str | None] | None = None
 _observe_cfg: ObservationConfig = ObservationConfig()
 _session_mode: Literal["main", "edge"] = "main"
 _edge_history: list[dict[str, str]] = []
@@ -227,10 +227,11 @@ async def _observation_loop(
             _prev_vision_hash = new_hash
             _last_observe_time = now
             _is_react_running = True
+            history_snapshot = list(_edge_history)
             logger.info("observation: generating comment (elapsed={:.0f}s, changed={})", elapsed, changed)
             try:
                 response_text = await loop.run_in_executor(
-                    None, lambda img=image: _run_observe_cb(img)
+                    None, lambda img=image, h=history_snapshot: _run_observe_cb(img, h)
                 )
             except Exception as exc:
                 logger.warning("observation cb error: {}", exc)
@@ -514,7 +515,7 @@ def run_ws_server(
     host: str,
     port: int,
     run_react: Callable[[str, list[dict[str, str]]], tuple[str, str | None]] | None = None,
-    run_observe: Callable[[str], str | None] | None = None,
+    run_observe: Callable[[str, list[dict[str, str]]], str | None] | None = None,
     observe_cfg: ObservationConfig | None = None,
 ) -> None:
     """WebSocket サーバーを起動する。
