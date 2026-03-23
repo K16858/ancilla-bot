@@ -11,7 +11,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import httpx
 from dotenv import load_dotenv
@@ -60,6 +60,15 @@ PENDING_MESSAGES: list[dict[str, Any]] = []
 
 # Fast Heartbeat 用の直近日付（YYYY-MM-DD）。プロセス内でのみ保持する。
 _LAST_HEARTBEAT_DATE: str | None = None
+
+# Idle Reflection: 最終ユーザー入力時刻・最終 reflection 実行時刻（epoch 秒）。
+_last_user_input_time: float = time.time()
+_last_idle_reflection_time: float = 0.0
+
+# Idle Reflection 設定（環境変数で上書き可）
+IDLE_THRESHOLD_SEC: Final[int] = int(os.getenv("ANCILLA_IDLE_THRESHOLD_MIN", "30")) * 60
+IDLE_COOLDOWN_SEC: Final[int] = int(os.getenv("ANCILLA_IDLE_COOLDOWN_MIN", "60")) * 60
+IDLE_POLL_SEC: Final[int] = 60  # アイドル監視のポーリング間隔（秒）
 
 
 def _reasoning_line(text: str, dim: bool) -> str:
@@ -135,15 +144,6 @@ def _slow_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                         run_summarize()
                         last_run_path.write_text(today, encoding="utf-8")
                         logger.info("run_summarize done for {}", today)
-
-                        # Idle Reflection（Open Reflection）を 1 回だけ実行（エッジセッション中はスキップ済み）
-                        idle_msg = _build_idle_reflection_message()
-                        history = load_active_history()
-                        try:
-                            _response, _emotion = run_agent_loop_with_tools(idle_msg, history, on_turn=None)
-                            logger.info("idle reflection completed for {}", today)
-                        except Exception as e:
-                            logger.warning("idle reflection failed: {}", e)
                     except Exception as e:
                         logger.warning("run_summarize failed: {}", e)
                     finally:
@@ -234,24 +234,68 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
         stop.wait(HEARTBEAT_INTERVAL_SEC)
 
 
-def _build_idle_reflection_message() -> str:
+def _build_idle_reflection_message(idle_min: int = 0) -> str:
     """
     Idle Reflection メッセージを組み立てる。
+    idle_min: ユーザーからの最終入力からの経過分数。
     """
     device_note = (
-        "なお、現在エッジデバイス（カメラ・マイク）が接続されています。"
+        "\nなお、現在エッジデバイス（カメラ・マイク）が接続されています。"
         "必要と判断した場合は use_edgedevice ツールでデバイスとやりとりできます。"
         if is_device_connected()
         else ""
     )
+    idle_str = f"{idle_min}分" if idle_min > 0 else "しばらく"
     return (
-        "[SYSTEM_EVENT: IDLE_REFLECTION] 現在はアイドルタイムです。"
-        "ユーザーとの本日の会話履歴（Tier 2）や現在のタスク（Tier 3）を振り返ってください。"
-        "ユーザーの目標達成や明日の作業を支援するために、あなたが「自発的に行っておくべきこと」はありますか？ "
-        "必要であれば Web 検索や各種ツールを使って行動して構いません。"
+        f"[SYSTEM_EVENT: IDLE_REFLECTION] ユーザーからの入力が {idle_str} ありません。\n"
+        "アイドル時間を活用して、以下のことを能動的に検討し、有益と判断したものを実行してください:\n"
+        "- agent_tasks に予定している作業があれば進める\n"
+        "- interests リストの項目について最新情報を調査し、workspace にまとめる\n"
+        "- 直近の会話から未解決の疑問点・フォローアップが必要なことを調べる\n"
+        "- 近いうちに期限を迎えるタスク・リマインダーの準備をする\n"
+        "- ユーザーの役に立つと思うことであれば、上記に限らず自由に行動して構わない\n"
+        "何かを実行した場合は notify_user で簡潔に報告してください。"
+        "特に何もなければ、何もせずに終了して構いません。"
         f"{device_note}"
-        "特に何もなければ、何もせず終了して構いません。"
     )
+
+
+def _idle_reflection_loop(lock: threading.Lock, stop: threading.Event) -> None:
+    """
+    アイドル時間を監視し、閾値を超えたら Idle Reflection を実行する。
+    ANCILLA_IDLE_THRESHOLD_MIN（デフォルト30分）以上入力がなく、
+    かつ ANCILLA_IDLE_COOLDOWN_MIN（デフォルト60分）以上前に最後の reflection が実行されていれば発動。
+    """
+    global _last_idle_reflection_time
+    while not stop.is_set():
+        stop.wait(IDLE_POLL_SEC)
+        if stop.is_set():
+            break
+        try:
+            if is_edge_session():
+                continue
+            now = time.time()
+            idle_sec = now - _last_user_input_time
+            since_last = now - _last_idle_reflection_time
+            if idle_sec < IDLE_THRESHOLD_SEC:
+                continue
+            if since_last < IDLE_COOLDOWN_SEC:
+                continue
+            if not lock.acquire(blocking=False):
+                continue
+            try:
+                idle_min = int(idle_sec / 60)
+                msg = _build_idle_reflection_message(idle_min)
+                history = load_active_history()
+                _response, _emotion = run_agent_loop_with_tools(msg, history, on_turn=None)
+                _last_idle_reflection_time = time.time()
+                logger.info("idle reflection triggered after {} min idle", idle_min)
+            except Exception as e:
+                logger.warning("idle reflection failed: {}", e)
+            finally:
+                lock.release()
+        except Exception as e:
+            logger.warning("idle reflection loop error: {}", e)
 
 
 def _handle_message(
@@ -264,6 +308,9 @@ def _handle_message(
     *,
     source: str | None = None,
 ) -> str:
+    global _last_user_input_time
+    _last_user_input_time = time.time()
+
     if agent_lock is not None and not agent_lock.acquire(blocking=False):
         PENDING_MESSAGES.append(
             {"input": user_input, "images": images, "source": source or "unknown"}
@@ -469,6 +516,9 @@ def _run_resident(args: argparse.Namespace) -> None:
         """
         WS 用: (answer, emotion) を返す
         """
+        global _last_user_input_time
+        _last_user_input_time = time.time()
+
         conv_history: list[dict[str, str]] = history if history is not None else []
         if agent_lock is not None and not agent_lock.acquire(blocking=False):
             return "バックグラウンド処理中です。しばらくお待ちください。", None
@@ -545,8 +595,20 @@ def _run_resident(args: argparse.Namespace) -> None:
         daemon=True,
         name="fast_heartbeat",
     )
+    idle_thread = threading.Thread(
+        target=_idle_reflection_loop,
+        args=(agent_lock, stop),
+        daemon=True,
+        name="idle_reflection",
+    )
     slow_thread.start()
     fast_thread.start()
+    idle_thread.start()
+    logger.info(
+        "idle reflection: threshold={}min cooldown={}min",
+        IDLE_THRESHOLD_SEC // 60,
+        IDLE_COOLDOWN_SEC // 60,
+    )
     try:
         _run_repl(args, agent_lock=agent_lock, conversation_history=conversation_history)
     finally:
@@ -554,6 +616,7 @@ def _run_resident(args: argparse.Namespace) -> None:
         stop.set()
         slow_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
         fast_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
+        idle_thread.join(timeout=IDLE_POLL_SEC + 5)
 
 
 def main() -> None:
