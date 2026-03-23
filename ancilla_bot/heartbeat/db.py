@@ -337,7 +337,21 @@ def manage_state(
                 if not rows:
                     return f"Table '{table}': no rows."
                 out = [_row_to_dict(c, r) for r in rows]
-                return json.dumps(out, ensure_ascii=False, indent=0)[:4000]
+                full = json.dumps(out, ensure_ascii=False, indent=0)
+                if len(full) <= 4000:
+                    return full
+                # 4000文字を超える場合は入る件数だけ表示して残りを通知
+                truncated: list[dict[str, Any]] = []
+                for item in out:
+                    candidate = json.dumps(truncated + [item], ensure_ascii=False, indent=0)
+                    if len(candidate) > 3800:
+                        break
+                    truncated.append(item)
+                note = (
+                    f"\n(注: 全{len(out)}件中{len(truncated)}件を表示。"
+                    f"残り{len(out) - len(truncated)}件は limit を減らして再取得してください)"
+                )
+                return json.dumps(truncated, ensure_ascii=False, indent=0) + note
 
             if operation == "update":
                 row_id = payload.get("id")
