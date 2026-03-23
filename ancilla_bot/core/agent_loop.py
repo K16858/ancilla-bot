@@ -22,7 +22,12 @@ RETRY_USER_MESSAGE: Final[str] = (
 
 SUMMARY_MAX_LEN = 200
 
-MAX_TOOL_TURNS: Final[int] = 5
+MAX_TOOL_TURNS: Final[int] = int(os.getenv("ANCILLA_MAX_TOOL_TURNS", "5"))
+
+_FORCE_SUMMARY_PROMPT: Final[str] = (
+    "これまでの思考と収集した情報をもとに、わかっている範囲で日本語で回答してください。"
+    "情報が不完全な場合もその旨を含めて答えてください。"
+)
 
 EXIT_COMMANDS: Final[set[str]] = {"exit", "quit", ":q", "/bye"}
 
@@ -203,5 +208,12 @@ def run_agent_loop_with_tools(
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": observation})
 
-    logger.warning("max turns reached")
-    return "最大思考回数に達しました。", None
+    logger.warning("max turns reached, forcing final answer")
+    try:
+        summary_msgs = list(messages) + [{"role": "user", "content": _FORCE_SUMMARY_PROMPT}]
+        raw_summary = send_chat(summary_msgs, format=None)
+        answer = (raw_summary or "").strip() or "処理を完了できませんでした。"
+    except Exception as exc:
+        logger.warning("force summary failed: {}", exc)
+        answer = "処理を完了できませんでした。"
+    return answer, None
