@@ -21,6 +21,9 @@ from ancilla_bot.tools.use_edgedevice import use_edgedevice
 from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
 from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
 
+# NOTE: When data/prompts/TOOLS.md exists it takes priority over this dict
+# (see build_core_memory). Edit TOOLS.md for the live system prompt;
+# keep this dict in sync as a fallback for environments without TOOLS.md.
 TOOL_DESCRIPTIONS: dict[str, str] = {
     # ── Information retrieval ─────────────────────────────────────────────
     "get_time": "Return current date/time. action_input: {}.",

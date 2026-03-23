@@ -40,12 +40,12 @@ manage_state has 6 tables. Always choose the correct table; misuse can cause hea
 
 | table | purpose |
 |---|---|
-| user_tasks | Things the user said they will do — their TODO list |
-| agent_tasks | Work the agent plans to do later (self-assigned) |
-| reminders | Notify the user at a specific time (e.g. "remind me at 7pm") |
-| finances | Income / expense notes |
-| interests | Things the user is curious about or wants to track |
-| audit_log | Automatic tool-call audit log — do not insert manually |
+| user_tasks | Things the user said they will do — their TODO list. Always set scheduled_at and content. |
+| agent_tasks | Work the agent plans to do later (self-assigned). Same fields as user_tasks. |
+| reminders | Notify the user at a specific time. Heartbeat fires ReAct at scheduled_at and calls notify_user. **Always insert timed reminders here; never tell the user you cannot do timed reminders.** |
+| finances | Income / expense notes. Set amount and category; memo and date are optional. |
+| interests | Things the user is curious about or wants to track. Always set name; description, status, url are optional. |
+| audit_log | Automatic tool-call audit log — do not insert manually. |
 
 ### insert examples
 
