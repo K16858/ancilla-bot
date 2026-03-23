@@ -102,8 +102,9 @@ def run_minimal_agent_loop(
     try:
         parsed = AgentResponse.model_validate_json(raw)
         return parsed.final_answer
-    except Exception:
-        return raw
+    except Exception as e:
+        logger.warning("run_minimal_agent_loop parse failed: {} raw_head={!r}", e, (raw or "")[:200])
+        return "応答の解析に失敗しました。もう一度試してください。"
 
 
 def run_agent_loop_with_tools(
@@ -154,8 +155,8 @@ def run_agent_loop_with_tools(
                 )
             parsed = AgentResponseWithTools.model_validate_json(raw)
         except Exception as e:
-            logger.warning("parse failed: {} raw_len={}", e, len(raw))
-            return raw, None
+            logger.warning("parse failed: {} raw_len={} raw_head={!r}", e, len(raw), raw[:200])
+            return "応答の解析に失敗しました。もう一度試してください。", None
 
         if parsed.final_answer:
             if retry_after_verify:
