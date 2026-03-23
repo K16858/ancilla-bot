@@ -87,6 +87,10 @@ def _is_agent_success(response: str) -> bool:
 _last_user_input_time: float = time.time()
 _last_idle_reflection_time: float = 0.0
 
+# 常駐モードで管理するインメモリ会話履歴。WS/API/REPL 全経路で共有。
+# None のうちは未初期化（常駐モード未起動）。
+_shared_history: list[dict[str, Any]] | None = None
+
 # Idle Reflection 設定（環境変数で上書き可）
 IDLE_THRESHOLD_SEC: Final[int] = int(os.getenv("ANCILLA_IDLE_THRESHOLD_MIN", "30")) * 60
 IDLE_COOLDOWN_SEC: Final[int] = int(os.getenv("ANCILLA_IDLE_COOLDOWN_MIN", "60")) * 60
@@ -233,7 +237,7 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                     date_changed=date_changed,
                     today=today,
                 )
-                history = load_active_history()
+                history = _shared_history if _shared_history is not None else load_active_history()
                 response, _emotion = run_agent_loop_with_tools(pseudo, history, on_turn=None)
                 if _is_agent_success(response):
                     mark_tasks_completed([t["id"] for t in tasks])
@@ -312,7 +316,7 @@ def _idle_reflection_loop(lock: threading.Lock, stop: threading.Event) -> None:
             try:
                 idle_min = int(idle_sec / 60)
                 msg = _build_idle_reflection_message(idle_min)
-                history = load_active_history()
+                history = _shared_history if _shared_history is not None else load_active_history()
                 _response, _emotion = run_agent_loop_with_tools(msg, history, on_turn=None)
                 _last_idle_reflection_time = time.time()
                 logger.info("idle reflection triggered after {} min idle", idle_min)
@@ -512,9 +516,11 @@ def _run_batch_summarize() -> None:
 
 
 def _run_resident(args: argparse.Namespace) -> None:
+    global _shared_history
     agent_lock = threading.Lock()
     stop = threading.Event()
     conversation_history = load_active_history()
+    _shared_history = conversation_history  # 全スレッドで共有
     api_port = int(os.getenv("ANCILLA_API_PORT", "8765"))
 
     def chat_handler(msg: str, imgs: list[str] | None = None) -> str:
@@ -555,15 +561,17 @@ def _run_resident(args: argparse.Namespace) -> None:
                 on_turn=None,
                 images=None,
             )
-            if agent_lock is not None:
-                threading.Thread(
-                    target=_run_compress_with_lock,
-                    args=(conv_history, MAX_HISTORY_CHARS, agent_lock),
-                    daemon=True,
-                    name="compress",
-                ).start()
-            else:
-                _run_compress_loop(conv_history, MAX_HISTORY_CHARS)
+            # WS 会話を main 履歴にも追記してディスクに保存（idle/heartbeat 参照用）
+            user_msg: dict[str, str] = {"role": "user", "content": text}
+            assistant_msg: dict[str, str] = {"role": "assistant", "content": answer}
+            dropped = append_and_trim(
+                conversation_history, [user_msg, assistant_msg], max_chars=MAX_HISTORY_CHARS
+            )
+            if dropped:
+                append_overflow(dropped)
+            save_active_history(conversation_history)
+            # compress は別スレッドで（ロックは既に保持中なので直接実行）
+            _run_compress_loop(conversation_history, MAX_HISTORY_CHARS)
             return answer, emotion
         finally:
             if agent_lock is not None:
