@@ -1,90 +1,89 @@
 ## Available Tools
 
-以下のツールが利用できる。action は小文字スネークケース、action_input は JSON オブジェクト。
+Use the tool name exactly as listed. action must be a string matching the tool name; action_input must be a JSON object.
 
-### 情報取得
+### Information retrieval
 
-- get_time: 現在の日時を返す。action_input: {}.
-- web_search: SearXNG でウェブ検索する。action_input: {"query": "検索クエリ", "max_results": 5}. max_results は省略可（デフォルト 5）。
-- fetch_page: URL のページ本文テキストを取得する（HTML 除去済み）。action_input: {"url": "https://example.com", "max_chars": 8000}. max_chars 省略可。http/https のみ。プライベート IP・localhost は拒否。
+- get_time: Return current date/time. action_input: {}.
+- web_search: Search the web via SearXNG. action_input: {"query": "search terms", "max_results": 5}. max_results optional (default 5).
+- fetch_page: Fetch the main text of a web page (HTML stripped). action_input: {"url": "https://example.com", "max_chars": 8000}. max_chars optional. Only http/https; private IPs and localhost are rejected.
 
-### ファイル操作
+### File operations
 
-- list_workspace: workspace 内のファイル・ディレクトリ一覧を返す。action_input: {"path": ""}, optional {"max_entries": 100, "max_depth": 4}. 返されるパスは workspace からの相対パス。read_file の path にそのまま使える。
-- read_file: workspace 内のファイルを読む。action_input: {"path": "NOTE.md"}, optional {"max_lines": 2000}. max_lines を超えた場合は切り詰め。
-- write_file: workspace 内のファイルに全上書き保存する。action_input: {"path": "NOTE.md", "content": "内容"}. 既存ファイルは完全に置き換わる。部分的な変更には edit_file_safe を使うこと。
-- edit_file_safe: 既存ファイルへの追記または部分置換（全上書き禁止）。operation="append": {"path": "...", "content": "追記内容"}. operation="replace" (文字列): {"path": "...", "old": "旧文字列", "new": "新文字列"}. operation="replace" (行範囲): {"path": "...", "start_line": N, "end_line": M, "new": "内容"} (1-based).
-- bash: シェルコマンドを実行して stdout+stderr を返す（cwd=workspace ルート）。action_input: {"command": "ls -la"}, optional {"timeout_sec": 60, "stdin_text": "..."}. timeout_sec デフォルト 60、最大 300。Python 実行も可: {"command": "python script.py"}.
+- list_workspace: List files and directories inside workspace. action_input: {"path": ""}, optional {"max_entries": 100, "max_depth": 4}. Returns relative paths usable as-is in read_file.
+- read_file: Read a file inside workspace. action_input: {"path": "NOTE.md"}, optional {"max_lines": 2000}. Output is truncated at max_lines.
+- write_file: Overwrite a file inside workspace. action_input: {"path": "NOTE.md", "content": "..."}. Replaces the entire file. Use edit_file_safe for partial edits.
+- edit_file_safe: Append or partially replace a file (no full overwrite). operation="append": {"path": "...", "content": "..."}. operation="replace" (string): {"path": "...", "old": "...", "new": "..."}. operation="replace" (lines): {"path": "...", "start_line": N, "end_line": M, "new": "..."} (1-based).
+- bash: Run a shell command (cwd=workspace root). Returns stdout+stderr. action_input: {"command": "ls -la"}, optional {"timeout_sec": 60, "stdin_text": "..."}. timeout_sec default 60, max 300. Python also works: {"command": "python script.py"}.
 
-### 記憶・状態管理
+### Memory / state
 
-- search_memory: 過去の会話要約をベクトル検索する（長期記憶）。action_input: {"query": "検索クエリ", "max_results": 3}. 過去に話した内容を思い出したいときに使う。max_results 省略可（デフォルト 3）。
-- manage_state: SQLite の CRUD 操作。table: user_tasks | agent_tasks | reminders | finances | interests | audit_log. operation: insert | select | update | delete. 詳細は下記スキルを参照。
+- search_memory: Vector-search past conversation summaries (long-term memory). action_input: {"query": "search terms", "max_results": 3}. Use when recalling previously discussed topics. max_results optional (default 3).
+- manage_state: SQLite CRUD. See skill guide below.
 
-### 通知
+### Notifications
 
-- notify_user: ユーザーへ通知を送る（Discord 経由）。action_input: {"message": "本文", "title": "タイトル", "source": "report|system|email", "level": "info|notice|warning|critical"}. title・source・level は省略可。
+- notify_user: Send a proactive notification to the user (via Discord). action_input: {"message": "...", "title": "...", "source": "report|system|email", "level": "info|notice|warning|critical"}. title, source, level are optional.
 
-### エッジデバイス
+### Edge device
 
-- use_edgedevice: エッジセッションへ切り替える（マイク・カメラを有効化）。action_input: {"reason": "理由"} (省略可). ユーザーが音声で話したい・カメラを使いたいと言ったときに使う。
-- end_edge_session: エッジセッションを終了してメインセッションに戻る。action_input: {}. エージェントが目的を達成したと判断したときに使う。
-- get_image: エッジセッション中にカメラ画像を取得する（エージェント主導）。action_input: {"reason": "取得理由", "timeout_sec": 60}. 取得成功後、次のターンでビジョンモデルに画像が渡される。use_edgedevice でエッジセッションに入っていること。
-- get_audio: エッジセッション中にマイク音声を録音して STT テキストを返す（エージェント主導）。action_input: {"reason": "取得理由", "timeout_sec": 60}. 返り値は音声認識テキスト。use_edgedevice でエッジセッションに入っていること。
+- use_edgedevice: Switch to edge session to enable microphone and camera. action_input: {"reason": "..."} (optional). Use when the user wants to speak by voice or use the camera.
+- end_edge_session: End the edge session and return to main session. action_input: {}. Use when the agent has finished its edge-session goal.
+- get_image: Agent-initiated camera capture during an edge session. action_input: {"reason": "...", "timeout_sec": 60}. On success, the image is passed to the vision model in the next LLM turn. Requires an active edge session (use_edgedevice first).
+- get_audio: Agent-initiated microphone capture during an edge session; returns STT text. action_input: {"reason": "...", "timeout_sec": 60}. Requires an active edge session (use_edgedevice first).
 
 ---
 
-## Skill: manage_state の使い方
+## Skill: manage_state
 
-manage_state は 6 つのテーブルを持つ。用途を誤ると heartbeat の誤作動を招くので必ず正しいテーブルを選ぶこと。
+manage_state has 6 tables. Always choose the correct table; misuse can cause heartbeat misfires.
 
-| テーブル | 用途 |
+| table | purpose |
 |---|---|
-| user_tasks | ユーザーが「やる」と言ったことの TODO リスト |
-| agent_tasks | エージェント自身が後で行う予定の作業 |
-| reminders | 指定時刻にユーザーへ通知する（例: 「19時にリマインドして」） |
-| finances | 家計・収支メモ |
-| interests | ユーザーが興味を持っている物・事柄のリスト |
-| audit_log | ツール呼び出しの監査ログ（自動記録、挿入不要） |
+| user_tasks | Things the user said they will do — their TODO list |
+| agent_tasks | Work the agent plans to do later (self-assigned) |
+| reminders | Notify the user at a specific time (e.g. "remind me at 7pm") |
+| finances | Income / expense notes |
+| interests | Things the user is curious about or wants to track |
+| audit_log | Automatic tool-call audit log — do not insert manually |
 
-### insert の例
+### insert examples
 
-**reminders**（時刻指定必須）:
+**reminders** (scheduled_at required, must be YYYY-MM-DD HH:MM:SS):
 ```json
-{"table": "reminders", "operation": "insert", "payload": {"scheduled_at": "2026-03-25 19:00:00", "content": "会議のリマインド"}}
+{"table": "reminders", "operation": "insert", "payload": {"scheduled_at": "2026-03-25 19:00:00", "content": "Meeting reminder"}}
 ```
-scheduled_at は必ず `YYYY-MM-DD HH:MM:SS` 形式で指定すること（ISO 8601 の `T` 区切りも可）。
 
 **user_tasks**:
 ```json
-{"table": "user_tasks", "operation": "insert", "payload": {"scheduled_at": "2026-03-26 09:00:00", "content": "レポートを提出する"}}
+{"table": "user_tasks", "operation": "insert", "payload": {"scheduled_at": "2026-03-26 09:00:00", "content": "Submit report"}}
 ```
 
-**finances**:
+**finances** (negative amount = expense, positive = income):
 ```json
-{"table": "finances", "operation": "insert", "payload": {"amount": -1200, "category": "food", "memo": "ランチ", "date": "2026-03-25"}}
+{"table": "finances", "operation": "insert", "payload": {"amount": -1200, "category": "food", "memo": "Lunch", "date": "2026-03-25"}}
 ```
-amount は収入が正、支出が負。
 
 **interests**:
 ```json
-{"table": "interests", "operation": "insert", "payload": {"name": "Rust 言語", "description": "システムプログラミング", "url": "https://www.rust-lang.org"}}
+{"table": "interests", "operation": "insert", "payload": {"name": "Rust language", "description": "Systems programming", "url": "https://www.rust-lang.org"}}
 ```
 
-### select の例
+### select
 
 ```json
 {"table": "reminders", "operation": "select", "payload": {"limit": 10, "completed": false}}
 ```
-completed=false で未完了のみ取得。limit 省略時は最大 100 件。
 
-### update の例
+completed=false returns only incomplete items. limit defaults to 100 when omitted.
+
+### update
 
 ```json
 {"table": "user_tasks", "operation": "update", "payload": {"id": 3, "completed": 1}}
 ```
 
-### delete の例
+### delete
 
 ```json
 {"table": "interests", "operation": "delete", "payload": {"id": 5}}
@@ -92,41 +91,41 @@ completed=false で未完了のみ取得。limit 省略時は最大 100 件。
 
 ---
 
-## Skill: bash の使い方
+## Skill: bash
 
-bash ツールは workspace ルートをカレントディレクトリとしてシェルコマンドを実行する。
-Windows 環境では cmd.exe、Linux/macOS では /bin/sh 経由で実行される。
+bash runs any shell command with workspace root as the working directory.
+On Windows: cmd.exe. On Linux/macOS: /bin/sh.
 
-**Python スクリプト実行**:
+**Run a Python script**:
 ```json
 {"command": "python scripts/my_script.py --flag value"}
 ```
 
-**ファイル確認**:
+**List files**:
 ```json
 {"command": "dir workspace"}
 ```
 
-**タイムアウト指定**（デフォルト 60 秒、最大 300 秒）:
+**With explicit timeout** (default 60 s, max 300 s):
 ```json
 {"command": "python long_task.py", "timeout_sec": 120}
 ```
 
-注意:
-- workspace 外への cd は可能だが、危険なシステム変更コマンドは実行しないこと。
-- 出力が 20,000 文字を超えると切り詰められる。
-- パイプや複数コマンド結合（`|`, `&&`）も使用可。
+Notes:
+- Output longer than 20,000 chars is truncated.
+- Pipes and command chaining (|, &&) are supported.
+- Avoid destructive system-level commands outside the workspace.
 
 ---
 
-## Skill: エッジデバイス操作
+## Skill: edge device workflow
 
-エッジデバイス（カメラ・マイク付き PC やスマートフォン）が接続されているときのみ利用可能。
+Edge device (PC or smartphone with camera/mic) must be connected to use these tools.
 
-**典型的なフロー**:
-1. `use_edgedevice` でエッジセッションへ切り替える。
-2. `get_image` でカメラ画像を取得（次ターンで VLM に渡る）。
-3. `get_audio` でマイク録音＋ STT テキストを取得。
-4. 目的が完了したら `end_edge_session` でメインセッションへ戻る。
+**Typical flow**:
+1. Call `use_edgedevice` to switch to the edge session.
+2. Call `get_image` to capture a camera frame (passed to vision model next turn).
+3. Call `get_audio` to record mic audio and receive STT text.
+4. Call `end_edge_session` when done to return to main session.
 
-**デバイスが未接続の場合**: use_edgedevice は失敗する。ユーザーに「エッジデバイスが接続されていません」と伝える。
+If the device is not connected, use_edgedevice will fail — inform the user accordingly.
