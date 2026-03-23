@@ -8,6 +8,7 @@ notes/
 *.log
 .venv/
 data/
+!data/prompts/
 *.pyc
 *.egg-info/
 sessions/
