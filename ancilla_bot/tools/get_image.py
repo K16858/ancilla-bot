@@ -24,6 +24,7 @@ def get_image(reason: str = "", timeout_sec: int = 60, **kwargs: Any) -> str:
         is_edge_session,
         register_camera_waiter,
         send_downlink,
+        stage_vlm_images,
         unregister_camera_waiter,
     )
 
@@ -53,5 +54,6 @@ def get_image(reason: str = "", timeout_sec: int = 60, **kwargs: Any) -> str:
     if not b64:
         return f"カメラ映像の取得がタイムアウトしました（{timeout_sec} 秒）。"
 
-    return f"カメラ画像を取得しました（base64 長 {len(b64)}）。"
+    stage_vlm_images([b64])
+    return f"カメラ画像を取得しました。次のターンでビジョンモデルに渡します（base64 長 {len(b64)}）。"
 
