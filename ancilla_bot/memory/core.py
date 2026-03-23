@@ -26,6 +26,25 @@ def _section(content: str, title: str | None = None) -> str:
     return f"\n\n{content}"
 
 
+def build_character_prompt() -> str:
+    """CHARACTER.md + USER.md のみ（ツール・エージェント指示なし）。
+    ReAct JSON 形式を使わない自由応答用システムプロンプト。"""
+    prompts = DEFAULT_PROMPTS_DIR
+    workspace = DEFAULT_WORKSPACE_DIR
+
+    character = _load_file(prompts / "CHARACTER.md")
+    user      = _load_file(workspace / "USER.md")
+
+    parts: list[str] = []
+    if character:
+        parts.append(character.strip())
+    if user:
+        parts.append(_section(user, None))
+
+    result = "\n\n".join(p.strip() for p in parts if p.strip())
+    return result or "You are a helpful assistant."
+
+
 def build_core_memory(tools_block: str) -> str:
     """
     主記憶を組み立てる。注入順: CHARACTER → AGENT → USER → TOOLS。

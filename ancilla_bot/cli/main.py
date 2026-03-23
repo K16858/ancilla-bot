@@ -20,7 +20,7 @@ from loguru import logger
 from ancilla_bot.core.agent_loop import is_exit_command, run_agent_loop_with_tools
 from ancilla_bot.llm import send_chat
 from ancilla_bot.llm.ollama_client import VISION_ENABLED
-from ancilla_bot.memory.core import build_core_memory
+from ancilla_bot.memory.core import build_character_prompt, build_core_memory
 from ancilla_bot.heartbeat.db import (
     get_due_reminders,
     get_due_tasks,
@@ -498,7 +498,7 @@ def _run_resident(args: argparse.Namespace) -> None:
         if agent_lock is not None and not agent_lock.acquire(blocking=False):
             return None
         try:
-            system_prompt = build_core_memory("")
+            system_prompt = build_character_prompt()
             msgs = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": "今の状況を見て、自然に一言どうぞ。"},
