@@ -15,6 +15,7 @@ def notify_user(
     source: Literal["system", "report", "email"] = "report",
     level: Literal["info", "notice", "warning", "critical"] = "info",
     title: str | None = None,
+    **kwargs: object,
 ) -> str:
     """
     通知を 1 件送る高レベルツール。

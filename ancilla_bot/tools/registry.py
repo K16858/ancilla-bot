@@ -30,7 +30,6 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "bash": "Run a shell command (cwd=workspace root). action_input: {\"command\": \"ls -la\"}, optional {\"timeout_sec\": 60, \"stdin_text\": \"...\"}. Returns stdout+stderr. timeout_sec default 60, max 300.",
     "read_file": "Read a file in workspace. action_input: {\"path\": \"NOTE.md\"}, optional {\"max_lines\": 2000}. Truncates after max_lines to avoid context overflow.",
     "write_file": "Write to a file in workspace. action_input: {\"path\": \"NOTE.md\", \"content\": \"content\"}.",
-    "update_memory": "Update USER.md or AGENT.md. action_input: {\"file\": \"USER\" or \"AGENT\", \"content\": \"content\"}. Use sparingly.",
     "search_memory": "Search past conversation summaries (long-term memory). action_input: {\"query\": \"search query\", \"max_results\": 3}. max_results optional (default 3). Use when you need to recall past topics.",
     "manage_state": "SQLite CRUD: table (user_tasks|agent_tasks|reminders|finances|interests|audit_log), operation (insert|select|update|delete), payload (dict). insert tasks/reminders: {scheduled_at, content}. insert finances: {amount, category, memo?, date?}. insert interests: {name}, optional {description, status, url}. select: {limit?, completed?} for tasks/reminders, {limit} for others. update: {id, ...fields}. delete: {id}.",
     "notify_user": "Send a proactive notification to the user via Discord. action_input: {\"message\": \"text\", \"source\": \"system|report|email\", \"level\": \"info|notice|warning|critical\", \"title\": \"optional title\"}. source optional (default \"report\"), level optional (default \"info\").",
@@ -121,17 +120,6 @@ def write_file(path: str, content: str, **kwargs: Any) -> str:
     return workspace_write_file(path=path, content=content, **kwargs)
 
 
-def update_memory(file: str, content: str, **kwargs: Any) -> str:
-    """
-    workspace/memory の USER.md または AGENT.md を書き換える。
-    file: "USER" または "AGENT"
-    """
-    _ = kwargs
-    if file.upper() not in ("USER", "AGENT"):
-        return "Error: file は USER または AGENT のいずれかを指定してください。"
-    path = f"{file.upper()}.md"
-    return workspace_write_file(path=path, content=content)
-
 
 def search_memory(query: str, max_results: int = 3, **kwargs: Any) -> str:
     """
@@ -167,7 +155,6 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "bash": bash,
     "read_file": read_file,
     "write_file": write_file,
-    "update_memory": update_memory,
     "search_memory": search_memory,
     "manage_state": manage_state,
     "notify_user": notify_user,
