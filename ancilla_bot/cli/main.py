@@ -61,6 +61,28 @@ PENDING_MESSAGES: list[dict[str, Any]] = []
 # Fast Heartbeat 用の直近日付（YYYY-MM-DD）。プロセス内でのみ保持する。
 _LAST_HEARTBEAT_DATE: str | None = None
 
+# エージェント応答がエラーとみなされるプレフィックス（ハートビート完了判定用）
+_AGENT_ERROR_PREFIXES: Final[tuple[str, ...]] = (
+    "内部エラー",
+    "処理を完了できませんでした",
+    "バックグラウンド処理中",
+    "応答の解析に失敗",
+)
+
+
+def _is_agent_success(response: str) -> bool:
+    """エージェント応答が有効（エラーでない）かどうか判定する。"""
+    if not response or len(response) < 5:
+        return False
+    for prefix in _AGENT_ERROR_PREFIXES:
+        if response.startswith(prefix):
+            return False
+    # 生 JSON がそのまま返ってきた場合も失敗扱い
+    stripped = response.strip()
+    if stripped.startswith("{") and stripped.endswith("}"):
+        return False
+    return True
+
 # Idle Reflection: 最終ユーザー入力時刻・最終 reflection 実行時刻（epoch 秒）。
 _last_user_input_time: float = time.time()
 _last_idle_reflection_time: float = 0.0
@@ -213,18 +235,22 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 )
                 history = load_active_history()
                 response, _emotion = run_agent_loop_with_tools(pseudo, history, on_turn=None)
-                mark_tasks_completed([t["id"] for t in tasks])
-                mark_reminders_completed([r["id"] for r in reminders])
-                if isinstance(response, str):
-                    msg = response.strip()
-                    if msg:
+                if _is_agent_success(response):
+                    mark_tasks_completed([t["id"] for t in tasks])
+                    mark_reminders_completed([r["id"] for r in reminders])
+                    if response.strip():
                         append_notification(
-                            msg,
+                            response.strip(),
                             source="system",
                             level="info",
                             detail=f"tasks={len(tasks)}, reminders={len(reminders)}",
                         )
-                logger.info("fast heartbeat: processed {} tasks, {} reminders", len(tasks), len(reminders))
+                    logger.info("fast heartbeat: processed {} tasks, {} reminders", len(tasks), len(reminders))
+                else:
+                    logger.warning(
+                        "fast heartbeat: agent response looks like an error, NOT marking completed. response={!r}",
+                        response[:120],
+                    )
             except Exception as e:
                 logger.warning("fast heartbeat run failed: {}", e)
             finally:
