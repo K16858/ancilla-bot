@@ -132,7 +132,7 @@ def _get_due_from_table(table: str, *, at: datetime | None = None) -> list[dict[
     with _conn() as conn:
         cur = conn.execute(
             f"SELECT id, scheduled_at, content, completed, created_at FROM {table} "
-            "WHERE scheduled_at <= ? AND completed = 0 ORDER BY scheduled_at ASC",
+            "WHERE datetime(scheduled_at) <= datetime(?) AND completed = 0 ORDER BY scheduled_at ASC",
             (ts,),
         )
         rows = cur.fetchall()
@@ -198,6 +198,23 @@ def mark_reminders_completed(reminder_ids: list[int]) -> None:
         )
 
 
+def _normalize_scheduled_at(value: str) -> str:
+    """日時文字列を 'YYYY-MM-DD HH:MM:SS' に正規化する。ISO 8601 の T 区切りも処理する。"""
+    s = (value or "").strip()
+    # datetime.fromisoformat は T・スペース両対応（Python 3.11+）
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+    return s  # パース不能な場合はそのまま返す
+
+
 def _validate_insert_payload(table: str, payload: dict[str, Any]) -> str | None:
     """insert 用 payload を検証。エラー時はメッセージ、OK 時は None。"""
     if table in ("user_tasks", "agent_tasks", "reminders"):
@@ -248,7 +265,7 @@ def manage_state(
                 if err:
                     return err
                 if table in ("user_tasks", "agent_tasks", "reminders"):
-                    scheduled_at = str(payload.get("scheduled_at", "")).strip()
+                    scheduled_at = _normalize_scheduled_at(str(payload.get("scheduled_at", "")))
                     content = str(payload.get("content", "")).strip()
                     if not content:
                         return "Error: content is required."
@@ -344,6 +361,8 @@ def manage_state(
                         sets.append(f"{k} = ?")
                         if k == "completed" and isinstance(v, bool):
                             params.append(1 if v else 0)
+                        elif k == "scheduled_at":
+                            params.append(_normalize_scheduled_at(str(v)))
                         else:
                             params.append(v)
                 if not sets:
