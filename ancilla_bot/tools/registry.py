@@ -22,21 +22,94 @@ from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
 from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
 
 TOOL_DESCRIPTIONS: dict[str, str] = {
-    "get_time": "Return current date/time. action_input: {}.",
-    "web_search": "Search the web. action_input: {\"query\": \"search query\", \"max_results\": 5}. max_results optional (default 5).",
-    "fetch_page": "Get the main text of a web page. action_input: {\"url\": \"https://example.com/page\", \"max_chars\": 8000}. max_chars optional (default from config). Only http/https URLs are allowed.",
-    "list_workspace": "List files and directories in workspace. action_input: {\"path\": \"\" or \"docs\"}, optional {\"max_entries\": 100, \"max_depth\": 4}. Returns relative paths (use as path in read_file).",
-    "edit_file_safe": "Append or replace in a file (no full overwrite). action_input: {\"path\": \"...\", \"operation\": \"append\"|\"replace\"}. append: {\"content\": \"...\"}. replace (string): {\"old\": \"...\", \"new\": \"...\"} (old can be multiline). replace (lines): {\"start_line\": N, \"end_line\": M, \"new\": \"...\"} (1-based).",
-    "bash": "Run a shell command (cwd=workspace root). action_input: {\"command\": \"ls -la\"}, optional {\"timeout_sec\": 60, \"stdin_text\": \"...\"}. Returns stdout+stderr. timeout_sec default 60, max 300.",
-    "read_file": "Read a file in workspace. action_input: {\"path\": \"NOTE.md\"}, optional {\"max_lines\": 2000}. Truncates after max_lines to avoid context overflow.",
-    "write_file": "Write to a file in workspace. action_input: {\"path\": \"NOTE.md\", \"content\": \"content\"}.",
-    "search_memory": "Search past conversation summaries (long-term memory). action_input: {\"query\": \"search query\", \"max_results\": 3}. max_results optional (default 3). Use when you need to recall past topics.",
-    "manage_state": "SQLite CRUD: table (user_tasks|agent_tasks|reminders|finances|interests|audit_log), operation (insert|select|update|delete), payload (dict). insert tasks/reminders: {scheduled_at, content}. insert finances: {amount, category, memo?, date?}. insert interests: {name}, optional {description, status, url}. select: {limit?, completed?} for tasks/reminders, {limit} for others. update: {id, ...fields}. delete: {id}.",
-    "notify_user": "Send a proactive notification to the user via Discord. action_input: {\"message\": \"text\", \"source\": \"system|report|email\", \"level\": \"info|notice|warning|critical\", \"title\": \"optional title\"}. source optional (default \"report\"), level optional (default \"info\").",
-    "use_edgedevice": "Switch to edge session so the user can use microphone and camera. action_input: {\"target\": \"\", \"reason\": \"\"} (optional). Use when the user wants to talk by voice or use camera.",
-    "end_edge_session": "End the edge session and return to main session. action_input: {}. Use when the agent decides the edge session is finished.",
-    "get_image": "Agent-initiated camera capture in edge session. Sends media_request; device must reply with vision_input carrying the same request_id and image base64. action_input: {\"reason\": \"\", \"timeout_sec\": 60}. Next LLM turn receives the image as vision input.",
-    "get_audio": "Agent-initiated microphone capture in edge session. Sends media_request; device must reply with audio_input (same request_id, WAV base64). Returns STT text. Spontaneous mic (no request_id) is separate: STT+ReAct. action_input: {\"reason\": \"\", \"timeout_sec\": 60}.",
+    # ── 情報取得 ──────────────────────────────────────────────────────────
+    "get_time": (
+        "現在の日時を返す。action_input: {}."
+    ),
+    "web_search": (
+        "SearXNG でウェブ検索する。"
+        "action_input: {\"query\": \"検索クエリ\", \"max_results\": 5}. "
+        "max_results は省略可（デフォルト 5）。"
+    ),
+    "fetch_page": (
+        "URL のページ本文テキストを取得する（HTML 除去済み）。"
+        "action_input: {\"url\": \"https://example.com\", \"max_chars\": 8000}. "
+        "max_chars 省略可。http/https のみ。プライベート IP・localhost は拒否。"
+    ),
+    # ── ファイル操作 ──────────────────────────────────────────────────────
+    "list_workspace": (
+        "workspace 内のファイル・ディレクトリ一覧を返す。"
+        "action_input: {\"path\": \"\"}, optional {\"max_entries\": 100, \"max_depth\": 4}. "
+        "返されるパスは workspace からの相対パス。read_file の path にそのまま使える。"
+    ),
+    "read_file": (
+        "workspace 内のファイルを読む。"
+        "action_input: {\"path\": \"NOTE.md\"}, optional {\"max_lines\": 2000}. "
+        "max_lines を超えた場合は切り詰め。"
+    ),
+    "write_file": (
+        "workspace 内のファイルに全上書き保存する。"
+        "action_input: {\"path\": \"NOTE.md\", \"content\": \"内容\"}. "
+        "既存ファイルは完全に置き換わる。部分的な変更には edit_file_safe を使うこと。"
+    ),
+    "edit_file_safe": (
+        "既存ファイルへの追記または部分置換（全上書き禁止）。"
+        "operation=\"append\": {\"path\": \"...\", \"content\": \"追記内容\"}. "
+        "operation=\"replace\" (文字列): {\"path\": \"...\", \"old\": \"旧文字列\", \"new\": \"新文字列\"}. "
+        "operation=\"replace\" (行範囲): {\"path\": \"...\", \"start_line\": N, \"end_line\": M, \"new\": \"内容\"} (1-based)."
+    ),
+    "bash": (
+        "シェルコマンドを実行して stdout+stderr を返す（cwd=workspace ルート）。"
+        "action_input: {\"command\": \"ls -la\"}, optional {\"timeout_sec\": 60, \"stdin_text\": \"...\"}. "
+        "timeout_sec デフォルト 60、最大 300。Python 実行も可: {\"command\": \"python script.py\"}."
+    ),
+    # ── 記憶・状態管理 ────────────────────────────────────────────────────
+    "search_memory": (
+        "過去の会話要約をベクトル検索する（長期記憶）。"
+        "action_input: {\"query\": \"検索クエリ\", \"max_results\": 3}. "
+        "過去に話した内容を思い出したいときに使う。max_results 省略可（デフォルト 3）。"
+    ),
+    "manage_state": (
+        "SQLite の CRUD 操作。"
+        "table: user_tasks | agent_tasks | reminders | finances | interests | audit_log. "
+        "operation: insert | select | update | delete. "
+        "insert reminders/tasks: payload={\"scheduled_at\": \"YYYY-MM-DD HH:MM:SS\", \"content\": \"内容\"}. "
+        "insert finances: payload={\"amount\": 1000, \"category\": \"food\", \"memo\": \"...\", \"date\": \"YYYY-MM-DD\"}. "
+        "insert interests: payload={\"name\": \"名称\", \"description\": \"...\", \"url\": \"...\"}. "
+        "select: payload={\"limit\": 10, \"completed\": false}. "
+        "update: payload={\"id\": N, \"content\": \"新内容\"}. "
+        "delete: payload={\"id\": N}. "
+        "注意: scheduled_at は必ず YYYY-MM-DD HH:MM:SS 形式で指定すること。"
+    ),
+    # ── 通知 ──────────────────────────────────────────────────────────────
+    "notify_user": (
+        "ユーザーへ通知を送る（Discord 経由）。"
+        "action_input: {\"message\": \"本文\", \"title\": \"タイトル\", "
+        "\"source\": \"report|system|email\", \"level\": \"info|notice|warning|critical\"}. "
+        "title・source・level は省略可。重要な報告や完了通知に使う。"
+    ),
+    # ── エッジデバイス ────────────────────────────────────────────────────
+    "use_edgedevice": (
+        "エッジセッションへ切り替える（マイク・カメラを有効化）。"
+        "action_input: {\"reason\": \"理由\"} (省略可). "
+        "ユーザーが音声で話したい・カメラを使いたいと言ったときに使う。"
+    ),
+    "end_edge_session": (
+        "エッジセッションを終了してメインセッションに戻る。"
+        "action_input: {}. "
+        "エージェントがエッジセッションの目的を達成したと判断したときに使う。"
+    ),
+    "get_image": (
+        "エッジセッション中にカメラ画像を取得する（エージェント主導）。"
+        "action_input: {\"reason\": \"取得理由\", \"timeout_sec\": 60}. "
+        "取得成功後、次のターンでビジョンモデルに画像が渡される。"
+        "use_edgedevice でエッジセッションに入っていること。"
+    ),
+    "get_audio": (
+        "エッジセッション中にマイク音声を録音して STT テキストを返す（エージェント主導）。"
+        "action_input: {\"reason\": \"取得理由\", \"timeout_sec\": 60}. "
+        "返り値は音声認識テキスト。use_edgedevice でエッジセッションに入っていること。"
+    ),
 }
 
 
