@@ -95,6 +95,7 @@ _shared_history: list[dict[str, Any]] | None = None
 IDLE_THRESHOLD_SEC: Final[int] = int(os.getenv("ANCILLA_IDLE_THRESHOLD_MIN", "30")) * 60
 IDLE_COOLDOWN_SEC: Final[int] = int(os.getenv("ANCILLA_IDLE_COOLDOWN_MIN", "60")) * 60
 IDLE_POLL_SEC: Final[int] = 60  # アイドル監視のポーリング間隔（秒）
+IDLE_MAX_TOOL_TURNS: Final[int] = int(os.getenv("ANCILLA_IDLE_MAX_TOOL_TURNS", "8"))
 
 
 def _reasoning_line(text: str, dim: bool) -> str:
@@ -326,6 +327,7 @@ def _idle_reflection_loop(lock: threading.Lock, stop: threading.Event) -> None:
                     msg,
                     history,
                     on_turn=None,
+                    max_turns=IDLE_MAX_TOOL_TURNS,
                     nag_interval=3,
                     nag_message="Check and update your agent_tasks (source=self) to track progress.",
                 )
