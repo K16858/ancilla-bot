@@ -47,9 +47,15 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
     scheduled_at TEXT NOT NULL,
     content TEXT NOT NULL,
     completed INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT 'heartbeat',
     created_at TEXT NOT NULL
 )
 """
+
+# 既存 DB への後付けマイグレーション（カラムが無ければ追加）
+_MIGRATE_AGENT_TASKS_SOURCE = (
+    "ALTER TABLE agent_tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'heartbeat'"
+)
 
 _SCHEMA_REMINDERS = """
 CREATE TABLE IF NOT EXISTS reminders (
@@ -94,7 +100,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 
 def ensure_schema() -> None:
-    """全テーブルがなければ作成する。"""
+    """全テーブルがなければ作成する。既存テーブルへのマイグレーションも実行。"""
     with _conn() as c:
         c.executescript(_SCHEMA_USER_TASKS)
         c.executescript(_SCHEMA_AGENT_TASKS)
@@ -102,6 +108,11 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_FINANCES)
         c.executescript(_SCHEMA_INTERESTS)
         c.executescript(_SCHEMA_AUDIT_LOG)
+        # agent_tasks.source カラムが既存 DB に無ければ追加
+        try:
+            c.execute(_MIGRATE_AGENT_TASKS_SOURCE)
+        except Exception:
+            pass  # カラムが既にあれば無視
 
 
 def append_audit_log(tool_name: str, args_summary: str = "") -> None:
@@ -125,16 +136,26 @@ def _row_to_dict(cursor: sqlite3.Cursor, row: tuple) -> dict[str, Any]:
 
 
 def _get_due_from_table(table: str, *, at: datetime | None = None) -> list[dict[str, Any]]:
-    """共通: 指定テーブルから due 行を取得（tasks 系・reminders 用）。"""
+    """共通: 指定テーブルから due 行を取得（tasks 系・reminders 用）。
+    agent_tasks は source='heartbeat' のみ取得（source='self' は heartbeat で発火しない）。
+    """
     at = at or datetime.now()
     ts = at.strftime("%Y-%m-%d %H:%M:%S")
     ensure_schema()
     with _conn() as conn:
-        cur = conn.execute(
-            f"SELECT id, scheduled_at, content, completed, created_at FROM {table} "
-            "WHERE datetime(scheduled_at) <= datetime(?) AND completed = 0 ORDER BY scheduled_at ASC",
-            (ts,),
-        )
+        if table == "agent_tasks":
+            cur = conn.execute(
+                "SELECT id, scheduled_at, content, completed, source, created_at FROM agent_tasks "
+                "WHERE datetime(scheduled_at) <= datetime(?) AND completed = 0 AND source = 'heartbeat' "
+                "ORDER BY scheduled_at ASC",
+                (ts,),
+            )
+        else:
+            cur = conn.execute(
+                f"SELECT id, scheduled_at, content, completed, created_at FROM {table} "
+                "WHERE datetime(scheduled_at) <= datetime(?) AND completed = 0 ORDER BY scheduled_at ASC",
+                (ts,),
+            )
         rows = cur.fetchall()
         return [_row_to_dict(cur, r) for r in rows]
 
@@ -269,10 +290,18 @@ def manage_state(
                     content = str(payload.get("content", "")).strip()
                     if not content:
                         return "Error: content is required."
-                    c.execute(
-                        f"INSERT INTO {table} (scheduled_at, content, completed, created_at) VALUES (?, ?, 0, ?)",
-                        (scheduled_at, content, now),
-                    )
+                    if table == "agent_tasks":
+                        raw_source = str(payload.get("source", "heartbeat")).strip().lower()
+                        source = raw_source if raw_source in ("heartbeat", "self") else "heartbeat"
+                        c.execute(
+                            "INSERT INTO agent_tasks (scheduled_at, content, completed, source, created_at) VALUES (?, ?, 0, ?, ?)",
+                            (scheduled_at, content, source, now),
+                        )
+                    else:
+                        c.execute(
+                            f"INSERT INTO {table} (scheduled_at, content, completed, created_at) VALUES (?, ?, 0, ?)",
+                            (scheduled_at, content, now),
+                        )
                 elif table == "finances":
                     amount = float(payload.get("amount", 0))
                     category = str(payload.get("category", "")).strip() or "other"
@@ -312,10 +341,20 @@ def manage_state(
                     if "completed" in payload:
                         where.append("completed = ?")
                         params.append(1 if payload.get("completed") else 0)
+                    if table == "agent_tasks" and "source" in payload:
+                        raw_src = str(payload["source"]).strip().lower()
+                        if raw_src in ("heartbeat", "self"):
+                            where.append("source = ?")
+                            params.append(raw_src)
                     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
                     params.append(limit)
+                    select_cols = (
+                        "id, scheduled_at, content, completed, source, created_at"
+                        if table == "agent_tasks"
+                        else "id, scheduled_at, content, completed, created_at"
+                    )
                     c.execute(
-                        f"SELECT id, scheduled_at, content, completed, created_at FROM {table}{where_sql} {order} LIMIT ?",
+                        f"SELECT {select_cols} FROM {table}{where_sql} {order} LIMIT ?",
                         params,
                     )
                 elif table == "finances":
@@ -359,7 +398,8 @@ def manage_state(
                     return "Error: update requires id in payload."
                 row_id = int(row_id)
                 allowed_cols = (
-                    {"completed", "scheduled_at", "content"} if table in ("user_tasks", "agent_tasks", "reminders")
+                    {"completed", "scheduled_at", "content", "source"} if table == "agent_tasks"
+                    else {"completed", "scheduled_at", "content"} if table in ("user_tasks", "reminders")
                     else {"amount", "category", "memo", "date"} if table == "finances"
                     else {"name", "description", "status", "url"} if table == "interests"
                     else set()
