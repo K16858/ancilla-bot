@@ -115,6 +115,9 @@ def run_agent_loop_with_tools(
         [str, str | None, dict[str, Any] | None, str | None], None
     ] | None = None,
     images: list[str] | None = None,
+    max_turns: int | None = None,
+    nag_interval: int | None = None,
+    nag_message: str | None = None,
 ) -> tuple[str, str | None]:
     """
     ツール呼び出しありの ReAct ループ。
@@ -135,8 +138,11 @@ def run_agent_loop_with_tools(
     _inject_time_note(messages)
     schema = AgentResponseWithTools.model_json_schema()
     retry_after_verify = False
+    effective_max_turns = max_turns if max_turns is not None else MAX_TOOL_TURNS
+    # nag injection: turns since last manage_state call
+    _turns_since_manage_state = 0
 
-    for turn in range(MAX_TOOL_TURNS):
+    for turn in range(effective_max_turns):
         logger.debug("ReAct turn {} messages={}", turn + 1, messages)
         send_images: list[str] | None = None
         if turn == 0 and images:
@@ -192,6 +198,14 @@ def run_agent_loop_with_tools(
             except Exception as e:
                 observation = f"Observation: Error: {e!s}"
                 logger.warning("tool exception action={} error={}", parsed.action, e)
+            # nag injection: track manage_state usage
+            if parsed.action == "manage_state":
+                _turns_since_manage_state = 0
+            else:
+                _turns_since_manage_state += 1
+            if nag_interval and nag_message and _turns_since_manage_state >= nag_interval:
+                observation += f"\n<reminder>{nag_message}</reminder>"
+                _turns_since_manage_state = 0
             if on_turn is not None:
                 on_turn(parsed.thought, parsed.action, args, observation)
             messages.append({"role": "assistant", "content": raw})
@@ -209,7 +223,7 @@ def run_agent_loop_with_tools(
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": observation})
 
-    logger.warning("max turns reached, forcing final answer")
+    logger.warning("max turns ({}) reached, forcing final answer", effective_max_turns)
     try:
         summary_msgs = list(messages) + [{"role": "user", "content": _FORCE_SUMMARY_PROMPT}]
         raw_summary = send_chat(summary_msgs, format=None)
