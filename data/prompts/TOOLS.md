@@ -41,11 +41,42 @@ manage_state has 6 tables. Always choose the correct table; misuse can cause hea
 | table | purpose |
 |---|---|
 | user_tasks | Things the user said they will do — their TODO list. Always set scheduled_at and content. |
-| agent_tasks | Work the agent plans to do later (self-assigned). Same fields as user_tasks. |
+| agent_tasks | Work the agent plans to do later. Has two modes controlled by `source` field (see below). |
 | reminders | Notify the user at a specific time. Heartbeat fires ReAct at scheduled_at and calls notify_user. **Always insert timed reminders here; never tell the user you cannot do timed reminders.** |
 | finances | Income / expense notes. Set amount and category; memo and date are optional. |
 | interests | Things the user is curious about or wants to track. Always set name; description, status, url are optional. |
 | audit_log | Automatic tool-call audit log — do not insert manually. |
+
+### agent_tasks — two modes via `source` field
+
+| source | purpose | heartbeat triggers? |
+|---|---|---|
+| `heartbeat` (default) | Schedule future work for the system to run at `scheduled_at` | YES |
+| `self` | Your own cross-session TODO and work log — never triggered by heartbeat | NO |
+
+**Rule: always use `source="self"` for your own task tracking. Only use `source="heartbeat"` when you want the system to run something at a specific time.**
+
+#### Self-managed TODO pattern (plan-first)
+
+Before doing any multi-step work during idle reflection, follow this pattern:
+
+**Step 1 — Check what you already did** (always do this first to avoid repeating work):
+```json
+{"table": "agent_tasks", "operation": "select", "payload": {"source": "self", "limit": 30}}
+```
+If a similar task exists with `completed=1`, skip it.
+
+**Step 2 — Plan: create a TODO before starting**:
+```json
+{"table": "agent_tasks", "operation": "insert", "payload": {"scheduled_at": "2026-03-25 03:00:00", "content": "[TODO] Research Rust async patterns", "source": "self"}}
+```
+
+**Step 3 — Do the work**, then mark it done with a note about what you produced:
+```json
+{"table": "agent_tasks", "operation": "update", "payload": {"id": 42, "completed": 1, "content": "[DONE] Research Rust async patterns → wrote workspace/notes/rust_async.md"}}
+```
+
+This creates a persistent work log across idle cycles, preventing repeated research.
 
 ### insert examples
 
@@ -57,6 +88,11 @@ manage_state has 6 tables. Always choose the correct table; misuse can cause hea
 **user_tasks**:
 ```json
 {"table": "user_tasks", "operation": "insert", "payload": {"scheduled_at": "2026-03-26 09:00:00", "content": "Submit report"}}
+```
+
+**agent_tasks (heartbeat-triggered)**:
+```json
+{"table": "agent_tasks", "operation": "insert", "payload": {"scheduled_at": "2026-03-26 08:00:00", "content": "Generate daily summary", "source": "heartbeat"}}
 ```
 
 **finances** (negative amount = expense, positive = income):
@@ -76,6 +112,11 @@ manage_state has 6 tables. Always choose the correct table; misuse can cause hea
 ```
 
 completed=false returns only incomplete items. limit defaults to 100 when omitted.
+
+Filter agent_tasks by source:
+```json
+{"table": "agent_tasks", "operation": "select", "payload": {"source": "self", "limit": 20}}
+```
 
 ### update
 
