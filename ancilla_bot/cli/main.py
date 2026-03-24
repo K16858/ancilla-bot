@@ -270,22 +270,27 @@ def _build_idle_reflection_message(idle_min: int = 0) -> str:
     idle_min: ユーザーからの最終入力からの経過分数。
     """
     device_note = (
-        "\nなお、現在エッジデバイス（カメラ・マイク）が接続されています。"
-        "必要と判断した場合は use_edgedevice ツールでデバイスとやりとりできます。"
+        "\nNote: An edge device (camera/mic) is currently connected."
+        " If useful, you may call use_edgedevice to interact with it."
         if is_device_connected()
         else ""
     )
-    idle_str = f"{idle_min}分" if idle_min > 0 else "しばらく"
+    idle_str = f"{idle_min} minutes" if idle_min > 0 else "a while"
     return (
-        f"[SYSTEM_EVENT: IDLE_REFLECTION] ユーザーからの入力が {idle_str} ありません。\n"
-        "アイドル時間を活用して、以下のことを能動的に検討し、有益と判断したものを実行してください:\n"
-        "- agent_tasks に予定している作業があれば進める\n"
-        "- interests リストの項目について最新情報を調査し、workspace にまとめる\n"
-        "- 直近の会話から未解決の疑問点・フォローアップが必要なことを調べる\n"
-        "- 近いうちに期限を迎えるタスク・リマインダーの準備をする\n"
-        "- ユーザーの役に立つと思うことであれば、上記に限らず自由に行動して構わない\n"
-        "何かを実行した場合は notify_user で簡潔に報告してください。"
-        "特に何もなければ、何もせずに終了して構いません。"
+        f"[SYSTEM_EVENT: IDLE_REFLECTION] No user input for {idle_str}.\n\n"
+        "Use this idle time to work proactively. Follow this process:\n\n"
+        "STEP 1 — Review what's already been done (do this FIRST to avoid repeating work):\n"
+        "  - Select agent_tasks with source=self to see your completed and pending work.\n"
+        "  - Select interests, user_tasks, and reminders (completed=false) to find what needs attention.\n\n"
+        "STEP 2 — Plan your work before acting:\n"
+        "  - For each piece of work you intend to do, insert an agent_task (source=self) as a TODO.\n"
+        "  - Use content like \"[TODO] Research topic X\" to mark it as planned.\n\n"
+        "STEP 3 — Execute and log:\n"
+        "  - Do the work (research, write files, web_search, etc.).\n"
+        "  - After each task, update the agent_task: set completed=1 and note what you produced"
+        " (e.g. \"[DONE] Research X → wrote workspace/notes/x.md\").\n"
+        "  - Call notify_user to briefly report what you did.\n\n"
+        "If there is nothing useful to do, output final_answer immediately without calling any tools."
         f"{device_note}"
     )
 
@@ -317,7 +322,13 @@ def _idle_reflection_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 idle_min = int(idle_sec / 60)
                 msg = _build_idle_reflection_message(idle_min)
                 history = _shared_history if _shared_history is not None else load_active_history()
-                _response, _emotion = run_agent_loop_with_tools(msg, history, on_turn=None)
+                _response, _emotion = run_agent_loop_with_tools(
+                    msg,
+                    history,
+                    on_turn=None,
+                    nag_interval=3,
+                    nag_message="Check and update your agent_tasks (source=self) to track progress.",
+                )
                 _last_idle_reflection_time = time.time()
                 logger.info("idle reflection triggered after {} min idle", idle_min)
             except Exception as e:
