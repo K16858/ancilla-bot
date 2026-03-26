@@ -676,6 +676,7 @@ def main() -> None:
     subparsers.add_parser("run", help="常駐モード（REPL + API + Heartbeat）。終了は exit 等。")
     subparsers.add_parser("client", help="API に接続する REPL クライアント。先に ancilla run を起動すること。")
     subparsers.add_parser("discord", help="Discord Bot。先に ancilla run を起動し、DISCORD_BOT_TOKEN を設定すること。")
+    subparsers.add_parser("slack", help="Slack Bot（Socket Mode）。先に ancilla run を起動し、SLACK_BOT_TOKEN と SLACK_APP_TOKEN を設定すること。")
 
     batch_parser = subparsers.add_parser("batch", help="バッチ処理")
     batch_sub = batch_parser.add_subparsers(dest="batch_command", required=True)
@@ -692,6 +693,10 @@ def main() -> None:
     if args.command == "discord":
         from ancilla_bot.discord_bot import main as discord_main
         discord_main()
+        return
+    if args.command == "slack":
+        from ancilla_bot.slack_bot import main as slack_main
+        slack_main()
         return
     if args.command == "batch":
         if args.batch_command == "summarize":
