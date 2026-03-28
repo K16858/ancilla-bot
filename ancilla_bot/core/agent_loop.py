@@ -25,8 +25,8 @@ SUMMARY_MAX_LEN = 200
 MAX_TOOL_TURNS: Final[int] = int(os.getenv("ANCILLA_MAX_TOOL_TURNS", "5"))
 
 _FORCE_SUMMARY_PROMPT: Final[str] = (
-    "これまでの思考と収集した情報をもとに、わかっている範囲で日本語で回答してください。"
-    "情報が不完全な場合もその旨を含めて答えてください。"
+    "Summarize what you have thought and gathered so far, and give the best answer you can."
+    " If information is incomplete, say so briefly."
 )
 
 EXIT_COMMANDS: Final[set[str]] = {"exit", "quit", ":q", "/bye"}
@@ -74,8 +74,9 @@ def is_exit_command(text: str) -> bool:
 def _is_system_event_prompt(user_input: str) -> bool:
     """
     擬似ユーザーメッセージ（Fast Heartbeat / Idle Reflection 等）かどうか
+    "[SYSTEM_EVENT" で始まるものをすべて対象にする（": IDLE_REFLECTION]" 等も含む）
     """
-    return (user_input or "").strip().startswith("[SYSTEM_EVENT]")
+    return (user_input or "").strip().startswith("[SYSTEM_EVENT")
 
 
 def run_minimal_agent_loop(
@@ -198,8 +199,9 @@ def run_agent_loop_with_tools(
             except Exception as e:
                 observation = f"Observation: Error: {e!s}"
                 logger.warning("tool exception action={} error={}", parsed.action, e)
-            # nag injection: track manage_state usage
-            if parsed.action == "manage_state":
+            # nag injection: track agent_tasks usage specifically
+            args_table = (parsed.action_input or {}).get("table", "")
+            if parsed.action == "manage_state" and args_table == "agent_tasks":
                 _turns_since_manage_state = 0
             else:
                 _turns_since_manage_state += 1
