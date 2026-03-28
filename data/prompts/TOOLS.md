@@ -66,14 +66,19 @@ Before doing any multi-step work during idle reflection, follow this pattern:
 ```
 If a similar task exists with `completed=1`, skip it.
 
-**Step 2 — Plan: create a TODO before starting**:
+**Step 2 — Plan: create a TODO before starting** (`status="pending"`):
 ```json
-{"table": "agent_tasks", "operation": "insert", "payload": {"scheduled_at": "2026-03-25 03:00:00", "content": "[TODO] Research Rust async patterns", "source": "self"}}
+{"table": "agent_tasks", "operation": "insert", "payload": {"scheduled_at": "2026-03-25 03:00:00", "content": "Research Rust async patterns", "source": "self", "status": "pending"}}
 ```
 
-**Step 3 — Do the work**, then mark it done with a note about what you produced:
+**Step 2b — Mark in_progress when you start** (only one in_progress at a time):
 ```json
-{"table": "agent_tasks", "operation": "update", "payload": {"id": 42, "completed": 1, "content": "[DONE] Research Rust async patterns → wrote workspace/notes/rust_async.md"}}
+{"table": "agent_tasks", "operation": "update", "payload": {"id": 42, "status": "in_progress"}}
+```
+
+**Step 3 — Do the work**, then mark completed with a note:
+```json
+{"table": "agent_tasks", "operation": "update", "payload": {"id": 42, "completed": 1, "status": "completed", "content": "Research Rust async patterns → wrote workspace/notes/rust_async.md"}}
 ```
 
 This creates a persistent work log across idle cycles, preventing repeated research.

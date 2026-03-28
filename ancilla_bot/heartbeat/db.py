@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
     content TEXT NOT NULL,
     completed INTEGER NOT NULL DEFAULT 0,
     source TEXT NOT NULL DEFAULT 'heartbeat',
+    status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL
 )
 """
@@ -55,6 +56,9 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
 # 既存 DB への後付けマイグレーション（カラムが無ければ追加）
 _MIGRATE_AGENT_TASKS_SOURCE = (
     "ALTER TABLE agent_tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'heartbeat'"
+)
+_MIGRATE_AGENT_TASKS_STATUS = (
+    "ALTER TABLE agent_tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'"
 )
 
 _SCHEMA_REMINDERS = """
@@ -111,6 +115,11 @@ def ensure_schema() -> None:
         # agent_tasks.source カラムが既存 DB に無ければ追加
         try:
             c.execute(_MIGRATE_AGENT_TASKS_SOURCE)
+        except Exception:
+            pass  # カラムが既にあれば無視
+        # agent_tasks.status カラムが既存 DB に無ければ追加
+        try:
+            c.execute(_MIGRATE_AGENT_TASKS_STATUS)
         except Exception:
             pass  # カラムが既にあれば無視
 
@@ -293,9 +302,11 @@ def manage_state(
                     if table == "agent_tasks":
                         raw_source = str(payload.get("source", "heartbeat")).strip().lower()
                         source = raw_source if raw_source in ("heartbeat", "self") else "heartbeat"
+                        raw_status = str(payload.get("status", "pending")).strip().lower()
+                        status = raw_status if raw_status in ("pending", "in_progress", "completed", "cancelled") else "pending"
                         c.execute(
-                            "INSERT INTO agent_tasks (scheduled_at, content, completed, source, created_at) VALUES (?, ?, 0, ?, ?)",
-                            (scheduled_at, content, source, now),
+                            "INSERT INTO agent_tasks (scheduled_at, content, completed, source, status, created_at) VALUES (?, ?, 0, ?, ?, ?)",
+                            (scheduled_at, content, source, status, now),
                         )
                     else:
                         c.execute(
@@ -341,15 +352,21 @@ def manage_state(
                     if "completed" in payload:
                         where.append("completed = ?")
                         params.append(1 if payload.get("completed") else 0)
-                    if table == "agent_tasks" and "source" in payload:
-                        raw_src = str(payload["source"]).strip().lower()
-                        if raw_src in ("heartbeat", "self"):
-                            where.append("source = ?")
-                            params.append(raw_src)
+                    if table == "agent_tasks":
+                        if "source" in payload:
+                            raw_src = str(payload["source"]).strip().lower()
+                            if raw_src in ("heartbeat", "self"):
+                                where.append("source = ?")
+                                params.append(raw_src)
+                        if "status" in payload:
+                            raw_st = str(payload["status"]).strip().lower()
+                            if raw_st in ("pending", "in_progress", "completed", "cancelled"):
+                                where.append("status = ?")
+                                params.append(raw_st)
                     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
                     params.append(limit)
                     select_cols = (
-                        "id, scheduled_at, content, completed, source, created_at"
+                        "id, scheduled_at, content, completed, source, status, created_at"
                         if table == "agent_tasks"
                         else "id, scheduled_at, content, completed, created_at"
                     )
@@ -398,7 +415,7 @@ def manage_state(
                     return "Error: update requires id in payload."
                 row_id = int(row_id)
                 allowed_cols = (
-                    {"completed", "scheduled_at", "content", "source"} if table == "agent_tasks"
+                    {"completed", "scheduled_at", "content", "source", "status"} if table == "agent_tasks"
                     else {"completed", "scheduled_at", "content"} if table in ("user_tasks", "reminders")
                     else {"amount", "category", "memo", "date"} if table == "finances"
                     else {"name", "description", "status", "url"} if table == "interests"
