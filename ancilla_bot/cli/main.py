@@ -25,6 +25,7 @@ from ancilla_bot.heartbeat.db import (
     get_due_reminders,
     get_due_tasks,
     has_due_work,
+    manage_state as db_manage_state,
     mark_reminders_completed,
     mark_tasks_completed,
 )
@@ -250,6 +251,19 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                             level="info",
                             detail=f"tasks={len(tasks)}, reminders={len(reminders)}",
                         )
+                    # heartbeat の会話を共有履歴に保存してコンテキストを継続
+                    if _shared_history is not None and response:
+                        dropped = append_and_trim(
+                            _shared_history,
+                            [
+                                {"role": "user", "content": pseudo},
+                                {"role": "assistant", "content": response},
+                            ],
+                            max_chars=MAX_HISTORY_CHARS,
+                        )
+                        if dropped:
+                            append_overflow(dropped)
+                        save_active_history(_shared_history)
                     logger.info("fast heartbeat: processed {} tasks, {} reminders", len(tasks), len(reminders))
                 else:
                     logger.warning(
@@ -265,6 +279,24 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
         stop.wait(HEARTBEAT_INTERVAL_SEC)
 
 
+def _load_pending_self_tasks() -> str:
+    """source='self' かつ completed=0 の agent_tasks を取得してプロンプト用文字列に変換する。"""
+    try:
+        import json
+        raw = db_manage_state(
+            table="agent_tasks",
+            operation="select",
+            payload={"source": "self", "completed": False, "limit": 20},
+        )
+        tasks = json.loads(raw) if raw and raw.startswith("[") else []
+        if not tasks:
+            return ""
+        lines = [f"  [{t['id']}] {t['content']}" for t in tasks]
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
 def _build_idle_reflection_message(idle_min: int = 0) -> str:
     """
     Idle Reflection メッセージを組み立てる。
@@ -277,14 +309,26 @@ def _build_idle_reflection_message(idle_min: int = 0) -> str:
         else ""
     )
     idle_str = f"{idle_min} minutes" if idle_min > 0 else "a while"
+
+    pending_tasks_str = _load_pending_self_tasks()
+    if pending_tasks_str:
+        pending_block = (
+            "\n\n[Your pending self-tasks (source=self, completed=0) — loaded automatically]:\n"
+            + pending_tasks_str
+            + "\nResume or complete these before starting new work."
+        )
+    else:
+        pending_block = ""
+
     return (
         f"[SYSTEM_EVENT: IDLE_REFLECTION] No user input for {idle_str}.\n\n"
         "Use this idle time to work proactively. Follow this process:\n\n"
         "STEP 1 — Review what's already been done (do this FIRST to avoid repeating work):\n"
-        "  - Select agent_tasks with source=self to see your completed and pending work.\n"
+        "  - Your pending self-tasks are pre-loaded below (if any). Resume them before starting new work.\n"
+        "  - Also select completed agent_tasks (source=self) to see what has already been done.\n"
         "  - Select interests, user_tasks, and reminders (completed=false) to find what needs attention.\n\n"
         "STEP 2 — Plan your work before acting:\n"
-        "  - For each piece of work you intend to do, insert an agent_task (source=self) as a TODO.\n"
+        "  - For each new piece of work, insert an agent_task (source=self) as a TODO.\n"
         "  - Use content like \"[TODO] Research topic X\" to mark it as planned.\n\n"
         "STEP 3 — Execute and log:\n"
         "  - Do the work (research, write files, web_search, etc.).\n"
@@ -292,6 +336,7 @@ def _build_idle_reflection_message(idle_min: int = 0) -> str:
         " (e.g. \"[DONE] Research X → wrote workspace/notes/x.md\").\n"
         "  - Call notify_user to briefly report what you did.\n\n"
         "If there is nothing useful to do, output final_answer immediately without calling any tools."
+        f"{pending_block}"
         f"{device_note}"
     )
 
@@ -323,7 +368,7 @@ def _idle_reflection_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 idle_min = int(idle_sec / 60)
                 msg = _build_idle_reflection_message(idle_min)
                 history = _shared_history if _shared_history is not None else load_active_history()
-                _response, _emotion = run_agent_loop_with_tools(
+                response, _emotion = run_agent_loop_with_tools(
                     msg,
                     history,
                     on_turn=None,
@@ -331,6 +376,19 @@ def _idle_reflection_loop(lock: threading.Lock, stop: threading.Event) -> None:
                     nag_interval=3,
                     nag_message="Check and update your agent_tasks (source=self) to track progress.",
                 )
+                # idle reflection の会話を共有履歴に保存してコンテキストを継続
+                if _shared_history is not None and response:
+                    dropped = append_and_trim(
+                        _shared_history,
+                        [
+                            {"role": "user", "content": msg},
+                            {"role": "assistant", "content": response},
+                        ],
+                        max_chars=MAX_HISTORY_CHARS,
+                    )
+                    if dropped:
+                        append_overflow(dropped)
+                    save_active_history(_shared_history)
                 _last_idle_reflection_time = time.time()
                 logger.info("idle reflection triggered after {} min idle", idle_min)
             except Exception as e:
