@@ -346,7 +346,13 @@ def manage_state(
             if operation == "select":
                 limit = max(1, min(int(payload.get("limit", 20)), 100))
                 if table in ("user_tasks", "agent_tasks", "reminders"):
-                    order = "ORDER BY scheduled_at ASC"
+                    # completed 未指定: 未完了を先に（かつ新しい id 優先）。明示 false は期日順、true は最近完了順。
+                    if "completed" not in payload:
+                        order = "ORDER BY completed ASC, id DESC"
+                    elif payload.get("completed"):
+                        order = "ORDER BY id DESC"
+                    else:
+                        order = "ORDER BY scheduled_at ASC"
                     where = []
                     params: list[Any] = []
                     if "completed" in payload:
