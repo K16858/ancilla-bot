@@ -22,7 +22,7 @@ from typing import Any
 import httpx
 from slack_bolt import App
 
-from ancilla_bot.notifications.pending_take import take_pending_jsonl_lines
+from ancilla_bot.notifications.pending_take import requeue_pending_jsonl_lines, take_pending_jsonl_lines
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 MAX_RESPONSE_CHARS = 3000
@@ -93,7 +93,7 @@ def _notify_loop(app: App, channel_id: str) -> None:
         lines = take_pending_jsonl_lines(path)
         if not lines:
             continue
-        for line in lines:
+        for i, line in enumerate(lines):
             try:
                 rec = json.loads(line)
             except json.JSONDecodeError:
@@ -120,6 +120,7 @@ def _notify_loop(app: App, channel_id: str) -> None:
             try:
                 app.client.chat_postMessage(channel=channel_id, text=msg)
             except Exception:
+                requeue_pending_jsonl_lines(lines[i:], path)
                 break
 
 

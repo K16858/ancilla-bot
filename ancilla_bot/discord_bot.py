@@ -9,7 +9,7 @@ from pathlib import Path
 import discord
 import httpx
 
-from ancilla_bot.notifications.pending_take import take_pending_jsonl_lines
+from ancilla_bot.notifications.pending_take import requeue_pending_jsonl_lines, take_pending_jsonl_lines
 
 MAX_RESPONSE_CHARS = 1900
 NOTIFY_POLL_INTERVAL = 30
@@ -96,7 +96,7 @@ async def _notify_loop(client: discord.Client) -> None:
         lines = take_pending_jsonl_lines(path)
         if not lines:
             continue
-        for line in lines:
+        for i, line in enumerate(lines):
             try:
                 rec = json.loads(line)
             except json.JSONDecodeError:
@@ -125,6 +125,7 @@ async def _notify_loop(client: discord.Client) -> None:
                 elif destination[0] == "user" and destination[1]:
                     await destination[1].send(msg)
             except (discord.Forbidden, discord.HTTPException):
+                requeue_pending_jsonl_lines(lines[i:], path)
                 break
 
 

@@ -42,3 +42,15 @@ def take_pending_jsonl_lines(pending_path: Path) -> list[str]:
     except OSError:
         pass
     return [ln.strip() for ln in raw.splitlines() if ln.strip()]
+
+
+def requeue_pending_jsonl_lines(lines: list[str], pending_path: Path) -> None:
+    """送信失敗などで取り出した行のうち未送信分をキュー末尾へ戻す。"""
+    if not lines:
+        return
+    pending_path.parent.mkdir(parents=True, exist_ok=True)
+    with pending_path.open("a", encoding="utf-8") as f:
+        for ln in lines:
+            s = ln.strip()
+            if s:
+                f.write(s + "\n")
