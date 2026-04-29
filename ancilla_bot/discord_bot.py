@@ -9,6 +9,8 @@ from pathlib import Path
 import discord
 import httpx
 
+from ancilla_bot.notifications.pending_take import take_pending_jsonl_lines
+
 MAX_RESPONSE_CHARS = 1900
 NOTIFY_POLL_INTERVAL = 30
 NOTIFY_MAX_MESSAGE_CHARS = 1900
@@ -91,16 +93,9 @@ async def _notify_loop(client: discord.Client) -> None:
     path = _pending_path()
     while True:
         await asyncio.sleep(NOTIFY_POLL_INTERVAL)
-        if not path.exists():
-            continue
-        try:
-            raw = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        lines = take_pending_jsonl_lines(path)
         if not lines:
             continue
-        sent = 0
         for line in lines:
             try:
                 rec = json.loads(line)
@@ -129,14 +124,8 @@ async def _notify_loop(client: discord.Client) -> None:
                     await destination[1].send(msg)
                 elif destination[0] == "user" and destination[1]:
                     await destination[1].send(msg)
-                sent += 1
             except (discord.Forbidden, discord.HTTPException):
                 break
-        if sent > 0:
-            try:
-                path.write_text("", encoding="utf-8")
-            except OSError:
-                pass
 
 
 def run_bot() -> None:
@@ -149,6 +138,9 @@ def run_bot() -> None:
     async def on_ready():
         print(f"Discord にログイン: {client.user}")
         if os.getenv("DISCORD_NOTIFY_CHANNEL_ID") or os.getenv("DISCORD_NOTIFY_USER_ID"):
+            if getattr(client, "_ancilla_notify_loop_started", False):
+                return
+            setattr(client, "_ancilla_notify_loop_started", True)
             asyncio.create_task(_notify_loop(client))
 
     @client.event

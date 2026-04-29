@@ -21,6 +21,8 @@ from typing import Any
 
 import httpx
 from slack_bolt import App
+
+from ancilla_bot.notifications.pending_take import take_pending_jsonl_lines
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 MAX_RESPONSE_CHARS = 3000
@@ -88,16 +90,9 @@ def _notify_loop(app: App, channel_id: str) -> None:
     path = _pending_path()
     while True:
         time.sleep(NOTIFY_POLL_INTERVAL)
-        if not path.exists():
-            continue
-        try:
-            raw = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        lines = take_pending_jsonl_lines(path)
         if not lines:
             continue
-        sent = 0
         for line in lines:
             try:
                 rec = json.loads(line)
@@ -124,14 +119,8 @@ def _notify_loop(app: App, channel_id: str) -> None:
                 msg = msg[:NOTIFY_MAX_MESSAGE_CHARS] + "..."
             try:
                 app.client.chat_postMessage(channel=channel_id, text=msg)
-                sent += 1
             except Exception:
                 break
-        if sent > 0:
-            try:
-                path.write_text("", encoding="utf-8")
-            except OSError:
-                pass
 
 
 def run_bot() -> None:
