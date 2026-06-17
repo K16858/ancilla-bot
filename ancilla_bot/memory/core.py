@@ -66,13 +66,13 @@ def build_core_memory(tools_block: str) -> str:
     tools_content = tools_md if tools_md else tools_block
 
     parts: list[str] = []
-    if agent:
-        parts.append(_section(agent, None))
-    if user:
-        parts.append(_section(user, None))
-    parts.append(_section(tools_content, None))
     if character:
         parts.append(character.strip())
+    if user:
+        parts.append(_section(user, None))
+    if agent:
+        parts.append(_section(agent, None))
+    parts.append(_section(tools_content, None))
 
     result = "\n".join(p.strip() for p in parts if p.strip())
     if not result:
