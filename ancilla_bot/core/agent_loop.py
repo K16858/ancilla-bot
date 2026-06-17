@@ -11,7 +11,9 @@ from loguru import logger
 from ancilla_bot.api.ws_server import take_staged_vlm_images
 from ancilla_bot.core.reflection import verify_answer
 from ancilla_bot.heartbeat.db import append_audit_log
-from ancilla_bot.llm import AgentResponse, AgentResponseWithTools, send_chat
+from ancilla_bot.llm import AgentResponse, send_chat
+from ancilla_bot.llm.schemas import AgentResponseWithTools
+from ancilla_bot.llm.tool_adapter import get_tool_caller
 from ancilla_bot.tools import TOOL_REGISTRY, build_tools_system_prompt
 
 VERIFY_ANSWER = os.getenv("ANCILLA_VERIFY_ANSWER", "true").strip().lower() in ("1", "true", "yes")
@@ -137,7 +139,7 @@ def run_agent_loop_with_tools(
         {"role": "user", "content": user_input},
     ]
     _inject_time_note(messages)
-    schema = AgentResponseWithTools.model_json_schema()
+    tool_caller = get_tool_caller()
     retry_after_verify = False
     effective_max_turns = max_turns if max_turns is not None else MAX_TOOL_TURNS
     # nag injection: turns since last manage_state call
@@ -151,45 +153,49 @@ def run_agent_loop_with_tools(
         staged = take_staged_vlm_images()
         if staged:
             send_images = staged
-        raw = send_chat(messages, format=schema, images=send_images)
-        logger.debug("LLM raw={}", raw[:500] + "..." if len(raw) > 500 else raw)
         try:
-            if not raw or not raw.strip():
-                logger.warning("LLM returned empty response for AgentResponseWithTools")
-                return (
-                    "内部エラーが発生しました（空の応答）。少し待ってからもう一度試してください。",
-                    None,
-                )
-            parsed = AgentResponseWithTools.model_validate_json(raw)
+            parsed_result = tool_caller.call(messages, images=send_images)
         except Exception as e:
-            logger.warning("parse failed: {} raw_len={} raw_head={!r}", e, len(raw), raw[:200])
+            logger.warning("tool caller failed: {} ", e)
             return "応答の解析に失敗しました。もう一度試してください。", None
 
-        if parsed.final_answer:
+        raw = parsed_result.raw
+        logger.debug("LLM raw={}", raw[:500] + "..." if len(raw) > 500 else raw)
+        if not raw or not raw.strip():
+            logger.warning("LLM returned empty response")
+            return (
+                "内部エラーが発生しました（空の応答）。少し待ってからもう一度試してください。",
+                None,
+            )
+
+        if parsed_result.final_answer:
             if retry_after_verify:
-                logger.info("final_answer (after retry) returned len={}", len(parsed.final_answer))
-                return parsed.final_answer, parsed.emotion
+                logger.info(
+                    "final_answer (after retry) returned len={}",
+                    len(parsed_result.final_answer),
+                )
+                return parsed_result.final_answer, parsed_result.emotion
             do_verify = (
                 VERIFY_ANSWER
                 and not _is_system_event_prompt(user_input)
                 and (not VERIFY_ONLY_AFTER_TOOL or turn >= 1)
             )
-            if do_verify and not verify_answer(user_input, parsed.final_answer):
+            if do_verify and not verify_answer(user_input, parsed_result.final_answer):
                 messages.append({"role": "assistant", "content": raw})
                 messages.append({"role": "user", "content": RETRY_USER_MESSAGE})
                 retry_after_verify = True
                 continue
             if on_turn is not None:
-                on_turn(parsed.thought, None, None, None)
-            logger.info("final_answer returned len={}", len(parsed.final_answer))
-            return parsed.final_answer, parsed.emotion
+                on_turn(parsed_result.thought, None, None, None)
+            logger.info("final_answer returned len={}", len(parsed_result.final_answer))
+            return parsed_result.final_answer, parsed_result.emotion
 
         # action が有効ならツール実行
-        if parsed.action and parsed.action in TOOL_REGISTRY:
-            func = TOOL_REGISTRY[parsed.action]
-            args: dict[str, Any] = parsed.action_input or {}
-            logger.info("tool_call action={} args={}", parsed.action, args)
-            append_audit_log(parsed.action, str(args))
+        if parsed_result.action and parsed_result.action in TOOL_REGISTRY:
+            func = TOOL_REGISTRY[parsed_result.action]
+            args: dict[str, Any] = parsed_result.action_input or {}
+            logger.info("tool_call action={} args={}", parsed_result.action, args)
+            append_audit_log(parsed_result.action, str(args))
             try:
                 result = func(**args)
                 observation = f"Observation: {result}"
@@ -198,10 +204,10 @@ def run_agent_loop_with_tools(
                 logger.debug("tool_result full observation={!r}", observation[:500])
             except Exception as e:
                 observation = f"Observation: Error: {e!s}"
-                logger.warning("tool exception action={} error={}", parsed.action, e)
+                logger.warning("tool exception action={} error={}", parsed_result.action, e)
             # nag injection: track agent_tasks usage specifically
-            args_table = (parsed.action_input or {}).get("table", "")
-            if parsed.action == "manage_state" and args_table == "agent_tasks":
+            args_table = (parsed_result.action_input or {}).get("table", "")
+            if parsed_result.action == "manage_state" and args_table == "agent_tasks":
                 _turns_since_manage_state = 0
             else:
                 _turns_since_manage_state += 1
@@ -209,19 +215,24 @@ def run_agent_loop_with_tools(
                 observation += f"\n<reminder>{nag_message}</reminder>"
                 _turns_since_manage_state = 0
             if on_turn is not None:
-                on_turn(parsed.thought, parsed.action, args, observation)
+                on_turn(parsed_result.thought, parsed_result.action, args, observation)
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": observation})
         else:
             # 未知のツール or action なし
-            if parsed.action:
-                observation = f"Observation: Unknown tool: {parsed.action}"
-                logger.warning("unknown tool action={}", parsed.action)
+            if parsed_result.action:
+                observation = f"Observation: Unknown tool: {parsed_result.action}"
+                logger.warning("unknown tool action={}", parsed_result.action)
             else:
                 observation = "Observation: action または final_answer を指定してください。"
                 logger.warning("action/final_answer missing")
             if on_turn is not None:
-                on_turn(parsed.thought, parsed.action, parsed.action_input, observation)
+                on_turn(
+                    parsed_result.thought,
+                    parsed_result.action,
+                    parsed_result.action_input,
+                    observation,
+                )
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": observation})
 
