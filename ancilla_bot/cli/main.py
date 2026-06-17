@@ -38,7 +38,7 @@ from ancilla_bot.api.ws_server import (
     run_ws_server,
 )
 from ancilla_bot.memory.compress import compress_once, should_compress
-from ancilla_bot.memory.conversation_store import append_overflow, load_active_history, save_active_history
+from ancilla_bot.memory.conversation_store import append_overflow, load_active_history, load_overflow, save_active_history
 from ancilla_bot.memory.short_term import append_and_trim
 from ancilla_bot.notifications import append_notification
 from ancilla_bot.utils.logging_config import init_logging
@@ -443,6 +443,12 @@ def _handle_message(
                 daemon=True,
                 name="compress",
             ).start()
+            threading.Thread(
+                target=_run_summarize_with_lock,
+                args=(agent_lock,),
+                daemon=True,
+                name="summarize",
+            ).start()
         else:
             _run_compress_loop(conversation_history, max_chars)
         return result
@@ -493,6 +499,21 @@ def _run_compress_with_lock(
     lock.acquire()
     try:
         _run_compress_loop(history, max_chars)
+    finally:
+        lock.release()
+
+
+def _run_summarize_with_lock(lock: threading.Lock) -> None:
+    """overflow が十分たまったらバッチ要約を実行する（バックグラウンド用）。"""
+    from ancilla_bot.batch.summarize import TURNS_PER_BLOCK, run_summarize
+
+    if len(load_overflow()) < 2 * TURNS_PER_BLOCK:
+        return
+    lock.acquire()
+    try:
+        run_summarize()
+    except Exception as e:
+        logger.warning("batch summarize failed: {}", e)
     finally:
         lock.release()
 
