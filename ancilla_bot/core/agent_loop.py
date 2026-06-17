@@ -13,13 +13,24 @@ from ancilla_bot.core.cancel import is_cancelled, reset_cancel
 from ancilla_bot.heartbeat.db import append_audit_log
 from ancilla_bot.llm import AgentResponse, send_chat
 from ancilla_bot.llm.schemas import AgentResponseWithTools
-from ancilla_bot.llm.tool_adapter import _coerce_user_answer, get_tool_caller
+from ancilla_bot.llm.tool_adapter import (
+    _build_native_tool_message,
+    _coerce_user_answer,
+    get_tool_caller,
+    is_native_tool_mode,
+)
 from ancilla_bot.tools import TOOL_REGISTRY, build_tools_system_prompt
 
 VERIFY_ANSWER = os.getenv("ANCILLA_VERIFY_ANSWER", "true").strip().lower() in ("1", "true", "yes")
 VERIFY_ONLY_AFTER_TOOL = os.getenv("ANCILLA_VERIFY_ONLY_AFTER_TOOL", "true").strip().lower() in ("1", "true", "yes")
 RETRY_USER_MESSAGE: Final[str] = (
     "Self-verification found the answer insufficient. Call a tool once more or revise and output final_answer again."
+)
+NATIVE_RETRY_USER_MESSAGE: Final[str] = (
+    "Self-verification found the answer insufficient. Use a tool once more or revise your reply."
+)
+NATIVE_MISSING_ACTION_MESSAGE: Final[str] = (
+    "Use an available tool or reply to the user in plain Japanese."
 )
 
 SUMMARY_MAX_LEN = 200
@@ -133,7 +144,7 @@ def run_agent_loop_with_tools(
     """
     logger.info("user_input={!r}", user_input[:100] + "..." if len(user_input) > 100 else user_input)
     history = list(conversation_history or [])
-    messages: list[dict[str, str]] = [
+    messages: list[dict[str, Any]] = [
         {"role": "system", "content": build_tools_system_prompt()},
         *history,
         {"role": "user", "content": user_input},
@@ -184,8 +195,14 @@ def run_agent_loop_with_tools(
                 and (not VERIFY_ONLY_AFTER_TOOL or turn >= 1)
             )
             if do_verify and not verify_answer(user_input, user_answer):
-                messages.append({"role": "assistant", "content": raw})
-                messages.append({"role": "user", "content": RETRY_USER_MESSAGE})
+                if is_native_tool_mode() and parsed_result.assistant_message:
+                    messages.append(parsed_result.assistant_message)
+                else:
+                    messages.append({"role": "assistant", "content": raw})
+                retry_msg = (
+                    NATIVE_RETRY_USER_MESSAGE if is_native_tool_mode() else RETRY_USER_MESSAGE
+                )
+                messages.append({"role": "user", "content": retry_msg})
                 retry_after_verify = True
                 continue
             if on_turn is not None:
@@ -201,12 +218,14 @@ def run_agent_loop_with_tools(
             append_audit_log(parsed_result.action, str(args))
             try:
                 result = func(**args)
+                tool_content = result
                 observation = f"Observation: {result}"
                 summary = result[:SUMMARY_MAX_LEN] + "..." if len(result) > SUMMARY_MAX_LEN else result
                 logger.info("tool_result summary={!r}", summary)
                 logger.debug("tool_result full observation={!r}", observation[:500])
             except Exception as e:
-                observation = f"Observation: Error: {e!s}"
+                tool_content = f"Error: {e!s}"
+                observation = f"Observation: {tool_content}"
                 logger.warning("tool exception action={} error={}", parsed_result.action, e)
             # nag injection: track agent_tasks usage specifically
             args_table = (parsed_result.action_input or {}).get("table", "")
@@ -215,18 +234,27 @@ def run_agent_loop_with_tools(
             else:
                 _turns_since_manage_state += 1
             if nag_interval and nag_message and _turns_since_manage_state >= nag_interval:
-                observation += f"\n<reminder>{nag_message}</reminder>"
+                if is_native_tool_mode():
+                    tool_content += f"\n<reminder>{nag_message}</reminder>"
+                else:
+                    observation += f"\n<reminder>{nag_message}</reminder>"
                 _turns_since_manage_state = 0
             if on_turn is not None:
                 on_turn(parsed_result.thought, parsed_result.action, args, observation)
-            messages.append({"role": "assistant", "content": raw})
-            messages.append({"role": "user", "content": observation})
+            if is_native_tool_mode() and parsed_result.assistant_message:
+                messages.append(parsed_result.assistant_message)
+                messages.append(_build_native_tool_message(parsed_result.assistant_message, tool_content))
+            else:
+                messages.append({"role": "assistant", "content": raw})
+                messages.append({"role": "user", "content": observation})
         else:
             # 未知のツール or action なし
             if parsed_result.action:
-                observation = f"Observation: Unknown tool: {parsed_result.action}"
+                tool_content = f"Unknown tool: {parsed_result.action}"
+                observation = f"Observation: {tool_content}"
                 logger.warning("unknown tool action={}", parsed_result.action)
             else:
+                tool_content = ""
                 observation = "Observation: action または final_answer を指定してください。"
                 logger.warning("action/final_answer missing")
             if on_turn is not None:
@@ -236,8 +264,17 @@ def run_agent_loop_with_tools(
                     parsed_result.action_input,
                     observation,
                 )
-            messages.append({"role": "assistant", "content": raw})
-            messages.append({"role": "user", "content": observation})
+            if is_native_tool_mode() and parsed_result.assistant_message:
+                messages.append(parsed_result.assistant_message)
+                if parsed_result.action:
+                    messages.append(
+                        _build_native_tool_message(parsed_result.assistant_message, tool_content)
+                    )
+                else:
+                    messages.append({"role": "user", "content": NATIVE_MISSING_ACTION_MESSAGE})
+            else:
+                messages.append({"role": "assistant", "content": raw})
+                messages.append({"role": "user", "content": observation})
 
     logger.warning("max turns ({}) reached, forcing final answer", effective_max_turns)
     try:

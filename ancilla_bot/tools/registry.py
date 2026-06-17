@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from ancilla_bot.batch.vector_store import search_summaries
 from ancilla_bot.heartbeat.db import manage_state as heartbeat_manage_state
-from ancilla_bot.memory.core import build_core_memory, is_native_tool_mode
+from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.tools.end_edge_session import end_edge_session
 from ancilla_bot.tools.fetch_page import fetch_page
 from ancilla_bot.tools.get_audio import get_audio
@@ -289,6 +289,8 @@ def build_tools_system_prompt() -> str:
     """
     ツール呼び出し用の System メッセージを組み立てる。
     """
+    from ancilla_bot.llm.tool_adapter import is_native_tool_mode
+
     if is_native_tool_mode():
         tools_block = "\n".join(
             f"- {name}: {_short_tool_description(desc)}"

@@ -12,10 +12,6 @@ DEFAULT_PROMPTS_DIR = Path(os.getenv("ANCILLA_PROMPTS_DIR", "data/prompts"))
 DEFAULT_WORKSPACE_DIR = Path(os.getenv("ANCILLA_WORKSPACE_DIR", "workspace"))
 
 
-def is_native_tool_mode() -> bool:
-    return os.getenv("ANCILLA_TOOL_MODE", "gbnf").strip().lower() == "native"
-
-
 def _load_file(path: Path) -> str:
     if not path.exists():
         return ""
@@ -61,6 +57,8 @@ def build_core_memory(tools_block: str) -> str:
     """
     prompts = DEFAULT_PROMPTS_DIR
     workspace = DEFAULT_WORKSPACE_DIR
+    from ancilla_bot.llm.tool_adapter import is_native_tool_mode
+
     native = is_native_tool_mode()
 
     agent_name = "AGENT.native.md" if native else "AGENT.md"
