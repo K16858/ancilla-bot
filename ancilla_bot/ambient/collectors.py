@@ -59,6 +59,9 @@ class FilesystemCollector(SignalCollector):
                     current[rel] = path.stat().st_mtime
                 except OSError:
                     continue
+        if not _FS_SNAPSHOT:
+            _FS_SNAPSHOT = current
+            return None
         new_files = [p for p, mtime in current.items() if p not in _FS_SNAPSHOT]
         changed_files = [
             p
