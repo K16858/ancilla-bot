@@ -12,6 +12,10 @@ DEFAULT_PROMPTS_DIR = Path(os.getenv("ANCILLA_PROMPTS_DIR", "data/prompts"))
 DEFAULT_WORKSPACE_DIR = Path(os.getenv("ANCILLA_WORKSPACE_DIR", "workspace"))
 
 
+def is_native_tool_mode() -> bool:
+    return os.getenv("ANCILLA_TOOL_MODE", "gbnf").strip().lower() == "native"
+
+
 def _load_file(path: Path) -> str:
     if not path.exists():
         return ""
@@ -57,10 +61,13 @@ def build_core_memory(tools_block: str) -> str:
     """
     prompts = DEFAULT_PROMPTS_DIR
     workspace = DEFAULT_WORKSPACE_DIR
+    native = is_native_tool_mode()
 
-    agent = _load_file(workspace / "AGENT.md")
+    agent_name = "AGENT.native.md" if native else "AGENT.md"
+    tools_name = "TOOLS.native.md" if native else "TOOLS.md"
+    agent = _load_file(workspace / agent_name)
     user = _load_file(workspace / "USER.md")
-    tools_md = _load_file(prompts / "TOOLS.md")
+    tools_md = _load_file(prompts / tools_name)
     character = _load_file(prompts / "CHARACTER.md")
 
     tools_content = tools_md if tools_md else tools_block
@@ -76,6 +83,11 @@ def build_core_memory(tools_block: str) -> str:
 
     result = "\n".join(p.strip() for p in parts if p.strip())
     if not result:
+        if native:
+            return (
+                "You are a helpful assistant. Respond in plain Japanese. "
+                "Use tools when needed.\n\n## Available tools\n\n" + tools_block
+            )
         return (
             "You are an assistant that outputs thought and tool calls or final_answer in JSON format.\n\n"
             "## Available tools\n\n" + tools_block
