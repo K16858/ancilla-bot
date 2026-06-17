@@ -31,6 +31,24 @@ class ToolCaller(Protocol):
     ) -> ToolCallResult: ...
 
 
+def _coerce_user_answer(text: str | None) -> str | None:
+    """final_answer が JSON 全体になっている場合にユーザー向け本文だけを取り出す。"""
+    if not text or not text.strip():
+        return text
+    s = text.strip()
+    if not s.startswith("{"):
+        return s
+    for candidate in (s, s[s.find("{") : s.rfind("}") + 1] if "{" in s else s):
+        try:
+            parsed = AgentResponseWithTools.model_validate_json(candidate)
+        except Exception:
+            continue
+        if parsed.final_answer and parsed.final_answer.strip():
+            return parsed.final_answer.strip()
+        return None
+    return s
+
+
 def _build_ollama_tools() -> list[dict[str, Any]]:
     tools: list[dict[str, Any]] = []
     for name, desc in TOOL_DESCRIPTIONS.items():
@@ -69,7 +87,8 @@ def _native_message_to_result(message: dict[str, Any]) -> ToolCallResult:
         {"thought": thought, "final_answer": content or None, "action": None, "action_input": None},
         ensure_ascii=False,
     )
-    return ToolCallResult(None, None, thought, content or None, None, raw)
+    answer = _coerce_user_answer(content) or content or None
+    return ToolCallResult(None, None, thought, answer, None, raw)
 
 
 def _parse_gbnf_response(raw: str) -> ToolCallResult:
@@ -85,11 +104,14 @@ def _parse_gbnf_response(raw: str) -> ToolCallResult:
             parsed = AgentResponseWithTools.model_validate_json(text[start : end + 1])
         else:
             return ToolCallResult(None, None, "", text, None, text)
+    answer = parsed.final_answer
+    if answer:
+        answer = _coerce_user_answer(answer) or answer
     return ToolCallResult(
         parsed.action,
         parsed.action_input,
         parsed.thought,
-        parsed.final_answer,
+        answer,
         parsed.emotion,
         text,
     )
