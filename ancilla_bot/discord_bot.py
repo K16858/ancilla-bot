@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -24,6 +25,21 @@ PENDING_FILE = "pending.jsonl"
 
 def _get_api_url() -> str:
     return f"http://{API_HOST}:{API_PORT}/chat"
+
+
+def _get_cancel_url() -> str:
+    return f"http://{API_HOST}:{API_PORT}/cancel"
+
+
+async def _request_cancel() -> bool:
+    url = _get_cancel_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json={})
+            resp.raise_for_status()
+            return True
+    except Exception:
+        return False
 
 
 async def _call_daemon(message: str, images: list[str] | None = None) -> str:
@@ -59,6 +75,32 @@ async def _download_images(attachments: list[discord.Attachment]) -> list[str]:
             except Exception:
                 continue
     return out[:4]
+
+
+async def _call_daemon_with_typing(
+    channel: discord.abc.Messageable,
+    message: str,
+    images: list[str] | None = None,
+) -> str:
+    """HTTP 待機中も typing インジケーターを維持する。"""
+    stop = asyncio.Event()
+
+    async def _typing_loop() -> None:
+        while not stop.is_set():
+            async with channel.typing():
+                try:
+                    await asyncio.wait_for(stop.wait(), timeout=8.0)
+                except asyncio.TimeoutError:
+                    continue
+
+    typing_task = asyncio.create_task(_typing_loop())
+    try:
+        return await _call_daemon(message, images)
+    finally:
+        stop.set()
+        typing_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await typing_task
 
 
 def _pending_path() -> Path:
@@ -134,10 +176,26 @@ def run_bot() -> None:
     intents.message_content = True
 
     client = discord.Client(intents=intents)
+    tree = discord.app_commands.CommandTree(client)
+
+    @tree.command(name="stop", description="進行中のエージェント処理をキャンセルする")
+    async def stop_command(interaction: discord.Interaction) -> None:
+        ok = await _request_cancel()
+        if ok:
+            await interaction.response.send_message(
+                "キャンセルを要求しました。",
+                ephemeral=True,
+            )
+        else:
+            await interaction.response.send_message(
+                "キャンセルに失敗しました。デーモンが起動しているか確認してください。",
+                ephemeral=True,
+            )
 
     @client.event
     async def on_ready():
         print(f"Discord にログイン: {client.user}")
+        await tree.sync()
         if os.getenv("DISCORD_NOTIFY_CHANNEL_ID") or os.getenv("DISCORD_NOTIFY_USER_ID"):
             if getattr(client, "_ancilla_notify_loop_started", False):
                 return
@@ -160,8 +218,9 @@ def run_bot() -> None:
         images = await _download_images(message.attachments)
         if not text and not images:
             return
-        async with message.channel.typing():
-            response = await _call_daemon(text, images if images else None)
+        response = await _call_daemon_with_typing(
+            message.channel, text, images if images else None
+        )
         if len(response) > MAX_RESPONSE_CHARS:
             response = response[:MAX_RESPONSE_CHARS] + "..."
         await message.reply(response, mention_author=False)
