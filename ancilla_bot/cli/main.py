@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from ancilla_bot.core.agent_loop import is_exit_command, run_agent_loop_with_tools
+from ancilla_bot.core.cancel import reset_cancel, request_cancel
 from ancilla_bot.llm import send_chat
 from ancilla_bot.llm.ollama_client import VISION_ENABLED
 from ancilla_bot.memory.core import build_character_prompt, build_core_memory
@@ -422,6 +423,7 @@ def _handle_message(
 ) -> str:
     global _last_user_input_time
     _last_user_input_time = time.time()
+    reset_cancel()
 
     if agent_lock is not None and not agent_lock.acquire(blocking=False):
         PENDING_MESSAGES.append(
@@ -639,7 +641,9 @@ def _run_resident(args: argparse.Namespace) -> None:
         )
 
     api_thread = threading.Thread(
-        target=lambda: run_server("127.0.0.1", api_port, chat_handler),
+        target=lambda: run_server(
+            "127.0.0.1", api_port, chat_handler, cancel_handler=request_cancel
+        ),
         daemon=True,
         name="api",
     )

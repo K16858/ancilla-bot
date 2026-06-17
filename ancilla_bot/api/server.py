@@ -8,10 +8,22 @@ from loguru import logger
 
 
 def run_server(
-    host: str, port: int, handler: Callable[[str, list[str] | None], str]
+    host: str,
+    port: int,
+    handler: Callable[[str, list[str] | None], str],
+    *,
+    cancel_handler: Callable[[], None] | None = None,
 ) -> None:
     class ChatHandler(BaseHTTPRequestHandler):
         def do_POST(self):
+            if self.path == "/cancel":
+                if cancel_handler is not None:
+                    cancel_handler()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": True}, ensure_ascii=False).encode("utf-8"))
+                return
             if self.path != "/chat":
                 self.send_error(404)
                 return

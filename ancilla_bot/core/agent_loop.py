@@ -9,7 +9,7 @@ from typing import Any, Callable, Final
 from loguru import logger
 
 from ancilla_bot.api.ws_server import take_staged_vlm_images
-from ancilla_bot.core.reflection import verify_answer
+from ancilla_bot.core.cancel import is_cancelled, reset_cancel
 from ancilla_bot.heartbeat.db import append_audit_log
 from ancilla_bot.llm import AgentResponse, send_chat
 from ancilla_bot.llm.schemas import AgentResponseWithTools
@@ -146,6 +146,8 @@ def run_agent_loop_with_tools(
     _turns_since_manage_state = 0
 
     for turn in range(effective_max_turns):
+        if is_cancelled():
+            return "処理をキャンセルしました。", None
         logger.debug("ReAct turn {} messages={}", turn + 1, messages)
         send_images: list[str] | None = None
         if turn == 0 and images:
