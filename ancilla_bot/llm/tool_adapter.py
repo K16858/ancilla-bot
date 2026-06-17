@@ -10,7 +10,8 @@ from typing import Any, NamedTuple, Protocol
 
 from ancilla_bot.llm.ollama_client import send_chat, send_chat_message
 from ancilla_bot.llm.schemas import AgentResponseWithTools
-from ancilla_bot.tools.registry import TOOL_DESCRIPTIONS
+from ancilla_bot.tools.registry import TOOL_DESCRIPTIONS, _short_tool_description
+from ancilla_bot.tools.schemas import NATIVE_EXCLUDED_TOOLS, get_native_parameters
 
 
 class ToolCallResult(NamedTuple):
@@ -52,13 +53,16 @@ def _coerce_user_answer(text: str | None) -> str | None:
 def _build_ollama_tools() -> list[dict[str, Any]]:
     tools: list[dict[str, Any]] = []
     for name, desc in TOOL_DESCRIPTIONS.items():
+        if name in NATIVE_EXCLUDED_TOOLS:
+            continue
+        short = _short_tool_description(desc)
         tools.append(
             {
                 "type": "function",
                 "function": {
                     "name": name,
-                    "description": desc[:1024],
-                    "parameters": {"type": "object", "properties": {}},
+                    "description": short[:1024],
+                    "parameters": get_native_parameters(name),
                 },
             }
         )
