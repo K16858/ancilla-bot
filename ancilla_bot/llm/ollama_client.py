@@ -107,6 +107,57 @@ def send_chat(
     return content.strip()
 
 
+def send_chat_message(
+    messages: list[dict[str, Any]],
+    *,
+    base_url: str = DEFAULT_BASE_URL,
+    model: str | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    format: dict[str, Any] | None = None,
+    images: list[str] | None = None,
+    tools: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """
+    Ollama /api/chat を呼び出し、message オブジェクト全体を返す。native tool calling 用。
+    """
+    use_model = model if model is not None else DEFAULT_MODEL
+    if images and not VISION_ENABLED:
+        raise ValueError("画像付きリクエストには OLLAMA_VISION_ENABLED=true が必要です")
+    if images and VISION_ENABLED:
+        messages = list(messages)
+        if messages and messages[-1].get("role") == "user":
+            last = dict(messages[-1])
+            last["images"] = images
+            messages = messages[:-1] + [last]
+    url = f"{base_url.rstrip('/')}/api/chat"
+    body: dict[str, Any] = {
+        "model": use_model,
+        "messages": messages,
+        "stream": False,
+    }
+    if format is not None:
+        body["format"] = format
+    if tools is not None:
+        body["tools"] = tools
+    logger.debug(
+        "ollama request url={} model={} messages_count={} tools={}",
+        url,
+        use_model,
+        len(messages),
+        len(tools or []),
+    )
+
+    with httpx.Client(timeout=timeout) as client:
+        resp = client.post(url, json=body)
+        resp.raise_for_status()
+        data = resp.json()
+
+    message = data.get("message")
+    if not message:
+        raise ValueError("Ollama の応答に message が含まれていません")
+    return message
+
+
 def embed_text(
     text: str,
     *,
