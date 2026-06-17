@@ -476,6 +476,7 @@ def _process_message_core(
     )
     if dropped:
         append_overflow(dropped)
+    save_active_history(conversation_history)
     return response
 
 
