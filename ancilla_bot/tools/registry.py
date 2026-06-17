@@ -274,6 +274,10 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "get_audio": get_audio,
 }
 
+from ancilla_bot.plugins.loader import register_plugin_tools
+
+register_plugin_tools(TOOL_REGISTRY, TOOL_DESCRIPTIONS)
+
 
 def build_tools_system_prompt() -> str:
     """
