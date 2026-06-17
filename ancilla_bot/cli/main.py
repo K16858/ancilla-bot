@@ -90,6 +90,7 @@ def _is_agent_success(response: str) -> bool:
 # Idle Reflection: 最終ユーザー入力時刻・最終 reflection 実行時刻（epoch 秒）。
 _last_user_input_time: float = time.time()
 _last_proactive_dt: datetime | None = None
+_user_has_interacted: bool = False
 _last_idle_reflection_time: float = 0.0
 
 # 常駐モードで管理するインメモリ会話履歴。WS/API/REPL 全経路で共有。
@@ -230,7 +231,7 @@ def _maybe_run_proactive(snapshot: dict[str, Any], lock: threading.Lock) -> None
     from ancilla_bot.proactive import can_interrupt, evaluate
 
     rules = _load_proactive_rules()
-    if not rules:
+    if not rules or not _user_has_interacted:
         return
     last_interaction = (
         datetime.fromtimestamp(_last_user_input_time)
@@ -290,7 +291,12 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 snapshot = collect_context_snapshot(_last_user_input_time)
                 if snapshot:
                     logger.debug("ambient snapshot keys={}", list(snapshot.keys()))
-                    _maybe_run_proactive(snapshot, lock)
+                    threading.Thread(
+                        target=_maybe_run_proactive,
+                        args=(snapshot, lock),
+                        daemon=True,
+                        name="proactive",
+                    ).start()
                 stop.wait(HEARTBEAT_INTERVAL_SEC)
                 continue
             if not lock.acquire(blocking=False):
@@ -487,9 +493,14 @@ def _handle_message(
     *,
     source: str | None = None,
 ) -> str:
-    global _last_user_input_time
+    global _last_user_input_time, _user_has_interacted
     _last_user_input_time = time.time()
+    if (user_input or "").strip():
+        _user_has_interacted = True
     reset_cancel()
+
+    if not (user_input or "").strip() and not images:
+        return "メッセージが空です。"
 
     if agent_lock is not None and not agent_lock.acquire(blocking=False):
         PENDING_MESSAGES.append(
@@ -608,6 +619,10 @@ def _run_repl(
             # まずキューに溜まったメッセージを処理する（REPL 起動中のみ）
             while PENDING_MESSAGES:
                 pending = PENDING_MESSAGES.pop(0)
+                pending_input = (pending.get("input") or "").strip()
+                pending_images = pending.get("images")
+                if not pending_input and not pending_images:
+                    continue
                 # Lock があれば取得してから処理する
                 if agent_lock is not None and not agent_lock.acquire(blocking=False):
                     # まだ処理できないので先頭に戻して後回し
@@ -615,11 +630,11 @@ def _run_repl(
                     break
                 try:
                     response = _process_message_core(
-                        pending.get("input", ""),
+                        pending_input,
                         history,
                         max_chars=MAX_HISTORY_CHARS,
                         on_turn=on_turn,
-                        images=pending.get("images"),
+                        images=pending_images,
                     )
                     if agent_lock is not None:
                         threading.Thread(
