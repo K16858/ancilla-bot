@@ -89,6 +89,7 @@ def _is_agent_success(response: str) -> bool:
 
 # Idle Reflection: 最終ユーザー入力時刻・最終 reflection 実行時刻（epoch 秒）。
 _last_user_input_time: float = time.time()
+_last_proactive_dt: datetime | None = None
 _last_idle_reflection_time: float = 0.0
 
 # 常駐モードで管理するインメモリ会話履歴。WS/API/REPL 全経路で共有。
@@ -212,6 +213,66 @@ def _build_fast_heartbeat_message(
     return "\n".join(parts)
 
 
+def _load_proactive_rules() -> list[dict[str, Any]]:
+    import yaml
+
+    path = Path(os.getenv("ANCILLA_PROACTIVE_RULES_PATH", "data/proactive_rules.yaml"))
+    if not path.exists():
+        return []
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    rules = data.get("rules") or []
+    return [r for r in rules if isinstance(r, dict)]
+
+
+def _maybe_run_proactive(snapshot: dict[str, Any], lock: threading.Lock) -> None:
+    global _last_proactive_dt
+    from ancilla_bot.personal_model import load as load_personal_model
+    from ancilla_bot.proactive import can_interrupt, evaluate
+
+    rules = _load_proactive_rules()
+    if not rules:
+        return
+    last_interaction = (
+        datetime.fromtimestamp(_last_user_input_time)
+        if _last_user_input_time > 0
+        else datetime.now()
+    )
+    action = evaluate(snapshot, load_personal_model(), rules, last_interaction)
+    if action is None or not can_interrupt(action, _last_proactive_dt):
+        return
+    if not lock.acquire(blocking=False):
+        return
+    try:
+        pseudo = f"[SYSTEM_EVENT:PROACTIVE:{action.trigger}] {action.content}"
+        history = _shared_history if _shared_history is not None else load_active_history()
+        response, _emotion = run_agent_loop_with_tools(pseudo, history, on_turn=None)
+        if response.strip():
+            append_notification(
+                response.strip(),
+                source="system",
+                level="info",
+                detail=f"proactive={action.trigger}",
+            )
+        if _shared_history is not None and response:
+            dropped = append_and_trim(
+                _shared_history,
+                [
+                    {"role": "user", "content": pseudo},
+                    {"role": "assistant", "content": response},
+                ],
+                max_chars=MAX_HISTORY_CHARS,
+            )
+            if dropped:
+                append_overflow(dropped)
+            save_active_history(_shared_history)
+        _last_proactive_dt = datetime.now()
+        logger.info("proactive action triggered: {}", action.trigger)
+    except Exception as e:
+        logger.warning("proactive run failed: {}", e)
+    finally:
+        lock.release()
+
+
 def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
     """該当タスク・リマインダーがあれば擬似メッセージを ReAct に投入"""
     while not stop.is_set():
@@ -229,6 +290,7 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 snapshot = collect_context_snapshot(_last_user_input_time)
                 if snapshot:
                     logger.debug("ambient snapshot keys={}", list(snapshot.keys()))
+                    _maybe_run_proactive(snapshot, lock)
                 stop.wait(HEARTBEAT_INTERVAL_SEC)
                 continue
             if not lock.acquire(blocking=False):
