@@ -13,7 +13,7 @@ from ancilla_bot.core.cancel import is_cancelled, reset_cancel
 from ancilla_bot.heartbeat.db import append_audit_log
 from ancilla_bot.llm import AgentResponse, send_chat
 from ancilla_bot.llm.schemas import AgentResponseWithTools
-from ancilla_bot.llm.tool_adapter import get_tool_caller
+from ancilla_bot.llm.tool_adapter import _coerce_user_answer, get_tool_caller
 from ancilla_bot.tools import TOOL_REGISTRY, build_tools_system_prompt
 
 VERIFY_ANSWER = os.getenv("ANCILLA_VERIFY_ANSWER", "true").strip().lower() in ("1", "true", "yes")
@@ -171,26 +171,27 @@ def run_agent_loop_with_tools(
             )
 
         if parsed_result.final_answer:
+            user_answer = _coerce_user_answer(parsed_result.final_answer) or parsed_result.final_answer
             if retry_after_verify:
                 logger.info(
                     "final_answer (after retry) returned len={}",
-                    len(parsed_result.final_answer),
+                    len(user_answer),
                 )
-                return parsed_result.final_answer, parsed_result.emotion
+                return user_answer, parsed_result.emotion
             do_verify = (
                 VERIFY_ANSWER
                 and not _is_system_event_prompt(user_input)
                 and (not VERIFY_ONLY_AFTER_TOOL or turn >= 1)
             )
-            if do_verify and not verify_answer(user_input, parsed_result.final_answer):
+            if do_verify and not verify_answer(user_input, user_answer):
                 messages.append({"role": "assistant", "content": raw})
                 messages.append({"role": "user", "content": RETRY_USER_MESSAGE})
                 retry_after_verify = True
                 continue
             if on_turn is not None:
                 on_turn(parsed_result.thought, None, None, None)
-            logger.info("final_answer returned len={}", len(parsed_result.final_answer))
-            return parsed_result.final_answer, parsed_result.emotion
+            logger.info("final_answer returned len={}", len(user_answer))
+            return user_answer, parsed_result.emotion
 
         # action が有効ならツール実行
         if parsed_result.action and parsed_result.action in TOOL_REGISTRY:
