@@ -166,7 +166,10 @@ def _get_due_from_table(table: str, *, at: datetime | None = None) -> list[dict[
                 (ts,),
             )
         rows = cur.fetchall()
-        return [_row_to_dict(cur, r) for r in rows]
+        results = [_row_to_dict(cur, r) for r in rows]
+        for r in results:
+            r["_table"] = table
+        return results
 
 
 def get_due_tasks(*, at: datetime | None = None) -> list[dict[str, Any]]:
@@ -195,23 +198,29 @@ def has_due_work(*, at: datetime | None = None) -> bool:
     return len(tasks) > 0 or len(reminders) > 0
 
 
-def mark_tasks_completed(task_ids: list[int]) -> None:
-    """指定した task id を完了済みにする。user_tasks / agent_tasks の両方を対象とする。"""
+def mark_user_tasks_completed(task_ids: list[int]) -> None:
+    """指定した user_tasks id を完了済みにする。"""
     if not task_ids:
         return
     ensure_schema()
     with _conn() as c:
         placeholders = ",".join("?" * len(task_ids))
-        params = task_ids
-        # user_tasks
         c.execute(
             f"UPDATE user_tasks SET completed = 1 WHERE id IN ({placeholders})",
-            params,
+            task_ids,
         )
-        # agent_tasks
+
+
+def mark_agent_tasks_completed(task_ids: list[int]) -> None:
+    """指定した agent_tasks id を完了済みにする。"""
+    if not task_ids:
+        return
+    ensure_schema()
+    with _conn() as c:
+        placeholders = ",".join("?" * len(task_ids))
         c.execute(
             f"UPDATE agent_tasks SET completed = 1 WHERE id IN ({placeholders})",
-            params,
+            task_ids,
         )
 
 

@@ -27,7 +27,8 @@ from ancilla_bot.heartbeat.db import (
     has_due_work,
     manage_state as db_manage_state,
     mark_reminders_completed,
-    mark_tasks_completed,
+    mark_agent_tasks_completed,
+    mark_user_tasks_completed,
 )
 from ancilla_bot.api.server import run_server
 from ancilla_bot.api.ws_server import (
@@ -242,7 +243,10 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 history = _shared_history if _shared_history is not None else load_active_history()
                 response, _emotion = run_agent_loop_with_tools(pseudo, history, on_turn=None)
                 if _is_agent_success(response):
-                    mark_tasks_completed([t["id"] for t in tasks])
+                    user_ids = [t["id"] for t in tasks if t.get("_table") == "user_tasks"]
+                    agent_ids = [t["id"] for t in tasks if t.get("_table") == "agent_tasks"]
+                    mark_user_tasks_completed(user_ids)
+                    mark_agent_tasks_completed(agent_ids)
                     mark_reminders_completed([r["id"] for r in reminders])
                     if response.strip():
                         append_notification(
