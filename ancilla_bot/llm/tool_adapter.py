@@ -8,10 +8,16 @@ import json
 import os
 from typing import Any, NamedTuple, Protocol
 
+from loguru import logger
+
 from ancilla_bot.llm.ollama_client import send_chat, send_chat_message
 from ancilla_bot.llm.schemas import AgentResponseWithTools
 from ancilla_bot.tools.registry import TOOL_DESCRIPTIONS, _short_tool_description
 from ancilla_bot.tools.schemas import NATIVE_EXCLUDED_TOOLS, get_native_parameters
+
+
+def is_native_tool_mode() -> bool:
+    return os.getenv("ANCILLA_TOOL_MODE", "gbnf").strip().lower() == "native"
 
 
 class ToolCallResult(NamedTuple):
@@ -21,6 +27,7 @@ class ToolCallResult(NamedTuple):
     final_answer: str | None
     emotion: str | None
     raw: str
+    assistant_message: dict[str, Any] | None
 
 
 class ToolCaller(Protocol):
@@ -45,9 +52,38 @@ def _coerce_user_answer(text: str | None) -> str | None:
         except Exception:
             continue
         if parsed.final_answer and parsed.final_answer.strip():
+            if is_native_tool_mode():
+                logger.warning("native_json_fallback: extracted final_answer from JSON body")
             return parsed.final_answer.strip()
         return None
     return s
+
+
+def _native_assistant_message(message: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "role": "assistant",
+        "content": message.get("content") or "",
+    }
+    tool_calls = message.get("tool_calls")
+    if tool_calls:
+        out["tool_calls"] = tool_calls
+    return out
+
+
+def _build_native_tool_message(
+    assistant_message: dict[str, Any],
+    content: str,
+) -> dict[str, Any]:
+    tool_msg: dict[str, Any] = {"role": "tool", "content": content}
+    tool_calls = assistant_message.get("tool_calls") or []
+    if tool_calls:
+        call_id = tool_calls[0].get("id")
+        if call_id:
+            tool_msg["tool_call_id"] = call_id
+        name = (tool_calls[0].get("function") or {}).get("name")
+        if name:
+            tool_msg["name"] = name
+    return tool_msg
 
 
 def _build_ollama_tools() -> list[dict[str, Any]]:
@@ -73,6 +109,7 @@ def _native_message_to_result(message: dict[str, Any]) -> ToolCallResult:
     content = (message.get("content") or "").strip()
     thinking = (message.get("thinking") or "").strip()
     thought = thinking or content
+    assistant_message = _native_assistant_message(message)
     tool_calls = message.get("tool_calls") or []
     if tool_calls:
         fn = (tool_calls[0].get("function") or {})
@@ -82,17 +119,9 @@ def _native_message_to_result(message: dict[str, Any]) -> ToolCallResult:
             args = json.loads(args_raw) if isinstance(args_raw, str) else dict(args_raw)
         except (json.JSONDecodeError, TypeError):
             args = {}
-        raw = json.dumps(
-            {"thought": thought, "action": name, "action_input": args, "final_answer": None},
-            ensure_ascii=False,
-        )
-        return ToolCallResult(name, args, thought, None, None, raw)
-    raw = json.dumps(
-        {"thought": thought, "final_answer": content or None, "action": None, "action_input": None},
-        ensure_ascii=False,
-    )
+        return ToolCallResult(name, args, thought, None, None, content, assistant_message)
     answer = _coerce_user_answer(content) or content or None
-    return ToolCallResult(None, None, thought, answer, None, raw)
+    return ToolCallResult(None, None, thought, answer, None, content, assistant_message)
 
 
 def _parse_gbnf_response(raw: str) -> ToolCallResult:
@@ -107,7 +136,7 @@ def _parse_gbnf_response(raw: str) -> ToolCallResult:
         if start >= 0 and end > start:
             parsed = AgentResponseWithTools.model_validate_json(text[start : end + 1])
         else:
-            return ToolCallResult(None, None, "", text, None, text)
+            return ToolCallResult(None, None, "", text, None, text, None)
     answer = parsed.final_answer
     if answer:
         answer = _coerce_user_answer(answer) or answer
@@ -118,6 +147,7 @@ def _parse_gbnf_response(raw: str) -> ToolCallResult:
         answer,
         parsed.emotion,
         text,
+        None,
     )
 
 
