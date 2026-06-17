@@ -31,7 +31,7 @@ from ancilla_bot.heartbeat.db import (
     mark_agent_tasks_completed,
     mark_user_tasks_completed,
 )
-from ancilla_bot.api.server import run_server
+from ancilla_bot.ambient.aggregator import collect_context_snapshot
 from ancilla_bot.api.ws_server import (
     ObservationConfig,
     is_device_connected,
@@ -225,6 +225,9 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
             _LAST_HEARTBEAT_DATE = today
 
             if not date_changed and not has_due_work(at=now):
+                snapshot = collect_context_snapshot(_last_user_input_time)
+                if snapshot:
+                    logger.debug("ambient snapshot keys={}", list(snapshot.keys()))
                 stop.wait(HEARTBEAT_INTERVAL_SEC)
                 continue
             if not lock.acquire(blocking=False):
