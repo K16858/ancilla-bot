@@ -19,7 +19,12 @@ Use the tool name exactly as listed. action must be a string matching the tool n
 ### Memory / state
 
 - search_memory: Vector-search past conversation summaries (long-term memory). action_input: {"query": "search terms", "max_results": 3}. Use when recalling previously discussed topics. max_results optional (default 3).
-- manage_state: SQLite CRUD. See skill guide below.
+- add_task: Add a user task. action_input: {"content": "...", "scheduled_at": "YYYY-MM-DD HH:MM:SS"}. scheduled_at optional (defaults to now).
+- list_tasks: List user tasks. action_input: {"completed": false, "limit": 10}. Both optional.
+- complete_task: Mark a user task complete. action_input: {"id": 3}.
+- add_reminder: Schedule a reminder (heartbeat notifies at scheduled_at). action_input: {"content": "...", "scheduled_at": "YYYY-MM-DD HH:MM:SS"}.
+- add_finance: Record income/expense. action_input: {"amount": -1200, "category": "food", "memo": "...", "date": "YYYY-MM-DD"}. memo and date optional.
+- add_interest: Track a topic. action_input: {"name": "...", "description": "...", "url": "..."}. description and url optional.
 
 ### Notifications
 
@@ -34,106 +39,26 @@ Use the tool name exactly as listed. action must be a string matching the tool n
 
 ---
 
-## Skill: manage_state
+## Skill: tasks and reminders
 
-manage_state has 6 tables. Always choose the correct table; misuse can cause heartbeat misfires.
+Use the dedicated tools above for common operations. scheduled_at must be YYYY-MM-DD HH:MM:SS.
 
-| table | purpose |
-|---|---|
-| user_tasks | Things the user said they will do — their TODO list. Always set scheduled_at and content. |
-| agent_tasks | Work the agent plans to do later. Has two modes controlled by `source` field (see below). |
-| reminders | Notify the user at a specific time. Heartbeat fires ReAct at scheduled_at and calls notify_user. **Always insert timed reminders here; never tell the user you cannot do timed reminders.** |
-| finances | Income / expense notes. Set amount and category; memo and date are optional. |
-| interests | Things the user is curious about or wants to track. Always set name; description, status, url are optional. |
-| audit_log | Automatic tool-call audit log — do not insert manually. |
-
-### agent_tasks — two modes via `source` field
-
-| source | purpose | heartbeat triggers? |
-|---|---|---|
-| `heartbeat` (default) | Schedule future work for the system to run at `scheduled_at` | YES |
-| `self` | Your own cross-session TODO and work log — never triggered by heartbeat | NO |
-
-**Rule: always use `source="self"` for your own task tracking. Only use `source="heartbeat"` when you want the system to run something at a specific time.**
-
-#### Self-managed TODO pattern (plan-first)
-
-Before doing any multi-step work during idle reflection, follow this pattern:
-
-**Step 1 — Check what you already did** (always do this first to avoid repeating work):
+**Reminder** (always use add_reminder for timed user notifications):
 ```json
-{"table": "agent_tasks", "operation": "select", "payload": {"source": "self", "limit": 30}}
-```
-If a similar task exists with `completed=1`, skip it.
-
-**Step 2 — Plan: create a TODO before starting** (`status="pending"`):
-```json
-{"table": "agent_tasks", "operation": "insert", "payload": {"scheduled_at": "2026-03-25 03:00:00", "content": "Research Rust async patterns", "source": "self", "status": "pending"}}
+{"content": "Meeting reminder", "scheduled_at": "2026-03-25 19:00:00"}
 ```
 
-**Step 2b — Mark in_progress when you start** (only one in_progress at a time):
+**User task**:
 ```json
-{"table": "agent_tasks", "operation": "update", "payload": {"id": 42, "status": "in_progress"}}
+{"content": "Submit report", "scheduled_at": "2026-03-26 09:00:00"}
 ```
 
-**Step 3 — Do the work**, then mark completed with a note:
+**Finance** (negative = expense):
 ```json
-{"table": "agent_tasks", "operation": "update", "payload": {"id": 42, "completed": 1, "status": "completed", "content": "Research Rust async patterns → wrote workspace/notes/rust_async.md"}}
+{"amount": -1200, "category": "food", "memo": "Lunch", "date": "2026-03-25"}
 ```
 
-This creates a persistent work log across idle cycles, preventing repeated research.
-
-### insert examples
-
-**reminders** (scheduled_at required, must be YYYY-MM-DD HH:MM:SS):
-```json
-{"table": "reminders", "operation": "insert", "payload": {"scheduled_at": "2026-03-25 19:00:00", "content": "Meeting reminder"}}
-```
-
-**user_tasks**:
-```json
-{"table": "user_tasks", "operation": "insert", "payload": {"scheduled_at": "2026-03-26 09:00:00", "content": "Submit report"}}
-```
-
-**agent_tasks (heartbeat-triggered)**:
-```json
-{"table": "agent_tasks", "operation": "insert", "payload": {"scheduled_at": "2026-03-26 08:00:00", "content": "Generate daily summary", "source": "heartbeat"}}
-```
-
-**finances** (negative amount = expense, positive = income):
-```json
-{"table": "finances", "operation": "insert", "payload": {"amount": -1200, "category": "food", "memo": "Lunch", "date": "2026-03-25"}}
-```
-
-**interests**:
-```json
-{"table": "interests", "operation": "insert", "payload": {"name": "Rust language", "description": "Systems programming", "url": "https://www.rust-lang.org"}}
-```
-
-### select
-
-```json
-{"table": "reminders", "operation": "select", "payload": {"limit": 10, "completed": false}}
-```
-
-completed=false returns only incomplete items. limit defaults to 100 when omitted.
-
-Filter agent_tasks by source:
-```json
-{"table": "agent_tasks", "operation": "select", "payload": {"source": "self", "limit": 20}}
-```
-
-### update
-
-```json
-{"table": "user_tasks", "operation": "update", "payload": {"id": 3, "completed": 1}}
-```
-
-### delete
-
-```json
-{"table": "interests", "operation": "delete", "payload": {"id": 5}}
-```
+For agent_tasks (self-managed work log with source=self/heartbeat), use manage_state directly — see internal docs if needed.
 
 ---
 
