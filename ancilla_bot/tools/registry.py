@@ -26,6 +26,7 @@ from ancilla_bot.tools.tasks import (
     list_tasks,
 )
 from ancilla_bot.personal_model import get_user_context, update_user_goal
+from ancilla_bot.tools.use_edgedevice import use_edgedevice
 from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
 from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
 
