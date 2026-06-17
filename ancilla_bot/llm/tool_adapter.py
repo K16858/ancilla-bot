@@ -72,6 +72,29 @@ def _native_message_to_result(message: dict[str, Any]) -> ToolCallResult:
     return ToolCallResult(None, None, thought, content or None, None, raw)
 
 
+def _parse_gbnf_response(raw: str) -> ToolCallResult:
+    text = (raw or "").strip()
+    if not text:
+        raise ValueError("empty LLM response")
+    try:
+        parsed = AgentResponseWithTools.model_validate_json(text)
+    except Exception:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            parsed = AgentResponseWithTools.model_validate_json(text[start : end + 1])
+        else:
+            return ToolCallResult(None, None, "", text, None, text)
+    return ToolCallResult(
+        parsed.action,
+        parsed.action_input,
+        parsed.thought,
+        parsed.final_answer,
+        parsed.emotion,
+        text,
+    )
+
+
 class GBNFToolCaller:
     """GBNF + JSON Schema でツール呼び出しを制約するモード。"""
 
@@ -83,15 +106,7 @@ class GBNFToolCaller:
     ) -> ToolCallResult:
         schema = AgentResponseWithTools.model_json_schema()
         raw = send_chat(messages, format=schema, images=images)
-        parsed = AgentResponseWithTools.model_validate_json(raw)
-        return ToolCallResult(
-            parsed.action,
-            parsed.action_input,
-            parsed.thought,
-            parsed.final_answer,
-            parsed.emotion,
-            raw,
-        )
+        return _parse_gbnf_response(raw)
 
 
 class NativeToolCaller:
