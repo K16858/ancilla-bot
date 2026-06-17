@@ -639,9 +639,12 @@ def _run_resident(args: argparse.Namespace) -> None:
                 on_turn=None,
                 images=None,
             )
-            # WS 会話を main 履歴にも追記してディスクに保存（idle/heartbeat 参照用）
             user_msg: dict[str, str] = {"role": "user", "content": text}
             assistant_msg: dict[str, str] = {"role": "assistant", "content": answer}
+            if history is not None:
+                history.append(user_msg)
+                history.append(assistant_msg)
+            # WS 会話を main 履歴にも追記してディスクに保存（idle/heartbeat 参照用）
             dropped = append_and_trim(
                 conversation_history, [user_msg, assistant_msg], max_chars=MAX_HISTORY_CHARS
             )
