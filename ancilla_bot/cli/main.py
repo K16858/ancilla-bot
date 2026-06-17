@@ -32,6 +32,7 @@ from ancilla_bot.heartbeat.db import (
     mark_user_tasks_completed,
 )
 from ancilla_bot.ambient.aggregator import collect_context_snapshot
+from ancilla_bot.api.server import run_server
 from ancilla_bot.api.ws_server import (
     ObservationConfig,
     is_device_connected,
