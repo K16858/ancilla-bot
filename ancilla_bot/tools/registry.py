@@ -25,7 +25,7 @@ from ancilla_bot.tools.tasks import (
     complete_task,
     list_tasks,
 )
-from ancilla_bot.tools.use_edgedevice import use_edgedevice
+from ancilla_bot.personal_model import get_user_context, update_user_goal
 from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
 from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
 
@@ -103,6 +103,12 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "Track a topic the user cares about. "
         "action_input: {\"name\": \"...\", \"description\": \"...\", \"url\": \"...\"}. "
         "description and url are optional."
+    ),
+    "get_user_context": (
+        "Return structured user profile from personal_model.yaml. action_input: {}."
+    ),
+    "update_user_goal": (
+        "Add a user goal. action_input: {\"goal\": \"...\", \"term\": \"short|long\"}. term defaults to short."
     ),
     # ── Notifications ─────────────────────────────────────────────────────
     "notify_user": (
@@ -258,6 +264,8 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "add_reminder": add_reminder,
     "add_finance": add_finance,
     "add_interest": add_interest,
+    "get_user_context": get_user_context,
+    "update_user_goal": update_user_goal,
     "manage_state": manage_state,
     "notify_user": notify_user,
     "end_edge_session": end_edge_session,

@@ -518,6 +518,9 @@ def _run_summarize_with_lock(lock: threading.Lock) -> None:
     lock.acquire()
     try:
         run_summarize()
+        from ancilla_bot.personal_model import extract_and_update
+
+        extract_and_update(load_overflow() + load_active_history())
     except Exception as e:
         logger.warning("batch summarize failed: {}", e)
     finally:
