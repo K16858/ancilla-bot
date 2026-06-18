@@ -10,6 +10,7 @@ from loguru import logger
 
 from ancilla_bot.api.ws_server import take_staged_vlm_images
 from ancilla_bot.core.cancel import is_cancelled, reset_cancel
+from ancilla_bot.core.reflection import verify_answer
 from ancilla_bot.heartbeat.db import append_audit_log
 from ancilla_bot.llm import AgentResponse, send_chat
 from ancilla_bot.llm.schemas import AgentResponseWithTools
