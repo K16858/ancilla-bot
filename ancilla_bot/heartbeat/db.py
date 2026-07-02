@@ -102,6 +102,37 @@ CREATE TABLE IF NOT EXISTS audit_log (
 )
 """
 
+_SCHEMA_AGENT_RUNS = """
+CREATE TABLE IF NOT EXISTS agent_runs (
+    id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    source TEXT NOT NULL,
+    user_input TEXT NOT NULL,
+    parent_run_id TEXT,
+    last_error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT
+)
+"""
+
+_SCHEMA_AGENT_RUN_STEPS = """
+CREATE TABLE IF NOT EXISTS agent_run_steps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    turn_index INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    thought TEXT NOT NULL DEFAULT '',
+    action TEXT,
+    action_input_json TEXT NOT NULL DEFAULT '{}',
+    observation TEXT NOT NULL DEFAULT '',
+    error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    FOREIGN KEY(run_id) REFERENCES agent_runs(id)
+)
+"""
+
 
 def ensure_schema() -> None:
     """全テーブルがなければ作成する。既存テーブルへのマイグレーションも実行。"""
@@ -112,6 +143,8 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_FINANCES)
         c.executescript(_SCHEMA_INTERESTS)
         c.executescript(_SCHEMA_AUDIT_LOG)
+        c.executescript(_SCHEMA_AGENT_RUNS)
+        c.executescript(_SCHEMA_AGENT_RUN_STEPS)
         # agent_tasks.source カラムが既存 DB に無ければ追加
         try:
             c.execute(_MIGRATE_AGENT_TASKS_SOURCE)
@@ -142,6 +175,119 @@ def append_audit_log(tool_name: str, args_summary: str = "") -> None:
 def _row_to_dict(cursor: sqlite3.Cursor, row: tuple) -> dict[str, Any]:
     names = [d[0] for d in cursor.description]
     return dict(zip(names, row))
+
+
+def create_agent_run(
+    run_id: str,
+    *,
+    source: str,
+    user_input: str,
+    parent_run_id: str | None = None,
+) -> None:
+    ensure_schema()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO agent_runs "
+            "(id, status, source, user_input, parent_run_id, created_at, updated_at) "
+            "VALUES (?, 'running', ?, ?, ?, ?, ?)",
+            (run_id, source, user_input, parent_run_id, now, now),
+        )
+
+
+def update_agent_run_status(
+    run_id: str,
+    status: str,
+    *,
+    last_error: str = "",
+) -> None:
+    ensure_schema()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    completed_at = now if status in {"completed", "failed", "cancelled", "max_turns"} else None
+    with _conn() as c:
+        c.execute(
+            "UPDATE agent_runs "
+            "SET status = ?, last_error = ?, updated_at = ?, completed_at = ? "
+            "WHERE id = ?",
+            (status, last_error, now, completed_at, run_id),
+        )
+
+
+def create_agent_run_step(
+    run_id: str,
+    *,
+    turn_index: int,
+    status: str,
+    thought: str = "",
+    action: str | None = None,
+    action_input: dict[str, Any] | None = None,
+) -> int:
+    ensure_schema()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    action_input_json = json.dumps(action_input or {}, ensure_ascii=False, default=str)
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO agent_run_steps "
+            "(run_id, turn_index, status, thought, action, action_input_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (run_id, turn_index, status, thought, action, action_input_json, now),
+        )
+        return int(cur.lastrowid)
+
+
+def complete_agent_run_step(
+    step_id: int,
+    status: str,
+    *,
+    observation: str = "",
+    error: str = "",
+) -> None:
+    ensure_schema()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with _conn() as c:
+        c.execute(
+            "UPDATE agent_run_steps "
+            "SET status = ?, observation = ?, error = ?, completed_at = ? "
+            "WHERE id = ?",
+            (status, observation, error, now, step_id),
+        )
+
+
+def list_agent_runs(limit: int = 20) -> list[dict[str, Any]]:
+    ensure_schema()
+    with _conn() as c:
+        cur = c.execute(
+            "SELECT id, status, source, user_input, parent_run_id, last_error, "
+            "created_at, updated_at, completed_at "
+            "FROM agent_runs ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+        return [_row_to_dict(cur, row) for row in cur.fetchall()]
+
+
+def get_agent_run(run_id: str) -> dict[str, Any] | None:
+    ensure_schema()
+    with _conn() as c:
+        cur = c.execute(
+            "SELECT id, status, source, user_input, parent_run_id, last_error, "
+            "created_at, updated_at, completed_at "
+            "FROM agent_runs WHERE id = ?",
+            (run_id,),
+        )
+        row = cur.fetchone()
+        return _row_to_dict(cur, row) if row else None
+
+
+def list_agent_run_steps(run_id: str) -> list[dict[str, Any]]:
+    ensure_schema()
+    with _conn() as c:
+        cur = c.execute(
+            "SELECT id, run_id, turn_index, status, thought, action, action_input_json, "
+            "observation, error, created_at, completed_at "
+            "FROM agent_run_steps WHERE run_id = ? ORDER BY turn_index ASC, id ASC",
+            (run_id,),
+        )
+        return [_row_to_dict(cur, row) for row in cur.fetchall()]
 
 
 def _get_due_from_table(table: str, *, at: datetime | None = None) -> list[dict[str, Any]]:
