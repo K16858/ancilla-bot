@@ -11,7 +11,13 @@ from loguru import logger
 from ancilla_bot.api.ws_server import take_staged_vlm_images
 from ancilla_bot.core.cancel import is_cancelled, reset_cancel
 from ancilla_bot.core.reflection import verify_answer
-from ancilla_bot.heartbeat.db import append_audit_log
+from ancilla_bot.heartbeat.db import (
+    append_audit_log,
+    complete_agent_run_step,
+    create_agent_run,
+    create_agent_run_step,
+    update_agent_run_status,
+)
 from ancilla_bot.llm import AgentResponse, send_chat
 from ancilla_bot.llm.schemas import AgentResponseWithTools
 from ancilla_bot.llm.tool_adapter import (
@@ -152,6 +158,7 @@ def run_agent_loop_with_tools(
         "run_started",
         payload={"source": source, "user_input": user_input, "has_images": bool(images)},
     )
+    create_agent_run(run_id, source=source, user_input=user_input)
     history = list(conversation_history or [])
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": build_tools_system_prompt()},
@@ -168,6 +175,7 @@ def run_agent_loop_with_tools(
     for turn in range(effective_max_turns):
         if is_cancelled():
             write_event(run_id, "run_cancelled", turn_index=turn)
+            update_agent_run_status(run_id, "cancelled")
             return "処理をキャンセルしました。", None
         logger.debug("ReAct turn {} messages={}", turn + 1, messages)
         send_images: list[str] | None = None
@@ -181,9 +189,18 @@ def run_agent_loop_with_tools(
         except Exception as e:
             logger.warning("tool caller failed: {} ", e)
             write_event(run_id, "run_failed", turn_index=turn, payload={"error": str(e)})
+            update_agent_run_status(run_id, "failed", last_error=str(e))
             return "応答の解析に失敗しました。もう一度試してください。", None
 
         raw = parsed_result.raw
+        step_id = create_agent_run_step(
+            run_id,
+            turn_index=turn,
+            status="llm_responded",
+            thought=parsed_result.thought,
+            action=parsed_result.action,
+            action_input=parsed_result.action_input,
+        )
         write_event(
             run_id,
             "llm_responded",
@@ -199,6 +216,8 @@ def run_agent_loop_with_tools(
         if not raw or not raw.strip():
             logger.warning("LLM returned empty response")
             write_event(run_id, "run_failed", turn_index=turn, payload={"error": "empty LLM response"})
+            complete_agent_run_step(step_id, "failed", error="empty LLM response")
+            update_agent_run_status(run_id, "failed", last_error="empty LLM response")
             return (
                 "内部エラーが発生しました（空の応答）。少し待ってからもう一度試してください。",
                 None,
@@ -217,6 +236,8 @@ def run_agent_loop_with_tools(
                     turn_index=turn,
                     payload={"final_answer": user_answer},
                 )
+                complete_agent_run_step(step_id, "completed", observation=user_answer)
+                update_agent_run_status(run_id, "completed")
                 return user_answer, parsed_result.emotion
             do_verify = (
                 VERIFY_ANSWER
@@ -230,6 +251,7 @@ def run_agent_loop_with_tools(
                     turn_index=turn,
                     payload={"final_answer": user_answer},
                 )
+                complete_agent_run_step(step_id, "verification_failed", observation=user_answer)
                 if is_native_tool_mode() and parsed_result.assistant_message:
                     messages.append(parsed_result.assistant_message)
                 else:
@@ -249,6 +271,8 @@ def run_agent_loop_with_tools(
                 turn_index=turn,
                 payload={"final_answer": user_answer},
             )
+            complete_agent_run_step(step_id, "completed", observation=user_answer)
+            update_agent_run_status(run_id, "completed")
             return user_answer, parsed_result.emotion
 
         # action が有効ならツール実行
@@ -276,6 +300,7 @@ def run_agent_loop_with_tools(
                     turn_index=turn,
                     payload={"action": parsed_result.action, "result": result},
                 )
+                complete_agent_run_step(step_id, "tool_succeeded", observation=result)
             except Exception as e:
                 tool_content = f"Error: {e!s}"
                 observation = f"Observation: {tool_content}"
@@ -286,6 +311,7 @@ def run_agent_loop_with_tools(
                     turn_index=turn,
                     payload={"action": parsed_result.action, "error": str(e)},
                 )
+                complete_agent_run_step(step_id, "tool_failed", error=str(e))
             # nag injection: track agent_tasks usage specifically
             args_table = (parsed_result.action_input or {}).get("table", "")
             if parsed_result.action == "manage_state" and args_table == "agent_tasks":
@@ -318,10 +344,12 @@ def run_agent_loop_with_tools(
                     turn_index=turn,
                     payload={"action": parsed_result.action, "error": tool_content},
                 )
+                complete_agent_run_step(step_id, "tool_failed", error=tool_content)
             else:
                 tool_content = ""
                 observation = "Observation: action または final_answer を指定してください。"
                 logger.warning("action/final_answer missing")
+                complete_agent_run_step(step_id, "invalid_response", observation=observation)
             if on_turn is not None:
                 on_turn(
                     parsed_result.thought,
@@ -343,6 +371,7 @@ def run_agent_loop_with_tools(
 
     logger.warning("max turns ({}) reached, forcing final answer", effective_max_turns)
     write_event(run_id, "max_turns_reached", turn_index=effective_max_turns)
+    update_agent_run_status(run_id, "max_turns")
     try:
         summary_msgs = list(messages) + [{"role": "user", "content": _FORCE_SUMMARY_PROMPT}]
         raw_summary = send_chat(summary_msgs, format=None)
@@ -355,6 +384,7 @@ def run_agent_loop_with_tools(
             turn_index=effective_max_turns,
             payload={"error": str(exc)},
         )
+        update_agent_run_status(run_id, "failed", last_error=str(exc))
         answer = "処理を完了できませんでした。"
     write_event(
         run_id,
