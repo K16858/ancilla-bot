@@ -246,7 +246,9 @@ def _maybe_run_proactive(snapshot: dict[str, Any], lock: threading.Lock) -> None
     try:
         pseudo = f"[SYSTEM_EVENT:PROACTIVE:{action.trigger}] {action.content}"
         history = _shared_history if _shared_history is not None else load_active_history()
-        response, _emotion = run_agent_loop_with_tools(pseudo, history, on_turn=None)
+        response, _emotion = run_agent_loop_with_tools(
+            pseudo, history, on_turn=None, source="proactive"
+        )
         if response.strip():
             append_notification(
                 response.strip(),
@@ -314,7 +316,9 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                     today=today,
                 )
                 history = _shared_history if _shared_history is not None else load_active_history()
-                response, _emotion = run_agent_loop_with_tools(pseudo, history, on_turn=None)
+                response, _emotion = run_agent_loop_with_tools(
+                    pseudo, history, on_turn=None, source="heartbeat"
+                )
                 if _is_agent_success(response):
                     user_ids = [t["id"] for t in tasks if t.get("_table") == "user_tasks"]
                     agent_ids = [t["id"] for t in tasks if t.get("_table") == "agent_tasks"]
@@ -459,6 +463,7 @@ def _idle_reflection_loop(lock: threading.Lock, stop: threading.Event) -> None:
                     max_turns=IDLE_MAX_TOOL_TURNS,
                     nag_interval=3,
                     nag_message="Check and update your agent_tasks (source=self) to track progress.",
+                    source="idle_reflection",
                 )
                 # idle reflection の会話を共有履歴に保存してコンテキストを継続
                 if _shared_history is not None and response:
@@ -514,6 +519,7 @@ def _handle_message(
             max_chars=max_chars,
             on_turn=on_turn,
             images=images,
+            source=source or "unknown",
         )
         if agent_lock is not None:
             threading.Thread(
@@ -543,6 +549,7 @@ def _process_message_core(
     max_chars: int,
     on_turn: Any,
     images: list[str] | None = None,
+    source: str = "unknown",
 ) -> str:
     """
     Lock を取得済みであることを前提に、1 メッセージ分の処理を行う。
@@ -550,7 +557,7 @@ def _process_message_core(
     if images and not VISION_ENABLED:
         return "画像処理は無効です。.env で OLLAMA_VISION_ENABLED=true にしてください（メインモデルが視覚対応の場合）。"
     response, _emotion = run_agent_loop_with_tools(
-        user_input, conversation_history, on_turn=on_turn, images=images
+        user_input, conversation_history, on_turn=on_turn, images=images, source=source
     )
     user_msg = {"role": "user", "content": user_input}
     assistant_msg = {"role": "assistant", "content": response}
@@ -635,6 +642,7 @@ def _run_repl(
                         max_chars=MAX_HISTORY_CHARS,
                         on_turn=on_turn,
                         images=pending_images,
+                        source=str(pending.get("source") or "queued"),
                     )
                     if agent_lock is not None:
                         threading.Thread(
@@ -752,6 +760,7 @@ def _run_resident(args: argparse.Namespace) -> None:
                 conv_history,
                 on_turn=None,
                 images=None,
+                source="ws",
             )
             user_msg: dict[str, str] = {"role": "user", "content": text}
             assistant_msg: dict[str, str] = {"role": "assistant", "content": answer}
