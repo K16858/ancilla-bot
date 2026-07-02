@@ -762,6 +762,51 @@ def _run_trace(args: argparse.Namespace) -> None:
         )
 
 
+def _build_resume_prompt(run: dict[str, Any], steps: list[dict[str, Any]]) -> str:
+    lines = [
+        "[RESUME_AGENT_RUN]",
+        f"Original run id: {run['id']}",
+        f"Original status: {run['status']}",
+        f"Original source: {run['source']}",
+        "",
+        "Original user input:",
+        str(run["user_input"]),
+        "",
+        "Recorded steps:",
+    ]
+    for step in steps:
+        detail = step.get("error") or step.get("observation") or ""
+        action = step.get("action") or "-"
+        lines.append(
+            f"- turn={step['turn_index']} status={step['status']} "
+            f"action={action} detail={_clip(detail, 300)}"
+        )
+    lines.extend(
+        [
+            "",
+            "Continue this run from the recorded state. Use tools if needed.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _run_resume(args: argparse.Namespace) -> None:
+    run = get_agent_run(args.run_id)
+    if run is None:
+        print(f"agent_run not found: {args.run_id}")
+        return
+    history = load_active_history()
+    response = _process_message_core(
+        _build_resume_prompt(run, list_agent_run_steps(args.run_id)),
+        history,
+        max_chars=MAX_HISTORY_CHARS,
+        on_turn=None,
+        source="resume",
+        parent_run_id=args.run_id,
+    )
+    print(response)
+
+
 def _run_resident(args: argparse.Namespace) -> None:
     global _shared_history
     agent_lock = threading.Lock()
@@ -921,6 +966,8 @@ def main() -> None:
     runs_parser.add_argument("--limit", type=int, default=20)
     trace_parser = subparsers.add_parser("trace", help="agent_run のステップを表示")
     trace_parser.add_argument("run_id")
+    resume_parser = subparsers.add_parser("resume", help="agent_run を再開")
+    resume_parser.add_argument("run_id")
 
     batch_parser = subparsers.add_parser("batch", help="バッチ処理")
     batch_sub = batch_parser.add_subparsers(dest="batch_command", required=True)
@@ -947,6 +994,9 @@ def main() -> None:
         return
     if args.command == "trace":
         _run_trace(args)
+        return
+    if args.command == "resume":
+        _run_resume(args)
         return
     if args.command == "batch":
         if args.batch_command == "summarize":
