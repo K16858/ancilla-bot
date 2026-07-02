@@ -500,6 +500,7 @@ def _handle_message(
     images: list[str] | None = None,
     *,
     source: str | None = None,
+    parent_run_id: str | None = None,
 ) -> str:
     global _last_user_input_time, _user_has_interacted
     _last_user_input_time = time.time()
@@ -523,6 +524,7 @@ def _handle_message(
             on_turn=on_turn,
             images=images,
             source=source or "unknown",
+            parent_run_id=parent_run_id,
         )
         if agent_lock is not None:
             threading.Thread(
@@ -553,6 +555,7 @@ def _process_message_core(
     on_turn: Any,
     images: list[str] | None = None,
     source: str = "unknown",
+    parent_run_id: str | None = None,
 ) -> str:
     """
     Lock を取得済みであることを前提に、1 メッセージ分の処理を行う。
@@ -560,7 +563,12 @@ def _process_message_core(
     if images and not VISION_ENABLED:
         return "画像処理は無効です。.env で OLLAMA_VISION_ENABLED=true にしてください（メインモデルが視覚対応の場合）。"
     response, _emotion = run_agent_loop_with_tools(
-        user_input, conversation_history, on_turn=on_turn, images=images, source=source
+        user_input,
+        conversation_history,
+        on_turn=on_turn,
+        images=images,
+        source=source,
+        parent_run_id=parent_run_id,
     )
     user_msg = {"role": "user", "content": user_input}
     assistant_msg = {"role": "assistant", "content": response}

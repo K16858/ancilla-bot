@@ -141,6 +141,7 @@ def run_agent_loop_with_tools(
     nag_interval: int | None = None,
     nag_message: str | None = None,
     source: str = "unknown",
+    parent_run_id: str | None = None,
 ) -> tuple[str, str | None]:
     """
     ツール呼び出しありの ReAct ループ。
@@ -156,9 +157,14 @@ def run_agent_loop_with_tools(
     write_event(
         run_id,
         "run_started",
-        payload={"source": source, "user_input": user_input, "has_images": bool(images)},
+        payload={
+            "source": source,
+            "user_input": user_input,
+            "has_images": bool(images),
+            "parent_run_id": parent_run_id,
+        },
     )
-    create_agent_run(run_id, source=source, user_input=user_input)
+    create_agent_run(run_id, source=source, user_input=user_input, parent_run_id=parent_run_id)
     history = list(conversation_history or [])
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": build_tools_system_prompt()},
