@@ -25,7 +25,10 @@ from ancilla_bot.memory.core import build_character_prompt, build_core_memory
 from ancilla_bot.heartbeat.db import (
     get_due_reminders,
     get_due_tasks,
+    get_agent_run,
     has_due_work,
+    list_agent_run_steps,
+    list_agent_runs,
     manage_state as db_manage_state,
     mark_reminders_completed,
     mark_agent_tasks_completed,
@@ -713,6 +716,44 @@ def _run_batch_summarize() -> None:
     run_summarize()
 
 
+def _clip(text: object, limit: int = 80) -> str:
+    s = str(text or "").replace("\n", " ")
+    return s if len(s) <= limit else s[: limit - 3] + "..."
+
+
+def _run_runs(args: argparse.Namespace) -> None:
+    rows = list_agent_runs(limit=args.limit)
+    if not rows:
+        print("agent_runs: no rows")
+        return
+    for row in rows:
+        print(
+            f"{row['id']}  {row['status']}  {row['source']}  "
+            f"{row['created_at']}  {_clip(row['user_input'])}"
+        )
+
+
+def _run_trace(args: argparse.Namespace) -> None:
+    run = get_agent_run(args.run_id)
+    if run is None:
+        print(f"agent_run not found: {args.run_id}")
+        return
+    print(
+        f"{run['id']}  {run['status']}  {run['source']}  "
+        f"{run['created_at']} -> {run.get('completed_at') or '-'}"
+    )
+    if run.get("last_error"):
+        print(f"error: {run['last_error']}")
+    print(f"input: {_clip(run['user_input'], 160)}")
+    for step in list_agent_run_steps(args.run_id):
+        action = step.get("action") or "-"
+        detail = step.get("error") or step.get("observation") or ""
+        print(
+            f"[{step['turn_index']}] {step['status']}  {action}  "
+            f"{_clip(detail, 120)}"
+        )
+
+
 def _run_resident(args: argparse.Namespace) -> None:
     global _shared_history
     agent_lock = threading.Lock()
@@ -868,6 +909,10 @@ def main() -> None:
     subparsers.add_parser("client", help="API に接続する REPL クライアント。先に ancilla run を起動すること。")
     subparsers.add_parser("discord", help="Discord Bot。先に ancilla run を起動し、DISCORD_BOT_TOKEN を設定すること。")
     subparsers.add_parser("slack", help="Slack Bot（Socket Mode）。先に ancilla run を起動し、SLACK_BOT_TOKEN と SLACK_APP_TOKEN を設定すること。")
+    runs_parser = subparsers.add_parser("runs", help="agent_runs を一覧表示")
+    runs_parser.add_argument("--limit", type=int, default=20)
+    trace_parser = subparsers.add_parser("trace", help="agent_run のステップを表示")
+    trace_parser.add_argument("run_id")
 
     batch_parser = subparsers.add_parser("batch", help="バッチ処理")
     batch_sub = batch_parser.add_subparsers(dest="batch_command", required=True)
@@ -888,6 +933,12 @@ def main() -> None:
     if args.command == "slack":
         from ancilla_bot.slack_bot import main as slack_main
         slack_main()
+        return
+    if args.command == "runs":
+        _run_runs(args)
+        return
+    if args.command == "trace":
+        _run_trace(args)
         return
     if args.command == "batch":
         if args.batch_command == "summarize":
