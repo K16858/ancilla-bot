@@ -21,6 +21,7 @@ from ancilla_bot.llm.tool_adapter import (
     is_native_tool_mode,
 )
 from ancilla_bot.tools import TOOL_REGISTRY, build_tools_system_prompt
+from ancilla_bot.tracing import new_run_id, write_event
 
 VERIFY_ANSWER = os.getenv("ANCILLA_VERIFY_ANSWER", "true").strip().lower() in ("1", "true", "yes")
 VERIFY_ONLY_AFTER_TOOL = os.getenv("ANCILLA_VERIFY_ONLY_AFTER_TOOL", "true").strip().lower() in ("1", "true", "yes")
@@ -133,6 +134,7 @@ def run_agent_loop_with_tools(
     max_turns: int | None = None,
     nag_interval: int | None = None,
     nag_message: str | None = None,
+    source: str = "unknown",
 ) -> tuple[str, str | None]:
     """
     ツール呼び出しありの ReAct ループ。
@@ -144,6 +146,12 @@ def run_agent_loop_with_tools(
     on_turn(thought, action, action_input, observation) を 1 回呼ぶ。
     """
     logger.info("user_input={!r}", user_input[:100] + "..." if len(user_input) > 100 else user_input)
+    run_id = new_run_id()
+    write_event(
+        run_id,
+        "run_started",
+        payload={"source": source, "user_input": user_input, "has_images": bool(images)},
+    )
     history = list(conversation_history or [])
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": build_tools_system_prompt()},
@@ -159,6 +167,7 @@ def run_agent_loop_with_tools(
 
     for turn in range(effective_max_turns):
         if is_cancelled():
+            write_event(run_id, "run_cancelled", turn_index=turn)
             return "処理をキャンセルしました。", None
         logger.debug("ReAct turn {} messages={}", turn + 1, messages)
         send_images: list[str] | None = None
@@ -171,12 +180,25 @@ def run_agent_loop_with_tools(
             parsed_result = tool_caller.call(messages, images=send_images)
         except Exception as e:
             logger.warning("tool caller failed: {} ", e)
+            write_event(run_id, "run_failed", turn_index=turn, payload={"error": str(e)})
             return "応答の解析に失敗しました。もう一度試してください。", None
 
         raw = parsed_result.raw
+        write_event(
+            run_id,
+            "llm_responded",
+            turn_index=turn,
+            payload={
+                "thought": parsed_result.thought,
+                "action": parsed_result.action,
+                "action_input": parsed_result.action_input,
+                "has_final_answer": bool(parsed_result.final_answer),
+            },
+        )
         logger.debug("LLM raw={}", raw[:500] + "..." if len(raw) > 500 else raw)
         if not raw or not raw.strip():
             logger.warning("LLM returned empty response")
+            write_event(run_id, "run_failed", turn_index=turn, payload={"error": "empty LLM response"})
             return (
                 "内部エラーが発生しました（空の応答）。少し待ってからもう一度試してください。",
                 None,
@@ -189,6 +211,12 @@ def run_agent_loop_with_tools(
                     "final_answer (after retry) returned len={}",
                     len(user_answer),
                 )
+                write_event(
+                    run_id,
+                    "final_answer",
+                    turn_index=turn,
+                    payload={"final_answer": user_answer},
+                )
                 return user_answer, parsed_result.emotion
             do_verify = (
                 VERIFY_ANSWER
@@ -196,6 +224,12 @@ def run_agent_loop_with_tools(
                 and (not VERIFY_ONLY_AFTER_TOOL or turn >= 1)
             )
             if do_verify and not verify_answer(user_input, user_answer):
+                write_event(
+                    run_id,
+                    "verification_failed",
+                    turn_index=turn,
+                    payload={"final_answer": user_answer},
+                )
                 if is_native_tool_mode() and parsed_result.assistant_message:
                     messages.append(parsed_result.assistant_message)
                 else:
@@ -209,6 +243,12 @@ def run_agent_loop_with_tools(
             if on_turn is not None:
                 on_turn(parsed_result.thought, None, None, None)
             logger.info("final_answer returned len={}", len(user_answer))
+            write_event(
+                run_id,
+                "final_answer",
+                turn_index=turn,
+                payload={"final_answer": user_answer},
+            )
             return user_answer, parsed_result.emotion
 
         # action が有効ならツール実行
@@ -216,6 +256,12 @@ def run_agent_loop_with_tools(
             func = TOOL_REGISTRY[parsed_result.action]
             args: dict[str, Any] = parsed_result.action_input or {}
             logger.info("tool_call action={} args={}", parsed_result.action, args)
+            write_event(
+                run_id,
+                "tool_called",
+                turn_index=turn,
+                payload={"action": parsed_result.action, "action_input": args},
+            )
             append_audit_log(parsed_result.action, str(args))
             try:
                 result = func(**args)
@@ -224,10 +270,22 @@ def run_agent_loop_with_tools(
                 summary = result[:SUMMARY_MAX_LEN] + "..." if len(result) > SUMMARY_MAX_LEN else result
                 logger.info("tool_result summary={!r}", summary)
                 logger.debug("tool_result full observation={!r}", observation[:500])
+                write_event(
+                    run_id,
+                    "tool_succeeded",
+                    turn_index=turn,
+                    payload={"action": parsed_result.action, "result": result},
+                )
             except Exception as e:
                 tool_content = f"Error: {e!s}"
                 observation = f"Observation: {tool_content}"
                 logger.warning("tool exception action={} error={}", parsed_result.action, e)
+                write_event(
+                    run_id,
+                    "tool_failed",
+                    turn_index=turn,
+                    payload={"action": parsed_result.action, "error": str(e)},
+                )
             # nag injection: track agent_tasks usage specifically
             args_table = (parsed_result.action_input or {}).get("table", "")
             if parsed_result.action == "manage_state" and args_table == "agent_tasks":
@@ -254,6 +312,12 @@ def run_agent_loop_with_tools(
                 tool_content = f"Unknown tool: {parsed_result.action}"
                 observation = f"Observation: {tool_content}"
                 logger.warning("unknown tool action={}", parsed_result.action)
+                write_event(
+                    run_id,
+                    "tool_failed",
+                    turn_index=turn,
+                    payload={"action": parsed_result.action, "error": tool_content},
+                )
             else:
                 tool_content = ""
                 observation = "Observation: action または final_answer を指定してください。"
@@ -278,11 +342,24 @@ def run_agent_loop_with_tools(
                 messages.append({"role": "user", "content": observation})
 
     logger.warning("max turns ({}) reached, forcing final answer", effective_max_turns)
+    write_event(run_id, "max_turns_reached", turn_index=effective_max_turns)
     try:
         summary_msgs = list(messages) + [{"role": "user", "content": _FORCE_SUMMARY_PROMPT}]
         raw_summary = send_chat(summary_msgs, format=None)
         answer = (raw_summary or "").strip() or "処理を完了できませんでした。"
     except Exception as exc:
         logger.warning("force summary failed: {}", exc)
+        write_event(
+            run_id,
+            "run_failed",
+            turn_index=effective_max_turns,
+            payload={"error": str(exc)},
+        )
         answer = "処理を完了できませんでした。"
+    write_event(
+        run_id,
+        "final_answer",
+        turn_index=effective_max_turns,
+        payload={"final_answer": answer},
+    )
     return answer, None
