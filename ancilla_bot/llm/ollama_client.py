@@ -17,6 +17,28 @@ DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
 DEFAULT_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 DEFAULT_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "60"))
 VISION_ENABLED = os.getenv("OLLAMA_VISION_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+_THINKING_MODEL_PREFIXES = ("qwen3", "deepseek-r1", "qwq")
+_NON_THINKING_MODEL_MARKERS = ("granite", "gemma", "llama", "mistral", "phi", "sarashina")
+
+
+def _model_base_name(model: str) -> str:
+    return model.split(":", 1)[0].lower()
+
+
+def _should_think(model: str, *, format: dict[str, Any] | None) -> bool:
+    if format is not None:
+        return False
+    env = os.getenv("OLLAMA_THINK", "").strip().lower()
+    if env in ("1", "true", "yes"):
+        return True
+    if env in ("0", "false", "no"):
+        return False
+    base = _model_base_name(model)
+    if any(marker in base for marker in _NON_THINKING_MODEL_MARKERS):
+        return False
+    if any(base.startswith(prefix) for prefix in _THINKING_MODEL_PREFIXES):
+        return True
+    return False
 
 
 def send_chat(
@@ -56,7 +78,7 @@ def send_chat(
         "model": use_model,
         "messages": messages,
         "stream": False,
-        "think": format is None,
+        "think": _should_think(use_model, format=format),
     }
     if format is not None:
         body["format"] = format
