@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.log
+.env
+notes
+tests
+data/conversation
+data/logs
+data/notifications
+data/traces
+data/vector_store

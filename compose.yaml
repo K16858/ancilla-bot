@@ -1,0 +1,46 @@
+services:
+  ancilla:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      ANCILLA_API_HOST: 0.0.0.0
+      ANCILLA_API_PORT: ${ANCILLA_API_PORT:-8765}
+      ANCILLA_WS_HOST: 0.0.0.0
+      ANCILLA_WS_PORT: ${ANCILLA_WS_PORT:-8766}
+      ANCILLA_WORKSPACE_DIR: /app/workspace
+      ANCILLA_CONVERSATION_DIR: /app/data/conversation
+      ANCILLA_VECTOR_STORE_DIR: /app/data/vector_store
+      ANCILLA_NOTIFICATIONS_DIR: /app/data/notifications
+      ANCILLA_PERSONAL_MODEL_PATH: /app/data/personal_model.yaml
+      ANCILLA_PROACTIVE_RULES_PATH: /app/data/proactive_rules.yaml
+      ANCILLA_LOG_FILE: /app/data/logs/ancilla.log
+      ANCILLA_SANDBOX: none
+      ANCILLA_TOOL_MODE: ${ANCILLA_TOOL_MODE:-native}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
+      OLLAMA_VISION_ENABLED: ${OLLAMA_VISION_ENABLED:-true}
+      SEARXNG_URL: ${SEARXNG_URL:-}
+      SEARXNG_TOKEN: ${SEARXNG_TOKEN:-}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_NOTIFY_USER_ID: ${DISCORD_NOTIFY_USER_ID:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${ANCILLA_API_BIND_ADDRESS:-127.0.0.1}:${ANCILLA_API_PORT:-8765}:8765"
+      - "${ANCILLA_WS_BIND_ADDRESS:-127.0.0.1}:${ANCILLA_WS_PORT:-8766}:8766"
+    volumes:
+      - ./workspace:/app/workspace
+      - ./data:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=2)
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
