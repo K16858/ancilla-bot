@@ -814,6 +814,7 @@ def _run_resident(args: argparse.Namespace) -> None:
     stop = threading.Event()
     conversation_history = load_active_history()
     _shared_history = conversation_history  # 全スレッドで共有
+    api_host = os.getenv("ANCILLA_API_HOST", "127.0.0.1")
     api_port = int(os.getenv("ANCILLA_API_PORT", "8765"))
 
     def chat_handler(msg: str, imgs: list[str] | None = None) -> str:
@@ -829,14 +830,15 @@ def _run_resident(args: argparse.Namespace) -> None:
 
     api_thread = threading.Thread(
         target=lambda: run_server(
-            "127.0.0.1", api_port, chat_handler, cancel_handler=request_cancel
+            api_host, api_port, chat_handler, cancel_handler=request_cancel
         ),
         daemon=True,
         name="api",
     )
     api_thread.start()
-    logger.info("API http://127.0.0.1:{}/chat", api_port)
+    logger.info("API http://{}:{}/chat", api_host, api_port)
 
+    ws_host = os.getenv("ANCILLA_WS_HOST", "127.0.0.1")
     ws_port = int(os.getenv("ANCILLA_WS_PORT", "8766"))
 
     def run_react_ws(text: str, history: list | None = None) -> tuple[str, str | None]:
@@ -904,7 +906,7 @@ def _run_resident(args: argparse.Namespace) -> None:
 
     ws_thread = threading.Thread(
         target=run_ws_server,
-        args=("127.0.0.1", ws_port),
+        args=(ws_host, ws_port),
         kwargs={
             "run_react": run_react_ws,
             "run_observe": _run_observe_ws if VISION_ENABLED else None,
@@ -914,7 +916,7 @@ def _run_resident(args: argparse.Namespace) -> None:
         name="ws",
     )
     ws_thread.start()
-    logger.info("WebSocket ws://127.0.0.1:{}", ws_port)
+    logger.info("WebSocket ws://{}:{}", ws_host, ws_port)
 
     slow_thread = threading.Thread(
         target=_slow_heartbeat_loop,
