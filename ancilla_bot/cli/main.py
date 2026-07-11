@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import signal
 import sys
 import threading
 import time
@@ -941,9 +942,22 @@ def _run_resident(args: argparse.Namespace) -> None:
         IDLE_THRESHOLD_SEC // 60,
         IDLE_COOLDOWN_SEC // 60,
     )
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def _request_resident_stop(signum: int, frame: Any) -> None:
+        _ = signum, frame
+        stop.set()
+
+    signal.signal(signal.SIGTERM, _request_resident_stop)
     try:
-        _run_repl(args, agent_lock=agent_lock, conversation_history=conversation_history)
+        if args.no_repl:
+            logger.info("resident mode started without REPL")
+            while not stop.wait(1):
+                pass
+        else:
+            _run_repl(args, agent_lock=agent_lock, conversation_history=conversation_history)
     finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
         save_active_history(conversation_history)
         stop.set()
         slow_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
@@ -972,6 +986,12 @@ def main() -> None:
     batch_parser = subparsers.add_parser("batch", help="バッチ処理")
     batch_sub = batch_parser.add_subparsers(dest="batch_command", required=True)
     batch_sub.add_parser("summarize", help="会話を結合し summaries に出力")
+
+    subparsers.choices["run"].add_argument(
+        "--no-repl",
+        action="store_true",
+        help="REPLなしでAPI・Heartbeat・WebSocketだけを常駐させる",
+    )
 
     args = parser.parse_args()
 
