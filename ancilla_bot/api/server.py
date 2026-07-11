@@ -15,6 +15,15 @@ def run_server(
     cancel_handler: Callable[[], None] | None = None,
 ) -> None:
     class ChatHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path != "/health":
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": True}).encode("utf-8"))
+
         def do_POST(self):
             if self.path == "/cancel":
                 if cancel_handler is not None:
