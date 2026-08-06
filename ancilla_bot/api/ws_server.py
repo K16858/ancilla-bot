@@ -20,11 +20,13 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 from loguru import logger
 
 from ancilla_bot.api import stt_client, tts_client
+from ancilla_bot.batch.summary_search import append_summary_records
 from ancilla_bot.batch.vector_store import add_summaries_to_store
 from ancilla_bot.llm import send_chat
 from ancilla_bot.llm.ollama_client import VISION_ENABLED
@@ -291,13 +293,17 @@ def _summarize_edge_history_and_store() -> None:
         if not summary:
             return
         record = {
-            "date": "",
+            "date": datetime.now().strftime("%Y-%m-%d"),
             "start_index": 0,
             "end_index": len(history) - 1,
             "summary": summary,
             "message_count": len(history),
             "tool_used": True,
         }
+        try:
+            append_summary_records([record])
+        except Exception:
+            pass
         add_summaries_to_store([record])
     except Exception:
         return

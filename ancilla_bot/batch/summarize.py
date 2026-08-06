@@ -13,12 +13,10 @@ from loguru import logger
 
 from ancilla_bot.llm import send_chat
 from ancilla_bot.memory.conversation_store import load_active_history, load_overflow
+from ancilla_bot.batch.summary_search import get_summaries_dir
 from ancilla_bot.batch.vector_store import add_summaries_to_store
 
 Message = dict[str, str]
-
-DEFAULT_CONVERSATION_DIR = Path(os.getenv("ANCILLA_CONVERSATION_DIR", "data/conversation"))
-SUMMARIES_DIR = "summaries"
 TURNS_PER_BLOCK = 5
 MIN_BLOCK_CHARS = 80
 SUMMARY_PROMPT = """Summarize the following conversation block in 1-3 sentences in Japanese. Output only the summary, no other text.
@@ -73,8 +71,7 @@ def run_summarize() -> None:
     if not combined:
         return
 
-    base = Path(os.getenv("ANCILLA_CONVERSATION_DIR", str(DEFAULT_CONVERSATION_DIR)))
-    out_dir = base / SUMMARIES_DIR
+    out_dir = get_summaries_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now().strftime("%Y-%m-%d")
     out_path = out_dir / f"{date_str}.jsonl"

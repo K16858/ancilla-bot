@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 from typing import List
 
+from ancilla_bot.batch.summary_search import append_summary_records
 from ancilla_bot.batch.vector_store import add_summaries_to_store
 from ancilla_bot.llm import send_chat
 from ancilla_bot.memory.short_term import Message, estimate_chars
@@ -68,6 +69,10 @@ def compress_once(history: List[Message], max_chars: int) -> bool:
         "message_count": len(block),
         "tool_used": False,
     }
+    try:
+        append_summary_records([record])
+    except Exception:
+        pass
     try:
         add_summaries_to_store([record])
     except Exception:
