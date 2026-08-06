@@ -5,7 +5,7 @@
 from datetime import datetime
 from typing import Any, Callable
 
-from ancilla_bot.batch.vector_store import search_summaries
+from ancilla_bot.batch.summary_search import search_summaries_hybrid
 from ancilla_bot.heartbeat.db import manage_state as heartbeat_manage_state
 from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.tools.end_edge_session import end_edge_session
@@ -75,7 +75,8 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     # ── Memory / state ────────────────────────────────────────────────────
     "search_memory": (
-        "Vector-search past conversation summaries (long-term memory). "
+        "Search past conversation summaries (long-term memory). "
+        "Uses keyword search, and also vector search when RAG is enabled. "
         "action_input: {\"query\": \"search terms\", \"max_results\": 3}. "
         "Use when you need to recall previously discussed topics. max_results optional (default 3)."
     ),
@@ -226,11 +227,11 @@ def write_file(path: str, content: str, **kwargs: Any) -> str:
 
 def search_memory(query: str, max_results: int = 3, **kwargs: Any) -> str:
     """
-    長期記憶（要約）をベクトル検索する
+    長期記憶（要約）をキーワード＋（任意で）ベクトル検索する
     action_input: {"query": "検索クエリ", "max_results": 3}
     """
     _ = kwargs
-    results = search_summaries(query, n_results=max_results)
+    results = search_summaries_hybrid(query, n_results=max_results)
     if not results:
         return "No matching past summaries found."
     max_chars_per = 400
@@ -239,7 +240,8 @@ def search_memory(query: str, max_results: int = 3, **kwargs: Any) -> str:
         doc = (item.get("document") or "")[:max_chars_per]
         if len(item.get("document") or "") > max_chars_per:
             doc += "..."
-        parts.append(f"[{i}] {doc}")
+        source = item.get("source") or "fts"
+        parts.append(f"[{i}][{source}] {doc}")
     return "\n\n".join(parts)
 
 

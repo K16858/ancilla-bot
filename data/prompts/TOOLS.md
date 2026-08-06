@@ -18,7 +18,7 @@ Use the tool name exactly as listed. action must be a string matching the tool n
 
 ### Memory / state
 
-- search_memory: Vector-search past conversation summaries (long-term memory). action_input: {"query": "search terms", "max_results": 3}. Use when recalling previously discussed topics. max_results optional (default 3).
+- search_memory: Search past conversation summaries (long-term memory) via keyword search, plus vector search when RAG is enabled. action_input: {"query": "search terms", "max_results": 3}. Use when recalling previously discussed topics. max_results optional (default 3).
 - add_task: Add a user task. action_input: {"content": "...", "scheduled_at": "YYYY-MM-DD HH:MM:SS"}. scheduled_at optional (defaults to now).
 - list_tasks: List user tasks. action_input: {"completed": false, "limit": 10}. Both optional.
 - complete_task: Mark a user task complete. action_input: {"id": 3}.

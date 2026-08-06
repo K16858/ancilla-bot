@@ -18,7 +18,7 @@ Use the tool names exactly as listed. Tool parameters are defined by the API; ca
 
 ### Memory / state
 
-- search_memory: Search past conversation summaries (long-term memory).
+- search_memory: Search past conversation summaries (keyword; also vector when RAG enabled).
 - add_task: Add a user task.
 - list_tasks: List user tasks.
 - complete_task: Mark a user task complete by id.

@@ -126,3 +126,26 @@ def search_summaries_keyword(query: str, n_results: int = 3) -> list[dict[str, A
         if len(out) >= n_results:
             break
     return out
+
+
+def search_summaries_hybrid(query: str, n_results: int = 3) -> list[dict[str, Any]]:
+    """
+    キーワード検索を基幹にし、RAG 有効時はベクトル検索結果もマージする。
+    """
+    if not query.strip() or n_results <= 0:
+        return []
+    from ancilla_bot.batch.vector_store import search_summaries
+
+    keyword_hits = search_summaries_keyword(query, n_results=n_results)
+    rag_hits = search_summaries(query, n_results=n_results)
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in keyword_hits + rag_hits:
+        doc = (item.get("document") or "").strip()
+        if not doc or doc in seen:
+            continue
+        seen.add(doc)
+        merged.append(item)
+        if len(merged) >= n_results:
+            break
+    return merged
