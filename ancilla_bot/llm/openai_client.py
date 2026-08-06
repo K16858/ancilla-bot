@@ -126,11 +126,7 @@ def send_chat(
         body["max_tokens"] = int(max_tokens)
 
     logger.debug("openai request url={} model={} messages_count={}", url, use_model, len(messages))
-    with httpx.Client(timeout=timeout) as client:
-        resp = client.post(url, json=body)
-        resp.raise_for_status()
-        data = resp.json()
-
+    data = _post_chat(url, body, timeout=timeout)
     choices = data.get("choices") or []
     if not choices:
         raise ValueError("OpenAI 互換応答に choices が含まれていません")
@@ -194,11 +190,7 @@ def send_chat_message(
         len(messages),
         len(tools or []),
     )
-    with httpx.Client(timeout=timeout) as client:
-        resp = client.post(url, json=body)
-        resp.raise_for_status()
-        data = resp.json()
-
+    data = _post_chat(url, body, timeout=timeout)
     choices = data.get("choices") or []
     if not choices:
         raise ValueError("OpenAI 互換応答に choices が含まれていません")
@@ -206,6 +198,29 @@ def send_chat_message(
     if not message:
         raise ValueError("OpenAI 互換応答に message が含まれていません")
     return message
+
+
+def _post_chat(url: str, body: dict[str, Any], *, timeout: float) -> dict[str, Any]:
+    with httpx.Client(timeout=timeout) as client:
+        try:
+            resp = client.post(url, json=body)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            detail = (e.response.text or "")[:500]
+            logger.warning(
+                "openai http error status={} url={} body={}",
+                e.response.status_code,
+                url,
+                detail,
+            )
+            raise
+        except httpx.ConnectError as e:
+            logger.warning("openai connect error: {}", e)
+            raise
+        except httpx.TimeoutException as e:
+            logger.warning("openai timeout: {}", e)
+            raise
+        return resp.json()
 
 
 def embed_text(
