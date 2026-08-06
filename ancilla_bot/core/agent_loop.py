@@ -60,28 +60,31 @@ JSON 以外の説明や前後の文章は一切出力しないでください。
 
 def _inject_time_note(messages: list[dict[str, str]]) -> None:
     """
-    messages の末尾にあるユーザーメッセージの直前に、現在時刻の System Note を挿入する。
-    ユーザーメッセージが見つからない場合は末尾に追加する。
+    末尾の user メッセージ先頭に現在時刻ノートを付与する。
+    別の system メッセージとしては挿入しない（llama.cpp / Qwen テンプレートは
+    system を先頭以外に置くと拒否する）。
     """
     if not messages:
         return
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    content = f"[System Note: 現在時刻: {now_str}]"
-    note = {"role": "system", "content": content}
+    note = f"[System Note: 現在時刻: {now_str}]\n"
 
-    # 最後の user メッセージを探す（通常は末尾）
     last_user_idx = None
     for idx in range(len(messages) - 1, -1, -1):
-        msg = messages[idx]
-        if msg.get("role") == "user":
+        if messages[idx].get("role") == "user":
             last_user_idx = idx
             break
 
     if last_user_idx is None:
-        messages.append(note)
+        messages.append({"role": "user", "content": note.strip()})
         return
 
-    messages.insert(last_user_idx, note)
+    last = dict(messages[last_user_idx])
+    body = last.get("content") or ""
+    if note.strip() in body:
+        return
+    last["content"] = note + body
+    messages[last_user_idx] = last
 
 
 def is_exit_command(text: str) -> bool:
