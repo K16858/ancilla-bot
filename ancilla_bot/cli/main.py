@@ -21,6 +21,7 @@ from loguru import logger
 from ancilla_bot.core.agent_loop import is_exit_command, run_agent_loop_with_tools
 from ancilla_bot.core.cancel import reset_cancel, request_cancel
 from ancilla_bot.llm import send_chat
+from ancilla_bot.llm.context_window import resolve_max_history_chars
 from ancilla_bot.llm.ollama_client import VISION_ENABLED
 from ancilla_bot.memory.core import build_character_prompt, build_core_memory
 from ancilla_bot.heartbeat.db import (
@@ -56,8 +57,8 @@ REASONING_OBSERVATION_MAX = 100
 DIM = "\033[2m"
 RESET = "\033[0m"
 
-# 履歴最大文字数
-MAX_HISTORY_CHARS = int(os.getenv("ANCILLA_MAX_HISTORY_CHARS", "4000"))
+# 履歴最大文字数（未設定時は LLM の n_ctx から自動算出）
+MAX_HISTORY_CHARS = resolve_max_history_chars()
 
 HEARTBEAT_TIME_STR = os.getenv("ANCILLA_HEARTBEAT_TIME", "03:00")
 HEARTBEAT_INTERVAL_SEC = 60
