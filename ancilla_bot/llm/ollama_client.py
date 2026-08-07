@@ -41,6 +41,17 @@ def _should_think(model: str, *, format: dict[str, Any] | None) -> bool:
     return False
 
 
+def _resolve_think(
+    model: str,
+    *,
+    format: dict[str, Any] | None,
+    think: bool | None,
+) -> bool:
+    if think is not None:
+        return think
+    return _should_think(model, format=format)
+
+
 def send_chat(
     messages: list[dict[str, Any]],
     *,
@@ -49,6 +60,7 @@ def send_chat(
     timeout: float = DEFAULT_TIMEOUT,
     format: dict[str, Any] | None = None,
     images: list[str] | None = None,
+    think: bool | None = None,
 ) -> str:
     """
     Ollama ネイティブ API に messages を送り、assistant の content を返す。
@@ -60,6 +72,7 @@ def send_chat(
         timeout: リクエストタイムアウト（秒）
         format: 省略時は自由出力。指定時は JSON Schema（例: Pydantic の model_json_schema()）
                 を渡し、Ollama が GBNF で出力を制約する。
+        think: None ならモデル/OLLAMA_THINK から判定。明示指定で上書き。
 
     Returns:
         LLM が返したテキスト。format 指定時は JSON 文字列。エラー時は例外を投げる。
@@ -78,7 +91,7 @@ def send_chat(
         "model": use_model,
         "messages": messages,
         "stream": False,
-        "think": _should_think(use_model, format=format),
+        "think": _resolve_think(use_model, format=format, think=think),
     }
     if format is not None:
         body["format"] = format
@@ -138,6 +151,7 @@ def send_chat_message(
     format: dict[str, Any] | None = None,
     images: list[str] | None = None,
     tools: list[dict[str, Any]] | None = None,
+    think: bool | None = None,
 ) -> dict[str, Any]:
     """
     Ollama /api/chat を呼び出し、message オブジェクト全体を返す。native tool calling 用。
@@ -156,6 +170,7 @@ def send_chat_message(
         "model": use_model,
         "messages": messages,
         "stream": False,
+        "think": _resolve_think(use_model, format=format, think=think),
     }
     if format is not None:
         body["format"] = format

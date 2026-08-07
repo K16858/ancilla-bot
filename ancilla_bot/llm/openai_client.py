@@ -51,6 +51,17 @@ def _should_think(model: str, *, format: dict[str, Any] | None) -> bool:
     return False
 
 
+def _resolve_think(
+    model: str,
+    *,
+    format: dict[str, Any] | None,
+    think: bool | None,
+) -> bool:
+    if think is not None:
+        return think
+    return _should_think(model, format=format)
+
+
 def _with_images(messages: list[dict[str, Any]], images: list[str]) -> list[dict[str, Any]]:
     messages = list(messages)
     if not messages or messages[-1].get("role") != "user":
@@ -115,10 +126,12 @@ def send_chat(
     timeout: float = DEFAULT_TIMEOUT,
     format: dict[str, Any] | None = None,
     images: list[str] | None = None,
+    think: bool | None = None,
 ) -> str:
     """
     OpenAI 互換 /v1/chat/completions に messages を送り、assistant の content を返す。
     format 指定時は response_format=json_schema で出力を制約する。
+    think: None ならモデル/OLLAMA_THINK から判定。明示指定で上書き。
     """
     resolved_base, use_model = _require_config(model)
     if base_url is not None:
@@ -134,7 +147,9 @@ def send_chat(
         "model": use_model,
         "messages": messages,
         "stream": False,
-        "chat_template_kwargs": {"enable_thinking": _should_think(use_model, format=format)},
+        "chat_template_kwargs": {
+            "enable_thinking": _resolve_think(use_model, format=format, think=think)
+        },
     }
     if format is not None:
         body["response_format"] = {
@@ -169,9 +184,11 @@ def send_chat_message(
     format: dict[str, Any] | None = None,
     images: list[str] | None = None,
     tools: list[dict[str, Any]] | None = None,
+    think: bool | None = None,
 ) -> dict[str, Any]:
     """
     OpenAI 互換 /v1/chat/completions を呼び出し、message オブジェクトを返す。
+    think: None ならモデル/OLLAMA_THINK から判定。明示指定で上書き。
     """
     resolved_base, use_model = _require_config(model)
     if base_url is not None:
@@ -188,9 +205,7 @@ def send_chat_message(
         "messages": messages,
         "stream": False,
         "chat_template_kwargs": {
-            "enable_thinking": False
-            if tools is not None
-            else _should_think(use_model, format=format)
+            "enable_thinking": _resolve_think(use_model, format=format, think=think)
         },
     }
     if format is not None:
