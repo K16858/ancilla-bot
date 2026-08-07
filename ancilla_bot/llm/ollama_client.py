@@ -18,7 +18,7 @@ DEFAULT_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 DEFAULT_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "60"))
 VISION_ENABLED = os.getenv("OLLAMA_VISION_ENABLED", "true").strip().lower() in ("1", "true", "yes")
 # think 未対応／不安定なモデル名の目印（既定 ON の例外）
-_NON_THINKING_MODEL_MARKERS = ("granite", "gemma", "llama", "mistral", "phi", "sarashina")
+_NON_THINKING_MODEL_MARKERS = ("granite", "llama", "mistral", "phi", "sarashina")
 
 
 def _model_base_name(model: str) -> str:
