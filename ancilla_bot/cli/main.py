@@ -260,18 +260,7 @@ def _maybe_run_proactive(snapshot: dict[str, Any], lock: threading.Lock) -> None
                 level="info",
                 detail=f"proactive={action.trigger}",
             )
-        if _shared_history is not None and response:
-            dropped = append_and_trim(
-                _shared_history,
-                [
-                    {"role": "user", "content": pseudo},
-                    {"role": "assistant", "content": response},
-                ],
-                max_chars=MAX_HISTORY_CHARS,
-            )
-            if dropped:
-                append_overflow(dropped)
-            save_active_history(_shared_history)
+        # SYSTEM_EVENT 往復は共有履歴/overflow に残さない
         _last_proactive_dt = datetime.now()
         logger.info("proactive action triggered: {}", action.trigger)
     except Exception as e:
@@ -336,19 +325,7 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                             level="info",
                             detail=f"tasks={len(tasks)}, reminders={len(reminders)}",
                         )
-                    # heartbeat の会話を共有履歴に保存してコンテキストを継続
-                    if _shared_history is not None and response:
-                        dropped = append_and_trim(
-                            _shared_history,
-                            [
-                                {"role": "user", "content": pseudo},
-                                {"role": "assistant", "content": response},
-                            ],
-                            max_chars=MAX_HISTORY_CHARS,
-                        )
-                        if dropped:
-                            append_overflow(dropped)
-                        save_active_history(_shared_history)
+                    # SYSTEM_EVENT 往復は共有履歴/overflow に残さない
                     logger.info("fast heartbeat: processed {} tasks, {} reminders", len(tasks), len(reminders))
                 else:
                     logger.warning(
@@ -460,7 +437,7 @@ def _idle_reflection_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 idle_min = int(idle_sec / 60)
                 msg = _build_idle_reflection_message(idle_min)
                 history = _shared_history if _shared_history is not None else load_active_history()
-                response, _emotion = run_agent_loop_with_tools(
+                run_agent_loop_with_tools(
                     msg,
                     history,
                     on_turn=None,
@@ -469,19 +446,7 @@ def _idle_reflection_loop(lock: threading.Lock, stop: threading.Event) -> None:
                     nag_message="Check and update your agent_tasks (source=self) to track progress.",
                     source="idle_reflection",
                 )
-                # idle reflection の会話を共有履歴に保存してコンテキストを継続
-                if _shared_history is not None and response:
-                    dropped = append_and_trim(
-                        _shared_history,
-                        [
-                            {"role": "user", "content": msg},
-                            {"role": "assistant", "content": response},
-                        ],
-                        max_chars=MAX_HISTORY_CHARS,
-                    )
-                    if dropped:
-                        append_overflow(dropped)
-                    save_active_history(_shared_history)
+                # SYSTEM_EVENT 往復は共有履歴/overflow に残さない（要約肥大化を防ぐ）
                 _last_idle_reflection_time = time.time()
                 logger.info("idle reflection triggered after {} min idle", idle_min)
             except Exception as e:
