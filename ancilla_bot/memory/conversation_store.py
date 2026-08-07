@@ -17,6 +17,30 @@ ACTIVE_FILE = "active_history.jsonl"
 OVERFLOW_FILE = "overflow.jsonl"
 
 
+def is_system_event_content(content: str | None) -> bool:
+    return (content or "").strip().startswith("[SYSTEM_EVENT")
+
+
+def filter_system_event_messages(messages: Iterable[Message]) -> list[Message]:
+    """
+    [SYSTEM_EVENT ...] の user 発話と、直後の assistant 応答を除く。
+    idle / heartbeat 等が長期記憶や要約を肥大化させないためのフィルタ。
+    """
+    items = list(messages)
+    out: list[Message] = []
+    i = 0
+    while i < len(items):
+        msg = items[i]
+        if msg.get("role") == "user" and is_system_event_content(msg.get("content")):
+            i += 1
+            if i < len(items) and items[i].get("role") == "assistant":
+                i += 1
+            continue
+        out.append(msg)
+        i += 1
+    return out
+
+
 def _ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
@@ -37,8 +61,9 @@ def append_overflow(messages: Iterable[Message]) -> None:
     """
     オーバーフローしたメッセージを overflow.jsonl に追記する。
     各行には role, content とあわせてタイムスタンプも保存する。
+    SYSTEM_EVENT 由来の往復は保存しない。
     """
-    msgs = list(messages)
+    msgs = filter_system_event_messages(messages)
     if not msgs:
         return
     p = _path(OVERFLOW_FILE)

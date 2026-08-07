@@ -26,6 +26,7 @@ from ancilla_bot.llm.tool_adapter import (
     get_tool_caller,
     is_native_tool_mode,
 )
+from ancilla_bot.memory.conversation_store import is_system_event_content
 from ancilla_bot.tools import TOOL_REGISTRY, build_tools_system_prompt
 from ancilla_bot.tracing import new_run_id, write_event
 
@@ -97,7 +98,7 @@ def _is_system_event_prompt(user_input: str) -> bool:
     擬似ユーザーメッセージ（Fast Heartbeat / Idle Reflection 等）かどうか
     "[SYSTEM_EVENT" で始まるものをすべて対象にする（": IDLE_REFLECTION]" 等も含む）
     """
-    return (user_input or "").strip().startswith("[SYSTEM_EVENT")
+    return is_system_event_content(user_input)
 
 
 def run_minimal_agent_loop(
