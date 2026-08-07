@@ -72,29 +72,23 @@ def _with_images(messages: list[dict[str, Any]], images: list[str]) -> list[dict
 def _normalize_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Qwen / llama.cpp のチャットテンプレート制約に合わせる。
-    - system は先頭の 1 通だけ（連続する先頭 system は結合）
-    - 途中の system（要約など）は user に落とす
+    すべての system を先頭 1 通にマージし、それ以外の順序はそのまま残す。
     """
     if not messages:
         return messages
-    out: list[dict[str, Any]] = []
-    i = 0
     system_parts: list[str] = []
-    while i < len(messages) and messages[i].get("role") == "system":
-        part = messages[i].get("content") or ""
-        if part:
-            system_parts.append(part if isinstance(part, str) else str(part))
-        i += 1
+    rest: list[dict[str, Any]] = []
+    for msg in messages:
+        if msg.get("role") == "system":
+            part = msg.get("content") or ""
+            if part:
+                system_parts.append(part if isinstance(part, str) else str(part))
+            continue
+        rest.append(msg)
+    out: list[dict[str, Any]] = []
     if system_parts:
         out.append({"role": "system", "content": "\n\n".join(system_parts)})
-    for msg in messages[i:]:
-        role = msg.get("role")
-        if role == "system":
-            converted = dict(msg)
-            converted["role"] = "user"
-            out.append(converted)
-        else:
-            out.append(msg)
+    out.extend(rest)
     return out
 
 
