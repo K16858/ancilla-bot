@@ -107,7 +107,16 @@ def _build_ollama_tools() -> list[dict[str, Any]]:
 
 def _native_message_to_result(message: dict[str, Any]) -> ToolCallResult:
     content = (message.get("content") or "").strip()
-    thinking = (message.get("thinking") or "").strip()
+    thinking = (
+        message.get("thinking")
+        or message.get("reasoning_content")
+        or message.get("reasoning")
+        or ""
+    )
+    if isinstance(thinking, str):
+        thinking = thinking.strip()
+    else:
+        thinking = str(thinking).strip()
     thought = thinking or content
     assistant_message = _native_assistant_message(message)
     tool_calls = message.get("tool_calls") or []
