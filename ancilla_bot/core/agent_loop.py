@@ -219,8 +219,13 @@ def run_agent_loop_with_tools(
                 "has_final_answer": bool(parsed_result.final_answer),
             },
         )
-        logger.debug("LLM raw={}", raw[:500] + "..." if len(raw) > 500 else raw)
-        if not raw or not raw.strip():
+        logger.debug("LLM raw={}", (raw or "")[:500] + "..." if len(raw or "") > 500 else raw)
+        # native + thinking 時は content が空で tool_calls だけの応答があり得る
+        if (
+            not (raw or "").strip()
+            and not parsed_result.action
+            and not (parsed_result.final_answer or "").strip()
+        ):
             logger.warning("LLM returned empty response")
             write_event(run_id, "run_failed", turn_index=turn, payload={"error": "empty LLM response"})
             complete_agent_run_step(step_id, "failed", error="empty LLM response")
