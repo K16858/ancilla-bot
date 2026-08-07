@@ -10,7 +10,11 @@ from datetime import datetime
 from loguru import logger
 
 from ancilla_bot.llm import send_chat
-from ancilla_bot.memory.conversation_store import load_active_history, load_overflow
+from ancilla_bot.memory.conversation_store import (
+    filter_system_event_messages,
+    load_active_history,
+    load_overflow,
+)
 from ancilla_bot.batch.summary_search import get_summaries_dir
 from ancilla_bot.batch.vector_store import add_summaries_to_store
 
@@ -65,7 +69,7 @@ def run_summarize() -> None:
     """
     overflow = load_overflow()
     active = load_active_history()
-    combined: list[Message] = overflow + active
+    combined: list[Message] = filter_system_event_messages(overflow + active)
     if not combined:
         return
 
