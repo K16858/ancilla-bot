@@ -138,7 +138,7 @@ def extract_and_update(messages: list[dict[str, str]]) -> None:
         + "\n".join(text_lines)
     )
     verify_model = os.getenv("ANCILLA_VERIFY_MODEL") or os.getenv("OLLAMA_MODEL")
-    raw = send_chat([{"role": "user", "content": prompt}], format=None, model=verify_model)
+    raw = send_chat([{"role": "user", "content": prompt}], format=None, model=verify_model, think=False)
     try:
         extracted = json.loads(raw)
     except json.JSONDecodeError:

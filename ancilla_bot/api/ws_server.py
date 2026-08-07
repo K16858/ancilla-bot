@@ -288,7 +288,7 @@ def _summarize_edge_history_and_store() -> None:
         return
     prompt = "次の対話内容を1-3文で日本語要約してください。出力は要約本文のみとし、前後に説明を付けないでください。\n\n" + text
     try:
-        raw = send_chat([{"role": "user", "content": prompt}], format=None)
+        raw = send_chat([{"role": "user", "content": prompt}], format=None, think=False)
         summary = (raw or "").strip()
         if not summary:
             return

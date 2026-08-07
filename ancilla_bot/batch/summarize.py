@@ -55,7 +55,7 @@ def _summarize_block(block_messages: list[Message]) -> str:
     prompt = SUMMARY_PROMPT + text
     messages = [{"role": "user", "content": prompt}]
     try:
-        raw = send_chat(messages, format=None)
+        raw = send_chat(messages, format=None, think=False)
         summary = (raw or "").strip()
         return summary[:2000] if summary else "（要約なし）"
     except Exception as e:

@@ -41,7 +41,7 @@ def summarize_block(messages: List[Message]) -> str:
         return ""
     prompt = "Summarize the following conversation in 1-3 sentences in Japanese. Output only the summary.\n\n" + text
     try:
-        raw = send_chat([{"role": "user", "content": prompt}], format=None)
+        raw = send_chat([{"role": "user", "content": prompt}], format=None, think=False)
         summary = (raw or "").strip()
         return summary[:2000] if summary else ""
     except Exception:

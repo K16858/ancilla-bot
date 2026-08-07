@@ -381,7 +381,7 @@ def run_agent_loop_with_tools(
     update_agent_run_status(run_id, "max_turns")
     try:
         summary_msgs = list(messages) + [{"role": "user", "content": _FORCE_SUMMARY_PROMPT}]
-        raw_summary = send_chat(summary_msgs, format=None)
+        raw_summary = send_chat(summary_msgs, format=None, think=False)
         answer = (raw_summary or "").strip() or "処理を完了できませんでした。"
     except Exception as exc:
         logger.warning("force summary failed: {}", exc)
