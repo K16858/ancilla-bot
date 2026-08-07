@@ -17,7 +17,7 @@ DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
 DEFAULT_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 DEFAULT_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "60"))
 VISION_ENABLED = os.getenv("OLLAMA_VISION_ENABLED", "true").strip().lower() in ("1", "true", "yes")
-_THINKING_MODEL_PREFIXES = ("qwen3", "deepseek-r1", "qwq")
+# think 未対応／不安定なモデル名の目印（既定 ON の例外）
 _NON_THINKING_MODEL_MARKERS = ("granite", "gemma", "llama", "mistral", "phi", "sarashina")
 
 
@@ -26,6 +26,7 @@ def _model_base_name(model: str) -> str:
 
 
 def _should_think(model: str, *, format: dict[str, Any] | None) -> bool:
+    """既定は ON。format 指定・OLLAMA_THINK・非対応モデル名で上書き。"""
     if format is not None:
         return False
     env = os.getenv("OLLAMA_THINK", "").strip().lower()
@@ -36,9 +37,7 @@ def _should_think(model: str, *, format: dict[str, Any] | None) -> bool:
     base = _model_base_name(model)
     if any(marker in base for marker in _NON_THINKING_MODEL_MARKERS):
         return False
-    if any(base.startswith(prefix) for prefix in _THINKING_MODEL_PREFIXES):
-        return True
-    return False
+    return True
 
 
 def _resolve_think(
