@@ -76,8 +76,24 @@ def search(
         return "Error: 検索結果の解析に失敗しました。"
 
     results = data.get("results") or []
-    logger.debug("searxng results={}", len(results))
-    if not results:
+    infoboxes = data.get("infoboxes") or []
+    answers = data.get("answers") or []
+    unresponsive = data.get("unresponsive_engines") or []
+    logger.debug(
+        "searxng results={} infoboxes={} answers={} unresponsive={}",
+        len(results),
+        len(infoboxes),
+        len(answers),
+        unresponsive,
+    )
+    if not results and not infoboxes and not answers:
+        if unresponsive:
+            detail = ", ".join(
+                f"{e[0]}:{e[1]}" if isinstance(e, (list, tuple)) and len(e) >= 2 else str(e)
+                for e in unresponsive
+            )
+            logger.warning("searxng no results; unresponsive engines: {}", detail)
+            return f"検索結果がありませんでした。（エンジン障害: {detail}）"
         return "検索結果がありませんでした。"
 
     if format_structured:
@@ -88,6 +104,15 @@ def search(
             if content_max_chars is not None and len(content) > content_max_chars:
                 content = content[:content_max_chars] + "..."
             parts.append(f"[{i}] {title}\n  {content}")
+        for box in infoboxes:
+            title = box.get("infobox") or box.get("id") or "(infobox)"
+            content = (box.get("content") or "").strip()
+            if content_max_chars is not None and len(content) > content_max_chars:
+                content = content[:content_max_chars] + "..."
+            parts.append(f"[infobox] {title}\n  {content}")
+        for ans in answers:
+            text = ans if isinstance(ans, str) else str(ans.get("answer") or ans)
+            parts.append(f"[answer] {text.strip()}")
         return "\n\n".join(parts)
 
     lines: list[str] = []
@@ -96,4 +121,12 @@ def search(
         url_val = r.get("url", "(no url)")
         content = (r.get("content") or "").strip()
         lines.append(f"{title} | {url_val} | {content}")
+    for box in infoboxes:
+        title = box.get("infobox") or box.get("id") or "(infobox)"
+        content = (box.get("content") or "").strip()
+        url_val = box.get("id") or ""
+        lines.append(f"{title} | {url_val} | {content}")
+    for ans in answers:
+        text = ans if isinstance(ans, str) else str(ans.get("answer") or ans)
+        lines.append(text.strip())
     return "\n".join(lines)
