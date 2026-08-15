@@ -8,6 +8,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from ancilla_bot.skills.loader import format_skills_catalog
+
 DEFAULT_PROMPTS_DIR = Path(os.getenv("ANCILLA_PROMPTS_DIR", "data/prompts"))
 DEFAULT_WORKSPACE_DIR = Path(os.getenv("ANCILLA_WORKSPACE_DIR", "workspace"))
 
@@ -78,6 +80,10 @@ def build_core_memory(tools_block: str) -> str:
     if agent:
         parts.append(_section(agent, None))
     parts.append(_section(tools_content, None))
+
+    catalog = format_skills_catalog()
+    if catalog:
+        parts.append(_section(catalog, None))
 
     result = "\n".join(p.strip() for p in parts if p.strip())
     if not result:

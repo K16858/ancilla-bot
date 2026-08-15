@@ -22,6 +22,7 @@ Execution rules:
 - Never include raw tool output in final_answer.
 - Extract and summarize only relevant information from tool results.
 - Use tools only for external, time-sensitive, or verifiable data.
+- When a listed skill matches the task, call load_skill with that name before using related tools.
 - Do not call multiple tools at once unless strictly necessary.
 - Be concise and fact-based. Say "I don't know" when uncertain.
 
