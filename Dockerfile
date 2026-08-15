@@ -8,6 +8,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY ancilla_bot ./ancilla_bot
 COPY data/prompts ./data/prompts
+COPY skills ./skills
 
 RUN pip install --no-cache-dir .
 
