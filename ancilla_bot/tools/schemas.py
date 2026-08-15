@@ -91,6 +91,10 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         },
         required=["command"],
     ),
+    "load_skill": _schema(
+        {"name": {"type": "string", "description": "Skill name from the catalog"}},
+        required=["name"],
+    ),
     "search_memory": _schema(
         {
             "query": {"type": "string", "description": "Search query for past summaries"},

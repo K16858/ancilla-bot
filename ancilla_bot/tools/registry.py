@@ -27,6 +27,7 @@ from ancilla_bot.tools.tasks import (
 )
 from ancilla_bot.personal_model import get_user_context, update_user_goal
 from ancilla_bot.tools.use_edgedevice import use_edgedevice
+from ancilla_bot.skills.loader import read_skill as load_skill_impl
 from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
 from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
 
@@ -72,6 +73,11 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "Run a shell command (cwd=workspace root). Returns stdout+stderr. "
         "action_input: {\"command\": \"ls -la\"}, optional {\"timeout_sec\": 60, \"stdin_text\": \"...\"}. "
         "timeout_sec default 60, max 300. Python also works: {\"command\": \"python script.py\"}."
+    ),
+    "load_skill": (
+        "Load a skill's instructions by name. "
+        "action_input: {\"name\": \"skill-name\"}. "
+        "Call when a listed skill matches the current task."
     ),
     # ── Memory / state ────────────────────────────────────────────────────
     "search_memory": (
@@ -224,6 +230,11 @@ def write_file(path: str, content: str, **kwargs: Any) -> str:
     return workspace_write_file(path=path, content=content, **kwargs)
 
 
+def load_skill(name: str, **kwargs: Any) -> str:
+    """SKILL.md の本文を返す。"""
+    return load_skill_impl(name=name, **kwargs)
+
+
 
 def search_memory(query: str, max_results: int = 3, **kwargs: Any) -> str:
     """
@@ -258,6 +269,7 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "list_workspace": list_workspace,
     "edit_file_safe": edit_file_safe,
     "bash": bash,
+    "load_skill": load_skill,
     "read_file": read_file,
     "write_file": write_file,
     "search_memory": search_memory,

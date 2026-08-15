@@ -15,6 +15,7 @@ Use the tool names exactly as listed. Tool parameters are defined by the API; ca
 - write_file: Overwrite a file inside workspace. Use edit_file_safe for partial edits.
 - edit_file_safe: Append or partially replace a file (no full overwrite).
 - bash: Run a shell command with workspace as the working directory.
+- load_skill: Load a skill's instructions by name. Provide the skill name from the catalog.
 
 ### Memory / state
 
