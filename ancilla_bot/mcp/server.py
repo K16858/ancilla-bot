@@ -93,3 +93,7 @@ def run_http(
         port=port,
         streamable_http_path="/mcp",
     )
+
+
+if __name__ == "__main__":
+    run_stdio()
