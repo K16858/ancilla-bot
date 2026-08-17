@@ -44,3 +44,4 @@ Use the tool name exactly as listed. action must be a string matching the tool n
 - mcp_read_resource: Read an MCP resource by server and URI. action_input: {"server": "name", "uri": "file:///..."}.
 - mcp_list_prompts: List prompts from connected MCP servers. action_input: {}.
 - mcp_get_prompt: Get an MCP prompt by server and name. action_input: {"server": "name", "name": "prompt", "arguments": {}}.
+- MCP tools from connected servers appear in the MCP catalog as server__tool_name.
