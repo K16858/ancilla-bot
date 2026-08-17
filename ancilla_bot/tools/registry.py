@@ -290,8 +290,10 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
 }
 
 from ancilla_bot.plugins.loader import register_plugin_tools
+from ancilla_bot.mcp.bridge import register_meta_tools
 
 register_plugin_tools(TOOL_REGISTRY, TOOL_DESCRIPTIONS)
+register_meta_tools()
 
 
 def _short_tool_description(desc: str) -> str:

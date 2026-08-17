@@ -123,6 +123,12 @@ _META_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 
+def register_meta_tools() -> None:
+    from ancilla_bot.tools.registry import TOOL_DESCRIPTIONS, TOOL_REGISTRY
+
+    _ensure_meta_tools(TOOL_REGISTRY, TOOL_DESCRIPTIONS)
+
+
 def _ensure_meta_tools(
     registry: dict[str, Callable[..., str]],
     descriptions: dict[str, str],
@@ -150,7 +156,7 @@ def sync_registry_from_manager(manager: McpManager | None = None) -> None:
     from ancilla_bot.tools.registry import TOOL_DESCRIPTIONS, TOOL_REGISTRY
 
     mgr = manager or get_manager()
-    _ensure_meta_tools(TOOL_REGISTRY, TOOL_DESCRIPTIONS)
+    register_meta_tools()
 
     desired: dict[str, tuple[str, str, dict[str, Any], str]] = {}
     for server, tool in mgr.get_tools():
