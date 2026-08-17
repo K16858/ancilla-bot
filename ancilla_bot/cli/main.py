@@ -817,6 +817,18 @@ def _run_resident(args: argparse.Namespace) -> None:
 
     get_manager().start()
 
+    mcp_http_host = os.getenv("ANCILLA_MCP_HTTP_HOST", "127.0.0.1")
+    mcp_http_port = int(os.getenv("ANCILLA_MCP_HTTP_PORT", "8767"))
+    from ancilla_bot.mcp.server import run_http
+
+    mcp_http_thread = threading.Thread(
+        target=run_http,
+        kwargs={"host": mcp_http_host, "port": mcp_http_port, "agent_lock": agent_lock},
+        daemon=True,
+        name="mcp-http",
+    )
+    mcp_http_thread.start()
+
     ws_host = os.getenv("ANCILLA_WS_HOST", "127.0.0.1")
     ws_port = int(os.getenv("ANCILLA_WS_PORT", "8766"))
 

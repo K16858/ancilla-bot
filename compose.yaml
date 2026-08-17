@@ -8,6 +8,8 @@ services:
       ANCILLA_API_PORT: 8765
       ANCILLA_WS_HOST: 0.0.0.0
       ANCILLA_WS_PORT: 8766
+      ANCILLA_MCP_HTTP_HOST: 0.0.0.0
+      ANCILLA_MCP_HTTP_PORT: 8767
       ANCILLA_WORKSPACE_DIR: /app/workspace
       ANCILLA_CONVERSATION_DIR: /app/data/conversation
       ANCILLA_VECTOR_STORE_DIR: /app/data/vector_store
@@ -29,6 +31,7 @@ services:
     ports:
       - "${ANCILLA_API_BIND_ADDRESS:-127.0.0.1}:${ANCILLA_API_PUBLISHED_PORT:-8765}:8765"
       - "${ANCILLA_WS_BIND_ADDRESS:-127.0.0.1}:${ANCILLA_WS_PUBLISHED_PORT:-8766}:8766"
+      - "${ANCILLA_MCP_BIND_ADDRESS:-127.0.0.1}:${ANCILLA_MCP_PUBLISHED_PORT:-8767}:8767"
     volumes:
       - ./workspace:/app/workspace
       - ./data:/app/data

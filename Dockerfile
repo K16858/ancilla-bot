@@ -14,6 +14,6 @@ RUN pip install --no-cache-dir .
 
 RUN mkdir -p /app/workspace /app/data
 
-EXPOSE 8765 8766
+EXPOSE 8765 8766 8767
 
 CMD ["ancilla", "run", "--no-repl"]
