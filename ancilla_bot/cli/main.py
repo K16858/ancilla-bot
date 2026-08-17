@@ -774,6 +774,15 @@ def _run_resume(args: argparse.Namespace) -> None:
     print(response)
 
 
+def _run_mcp_stdio(args: argparse.Namespace) -> None:
+    level = "DEBUG" if args.verbose else os.getenv("ANCILLA_LOG_LEVEL", "INFO")
+    log_file = args.log_file or os.getenv("ANCILLA_LOG_FILE") or None
+    init_logging(level=level, log_file=log_file)
+    from ancilla_bot.mcp.server import run_stdio
+
+    run_stdio()
+
+
 def _run_resident(args: argparse.Namespace) -> None:
     global _shared_history
     agent_lock = threading.Lock()
@@ -948,6 +957,7 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", help="サブコマンド")
 
     subparsers.add_parser("run", help="常駐モード（REPL + API + Heartbeat）。終了は exit 等。")
+    subparsers.add_parser("mcp", help="MCP Server（stdio）。Cursor 等から子プロセスとして起動する。")
     subparsers.add_parser("client", help="API に接続する REPL クライアント。先に ancilla run を起動すること。")
     subparsers.add_parser("discord", help="Discord Bot。先に ancilla run を起動し、DISCORD_BOT_TOKEN を設定すること。")
     subparsers.add_parser("slack", help="Slack Bot（Socket Mode）。先に ancilla run を起動し、SLACK_BOT_TOKEN と SLACK_APP_TOKEN を設定すること。")
@@ -972,6 +982,9 @@ def main() -> None:
 
     if args.command == "run":
         _run_resident(args)
+        return
+    if args.command == "mcp":
+        _run_mcp_stdio(args)
         return
     if args.command == "client":
         _run_client(args)
