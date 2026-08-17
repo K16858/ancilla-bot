@@ -7,6 +7,8 @@ from __future__ import annotations
 import threading
 from loguru import logger
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.shared.exceptions import MCPError
+from mcp_types import INVALID_PARAMS
 
 from ancilla_bot.core.agent_loop import run_agent_loop_with_tools
 from ancilla_bot.llm.context_window import resolve_max_history_chars
@@ -38,13 +40,20 @@ def _session_key(ctx: Context) -> str:
     return sid.strip() if isinstance(sid, str) and sid.strip() else _DEFAULT_SESSION
 
 
+class _AncillaMCPServer(MCPServer):
+    async def call_tool(self, name: str, arguments: dict, context: Context | None = None):
+        if self._tool_manager.get_tool(name) is None:
+            raise MCPError(code=INVALID_PARAMS, message=f"Unknown tool: {name}")
+        return await super().call_tool(name, arguments, context)
+
+
 def create_ancilla_mcp_server(
     *,
     agent_lock: threading.Lock | None = None,
 ) -> MCPServer:
     histories: dict[str, list[dict[str, str]]] = {}
     hist_lock = threading.Lock()
-    server = MCPServer(
+    server = _AncillaMCPServer(
         "ancilla",
         instructions=INSTRUCTIONS,
         version="0.1.0",
