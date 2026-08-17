@@ -804,6 +804,10 @@ def _run_resident(args: argparse.Namespace) -> None:
     api_thread.start()
     logger.info("API http://{}:{}/chat", api_host, api_port)
 
+    from ancilla_bot.mcp.manager import get_manager
+
+    get_manager().start()
+
     ws_host = os.getenv("ANCILLA_WS_HOST", "127.0.0.1")
     ws_port = int(os.getenv("ANCILLA_WS_PORT", "8766"))
 
@@ -928,6 +932,9 @@ def _run_resident(args: argparse.Namespace) -> None:
         signal.signal(signal.SIGTERM, previous_sigterm)
         save_active_history(conversation_history)
         stop.set()
+        from ancilla_bot.mcp.manager import get_manager
+
+        get_manager().shutdown()
         slow_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
         fast_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
         idle_thread.join(timeout=IDLE_POLL_SEC + 5)

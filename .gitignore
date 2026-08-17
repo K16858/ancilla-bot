@@ -13,3 +13,4 @@ data/*
 *.egg-info/
 sessions/
 *jsonl
+mcp.json
