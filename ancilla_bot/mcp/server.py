@@ -15,6 +15,16 @@ from ancilla_bot.memory.short_term import append_and_trim
 INSTRUCTIONS = "Talk to Ancilla. Pass the user's message in the message argument."
 _MAX_HISTORY_CHARS = resolve_max_history_chars()
 _DEFAULT_SESSION = "default"
+_NON_TOOL_METHODS = (
+    "prompts/list",
+    "prompts/get",
+    "resources/list",
+    "resources/templates/list",
+    "resources/read",
+    "resources/subscribe",
+    "resources/unsubscribe",
+    "subscriptions/listen",
+)
 
 
 def _session_key(ctx: Context) -> str:
@@ -73,6 +83,9 @@ def create_ancilla_mcp_server(
             if agent_lock is not None:
                 agent_lock.release()
 
+    handlers = server._lowlevel_server._request_handlers
+    for method in _NON_TOOL_METHODS:
+        handlers.pop(method, None)
     return server
 
 
