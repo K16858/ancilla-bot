@@ -37,3 +37,10 @@ Use the tool name exactly as listed. action must be a string matching the tool n
 - end_edge_session: End the edge session and return to main session. action_input: {}. Use when the agent has finished its edge-session goal.
 - get_image: Agent-initiated camera capture during an edge session. action_input: {"reason": "...", "timeout_sec": 60}. On success, the image is passed to the vision model in the next LLM turn. Requires an active edge session (use_edgedevice first).
 - get_audio: Agent-initiated microphone capture during an edge session; returns STT text. action_input: {"reason": "...", "timeout_sec": 60}. Requires an active edge session (use_edgedevice first).
+
+### MCP
+
+- mcp_list_resources: List resources from connected MCP servers. action_input: {}.
+- mcp_read_resource: Read an MCP resource by server and URI. action_input: {"server": "name", "uri": "file:///..."}.
+- mcp_list_prompts: List prompts from connected MCP servers. action_input: {}.
+- mcp_get_prompt: Get an MCP prompt by server and name. action_input: {"server": "name", "name": "prompt", "arguments": {}}.

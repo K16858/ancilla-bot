@@ -40,8 +40,16 @@ Use the tool names exactly as listed. Tool parameters are defined by the API; ca
 - get_image: Capture a camera frame during an edge session (vision on next turn).
 - get_audio: Capture microphone audio during an edge session (returns STT text).
 
+### MCP
+
+- mcp_list_resources: List resources from connected MCP servers.
+- mcp_read_resource: Read an MCP resource by server name and URI.
+- mcp_list_prompts: List prompts from connected MCP servers.
+- mcp_get_prompt: Get an MCP prompt by server name and prompt name.
+
 ### Notes
 
 - For timed user notifications, always use add_reminder.
 - scheduled_at must be YYYY-MM-DD HH:MM:SS.
 - Edge device tools require an active edge session (use_edgedevice first).
+- MCP tools from connected servers appear in the MCP catalog as server__tool_name.
