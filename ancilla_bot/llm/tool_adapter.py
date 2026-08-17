@@ -177,16 +177,14 @@ class GBNFToolCaller:
 class NativeToolCaller:
     """Ollama tools= パラメータを使うモード。"""
 
-    def __init__(self) -> None:
-        self._tools = _build_ollama_tools()
-
     def call(
         self,
         messages: list[dict[str, Any]],
         *,
         images: list[str] | None = None,
     ) -> ToolCallResult:
-        message = send_chat_message(messages, images=images, tools=self._tools)
+        tools = _build_ollama_tools()
+        message = send_chat_message(messages, images=images, tools=tools)
         return _native_message_to_result(message)
 
 

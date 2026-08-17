@@ -230,4 +230,8 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
 
 
 def get_native_parameters(tool_name: str) -> dict[str, Any]:
+    from ancilla_bot.mcp.bridge import MCP_NATIVE_SCHEMAS
+
+    if tool_name in MCP_NATIVE_SCHEMAS:
+        return MCP_NATIVE_SCHEMAS[tool_name]
     return TOOL_PARAMETERS.get(tool_name, _EMPTY_OBJECT)
