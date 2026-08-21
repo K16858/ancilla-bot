@@ -14,7 +14,7 @@ from ancilla_bot.tools.get_audio import get_audio
 from ancilla_bot.tools.get_image import get_image
 from ancilla_bot.tools.notify_user import notify_user
 from ancilla_bot.tools.bash import bash as bash_impl
-from ancilla_bot.tools.searxng_client import search as searxng_search
+from ancilla_bot.tools.search import search as web_search_impl
 from ancilla_bot.tools.workspace_io import edit_file_safe as workspace_edit_file_safe
 from ancilla_bot.tools.workspace_io import list_workspace as workspace_list_workspace
 from ancilla_bot.tools.tasks import (
@@ -160,16 +160,11 @@ def get_time(**kwargs: Any) -> str:
 
 def web_search(query: str, max_results: int = 5, **kwargs: Any) -> str:
     """
-    SearXNG で Web 検索を行う。
+    Web 検索を行う。
     action_input: {"query": "検索クエリ", "max_results": 5}
     """
     _ = kwargs
-    return searxng_search(
-        query=query,
-        max_results=max_results,
-        format_structured=True,
-        content_max_chars=300,
-    )
+    return web_search_impl(query=query, max_results=max_results)
 
 
 def list_workspace(
