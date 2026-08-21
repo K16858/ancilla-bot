@@ -3,8 +3,16 @@
 from ancilla_bot.tools.search.base import SearchHit, SearchProvider
 from ancilla_bot.tools.search.format import format_hits
 from ancilla_bot.tools.search.searxng import SearXNGProvider
+from ancilla_bot.tools.search.tavily import TavilyProvider
 
-__all__ = ["SearchHit", "SearchProvider", "SearXNGProvider", "format_hits", "search"]
+__all__ = [
+    "SearchHit",
+    "SearchProvider",
+    "SearXNGProvider",
+    "TavilyProvider",
+    "format_hits",
+    "search",
+]
 
 
 def search(query: str, max_results: int = 5) -> str:
