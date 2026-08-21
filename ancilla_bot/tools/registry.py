@@ -38,7 +38,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     # ── Information retrieval ─────────────────────────────────────────────
     "get_time": "Return current date/time. action_input: {}.",
     "web_search": (
-        "Search the web via SearXNG. "
+        "Search the web. "
         "action_input: {\"query\": \"search terms\", \"max_results\": 5}. "
         "max_results optional (default 5)."
     ),

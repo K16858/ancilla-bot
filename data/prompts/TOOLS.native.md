@@ -5,7 +5,7 @@ Use the tool names exactly as listed. Tool parameters are defined by the API; ca
 ### Information retrieval
 
 - get_time: Return the current date and time.
-- web_search: Search the web via SearXNG. Provide a query string.
+- web_search: Search the web. Provide a query string.
 - fetch_page: Fetch the main text of a web page (http/https only).
 
 ### File operations

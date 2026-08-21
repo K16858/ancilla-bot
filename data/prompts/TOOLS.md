@@ -5,7 +5,7 @@ Use the tool name exactly as listed. action must be a string matching the tool n
 ### Information retrieval
 
 - get_time: Return current date/time. action_input: {}.
-- web_search: Search the web via SearXNG. action_input: {"query": "search terms", "max_results": 5}. max_results optional (default 5).
+- web_search: Search the web. action_input: {"query": "search terms", "max_results": 5}. max_results optional (default 5).
 - fetch_page: Fetch the main text of a web page (HTML stripped). action_input: {"url": "https://example.com", "max_chars": 8000}. max_chars optional. Only http/https; private IPs and localhost are rejected.
 
 ### File operations
