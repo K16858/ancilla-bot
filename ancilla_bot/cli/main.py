@@ -1055,6 +1055,11 @@ def main() -> int:
         help="provider / keys / api / show（省略時はメニュー）",
     )
 
+    subparsers.add_parser("doctor", help="環境診断")
+    update_parser = subparsers.add_parser("update", help="ソースと依存を更新")
+    update_parser.add_argument("--check", action="store_true", help="更新の有無だけ確認")
+    subparsers.add_parser("version", help="バージョン表示")
+
     stop_parser = subparsers.add_parser("stop", help="マネージドプロセスを停止")
     stop_parser.add_argument("targets", nargs="*", help="core / discord / slack / all")
 
@@ -1095,8 +1100,9 @@ def main() -> int:
     args = parser.parse_args()
 
     if getattr(args, "version", False):
-        print(f"ancilla-bot { _package_version() }")
-        return 0
+        from ancilla_bot.cli.commands import update as update_cmd
+
+        return update_cmd.cmd_version()
 
     from ancilla_bot.cli.commands import lifecycle
 
@@ -1120,6 +1126,18 @@ def main() -> int:
         from ancilla_bot.cli.commands import setup as setup_cmd
 
         return setup_cmd.cmd_setup(args)
+    if args.command == "doctor":
+        from ancilla_bot.cli.commands import doctor as doctor_cmd
+
+        return doctor_cmd.cmd_doctor(args)
+    if args.command == "update":
+        from ancilla_bot.cli.commands import update as update_cmd
+
+        return update_cmd.cmd_update(args)
+    if args.command == "version":
+        from ancilla_bot.cli.commands import update as update_cmd
+
+        return update_cmd.cmd_version()
     if args.command == "run":
         _run_resident(args)
         return 0
@@ -1152,15 +1170,6 @@ def main() -> int:
 
     # 引数なし: Client（Core とはライフサイクル分離）
     return _run_client(args)
-
-
-def _package_version() -> str:
-    try:
-        from importlib.metadata import version
-
-        return version("ancilla-bot")
-    except Exception:
-        return "0.1.0"
 
 
 if __name__ == "__main__":
