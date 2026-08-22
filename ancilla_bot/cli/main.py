@@ -660,11 +660,30 @@ def _run_repl(
             save_active_history(history)
 
 
-def _run_client(args: argparse.Namespace) -> None:
-    host = os.getenv("ANCILLA_API_HOST", "127.0.0.1")
-    port = int(os.getenv("ANCILLA_API_PORT", "8765"))
-    url = f"http://{host}:{port}/chat"
-    print(f"Ancilla クライアント (接続先 {url})。終了: exit / quit / :q")
+def _run_client(args: argparse.Namespace) -> int:
+    from ancilla_bot.cli.health import check_health, display_endpoint
+    from ancilla_bot.cli.ux import fail
+
+    endpoint = display_endpoint()
+    url = f"{endpoint}/chat"
+    instance = (os.getenv("ANCILLA_INSTANCE_NAME") or "").strip()
+
+    print("Ancilla CLI")
+    print()
+    print("Connected to:")
+    if instance:
+        print(f"  {instance}")
+    print(f"  {endpoint}")
+    print()
+    print("終了: exit / quit / :q")
+
+    if not check_health():
+        return fail(
+            f"Could not connect to Ancilla Core at {endpoint}.",
+            cause="The configured endpoint is unreachable.",
+            next_cmds=["ancilla start", "ancilla setup api", "ancilla doctor"],
+        )
+
     while True:
         try:
             user_input = input("Ancilla CLI > ")
@@ -680,9 +699,38 @@ def _run_client(args: argparse.Namespace) -> None:
             data = resp.json()
             print(f"Ancilla: {data.get('response', '')}")
         except httpx.ConnectError:
-            print("Ancilla: 接続できません。ancilla run が起動しているか確認してください。")
+            return fail(
+                f"Could not connect to Ancilla Core at {endpoint}.",
+                cause="Connection lost while chatting.",
+                next_cmds=["ancilla start", "ancilla status", "ancilla doctor"],
+            )
         except Exception as e:
             print(f"Ancilla: エラー {e}")
+    return 0
+
+
+def run_client_repl(args: argparse.Namespace) -> int:
+    return _run_client(args)
+
+
+def run_core_worker(args: argparse.Namespace) -> int:
+    """バックグラウンド worker: REPL 無し Core。"""
+    level = "DEBUG" if getattr(args, "verbose", False) else "INFO"
+    log_file = getattr(args, "log_file", None) or os.getenv("ANCILLA_LOG_FILE")
+    init_logging(level=level, log_file=log_file)
+    args.no_repl = True
+    _run_resident(args)
+    return 0
+
+
+def run_core_foreground(args: argparse.Namespace) -> int:
+    """フォアグラウンドで Core を占有。"""
+    level = "DEBUG" if getattr(args, "verbose", False) else "INFO"
+    log_file = getattr(args, "log_file", None) or os.getenv("ANCILLA_LOG_FILE")
+    init_logging(level=level, log_file=log_file)
+    args.no_repl = True
+    _run_resident(args)
+    return 0
 
 
 def _run_batch_summarize() -> None:
@@ -789,7 +837,8 @@ def _run_resident(args: argparse.Namespace) -> None:
     stop = threading.Event()
     conversation_history = load_active_history()
     _shared_history = conversation_history  # 全スレッドで共有
-    api_host = os.getenv("ANCILLA_API_HOST", "127.0.0.1")
+    api_host = os.getenv("ANCILLA_API_BIND_HOST") or os.getenv("ANCILLA_API_HOST", "127.0.0.1")
+    api_host = api_host.strip() or "127.0.0.1"
     api_port = int(os.getenv("ANCILLA_API_PORT", "8765"))
 
     def chat_handler(msg: str, imgs: list[str] | None = None) -> str:
@@ -961,12 +1010,52 @@ def _run_resident(args: argparse.Namespace) -> None:
         idle_thread.join(timeout=IDLE_POLL_SEC + 5)
 
 
-def main() -> None:
+def main() -> int:
+    root = (os.getenv("ANCILLA_ROOT") or "").strip()
+    if root:
+        try:
+            os.chdir(root)
+        except OSError:
+            pass
+
     parser = argparse.ArgumentParser(description="Ancilla-Bot CLI")
     parser.add_argument("-v", "--verbose", action="store_true", help="DEBUG レベルでログを出力")
     parser.add_argument("--log-file", metavar="PATH", help="ログをファイルにも出力（例: data/logs/ancilla.log）")
     parser.add_argument("-r", "--show-reasoning", action="store_true", help="thought とツール呼び出しを薄く表示")
+    parser.add_argument("--version", action="store_true", help="バージョンを表示")
     subparsers = parser.add_subparsers(dest="command", help="サブコマンド")
+
+    start_parser = subparsers.add_parser("start", help="マネージドプロセスをバックグラウンド起動（既定: core）")
+    start_parser.add_argument(
+        "targets",
+        nargs="*",
+        help="core / discord / slack / all",
+    )
+    start_parser.add_argument(
+        "--foreground",
+        action="store_true",
+        help="Core をフォアグラウンドで占有（Docker / 開発用）",
+    )
+    start_parser.add_argument(
+        "--cli",
+        action="store_true",
+        help="Core を確保してから CLI クライアントを起動",
+    )
+
+    stop_parser = subparsers.add_parser("stop", help="マネージドプロセスを停止")
+    stop_parser.add_argument("targets", nargs="*", help="core / discord / slack / all")
+
+    restart_parser = subparsers.add_parser("restart", help="マネージドプロセスを再起動")
+    restart_parser.add_argument("targets", nargs="*", help="core / discord / slack / all")
+
+    subparsers.add_parser("status", help="マネージドプロセスの状態")
+
+    logs_parser = subparsers.add_parser("logs", help="マネージドプロセスのログ")
+    logs_parser.add_argument("target", nargs="?", default="core", help="core / discord / slack")
+    logs_parser.add_argument("-f", "--follow", action="store_true", help="追従表示")
+
+    worker_parser = subparsers.add_parser("_worker", help=argparse.SUPPRESS)
+    worker_parser.add_argument("worker_name", choices=["core", "discord", "slack"])
 
     subparsers.add_parser("run", help="常駐モード（REPL + API + Heartbeat）。終了は exit 等。")
     subparsers.add_parser("mcp", help="MCP Server（stdio）。Cursor 等から子プロセスとして起動する。")
@@ -992,40 +1081,67 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    if getattr(args, "version", False):
+        print(f"ancilla-bot { _package_version() }")
+        return 0
+
+    from ancilla_bot.cli.commands import lifecycle
+
+    if args.command == "start":
+        return lifecycle.cmd_start(args)
+    if args.command == "stop":
+        return lifecycle.cmd_stop(args)
+    if args.command == "restart":
+        return lifecycle.cmd_restart(args)
+    if args.command == "status":
+        return lifecycle.cmd_status(args)
+    if args.command == "logs":
+        return lifecycle.cmd_logs(args)
+    if args.command == "_worker":
+        return lifecycle.cmd_worker(args)
     if args.command == "run":
         _run_resident(args)
-        return
+        return 0
     if args.command == "mcp":
         _run_mcp_stdio(args)
-        return
+        return 0
     if args.command == "client":
-        _run_client(args)
-        return
+        return _run_client(args)
     if args.command == "discord":
         from ancilla_bot.discord_bot import main as discord_main
         discord_main()
-        return
+        return 0
     if args.command == "slack":
         from ancilla_bot.slack_bot import main as slack_main
         slack_main()
-        return
+        return 0
     if args.command == "runs":
         _run_runs(args)
-        return
+        return 0
     if args.command == "trace":
         _run_trace(args)
-        return
+        return 0
     if args.command == "resume":
         _run_resume(args)
-        return
+        return 0
     if args.command == "batch":
         if args.batch_command == "summarize":
             _run_batch_summarize()
-        return
+        return 0
 
-    _run_repl(args, agent_lock=None)
+    # 引数なし: Client（Core とはライフサイクル分離）
+    return _run_client(args)
+
+
+def _package_version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version("ancilla-bot")
+    except Exception:
+        return "0.1.0"
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
 
