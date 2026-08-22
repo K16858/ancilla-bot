@@ -1139,21 +1139,64 @@ def main() -> int:
 
         return update_cmd.cmd_version()
     if args.command == "run":
-        _run_resident(args)
-        return 0
+        print(
+            "Warning: 'ancilla run' is deprecated.",
+            file=sys.stderr,
+        )
+        if getattr(args, "no_repl", False):
+            print("Use: ancilla start --foreground", file=sys.stderr)
+            from ancilla_bot.cli.commands import lifecycle
+
+            fg = argparse.Namespace(
+                targets=["core"],
+                foreground=True,
+                cli=False,
+                verbose=getattr(args, "verbose", False),
+                log_file=getattr(args, "log_file", None),
+                show_reasoning=getattr(args, "show_reasoning", False),
+            )
+            return lifecycle.cmd_start(fg)
+        print("Use: ancilla start --cli", file=sys.stderr)
+        from ancilla_bot.cli.commands import lifecycle
+
+        cli_args = argparse.Namespace(
+            targets=["core"],
+            foreground=False,
+            cli=True,
+            verbose=getattr(args, "verbose", False),
+            log_file=getattr(args, "log_file", None),
+            show_reasoning=getattr(args, "show_reasoning", False),
+        )
+        return lifecycle.cmd_start(cli_args)
     if args.command == "mcp":
         _run_mcp_stdio(args)
         return 0
     if args.command == "client":
+        print(
+            "Warning: 'ancilla client' is deprecated. Use: ancilla",
+            file=sys.stderr,
+        )
         return _run_client(args)
     if args.command == "discord":
-        from ancilla_bot.discord_bot import main as discord_main
-        discord_main()
-        return 0
+        print(
+            "Warning: 'ancilla discord' is deprecated. Use: ancilla start discord",
+            file=sys.stderr,
+        )
+        from ancilla_bot.cli.commands import lifecycle
+
+        return lifecycle.cmd_start(
+            argparse.Namespace(targets=["discord"], foreground=False, cli=False)
+        )
     if args.command == "slack":
-        from ancilla_bot.slack_bot import main as slack_main
-        slack_main()
-        return 0
+        print(
+            "Warning: 'ancilla slack' is deprecated. Use: ancilla start slack",
+            file=sys.stderr,
+        )
+        from ancilla_bot.cli.commands import lifecycle
+
+        return lifecycle.cmd_start(
+            argparse.Namespace(targets=["slack"], foreground=False, cli=False)
+        )
     if args.command == "runs":
         _run_runs(args)
         return 0
