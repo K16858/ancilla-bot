@@ -1042,6 +1042,19 @@ def main() -> int:
         help="Core を確保してから CLI クライアントを起動",
     )
 
+    install_parser = subparsers.add_parser("install", help="コンポーネント初期化")
+    install_parser.add_argument("component", choices=["core", "client"])
+    install_parser.add_argument("--host", help="client: Core ホスト")
+    install_parser.add_argument("--port", type=int, help="client: Core ポート")
+
+    setup_parser = subparsers.add_parser("setup", help="設定を対話的に変更")
+    setup_parser.add_argument(
+        "topic",
+        nargs="?",
+        default="",
+        help="provider / keys / api / show（省略時はメニュー）",
+    )
+
     stop_parser = subparsers.add_parser("stop", help="マネージドプロセスを停止")
     stop_parser.add_argument("targets", nargs="*", help="core / discord / slack / all")
 
@@ -1099,6 +1112,14 @@ def main() -> int:
         return lifecycle.cmd_logs(args)
     if args.command == "_worker":
         return lifecycle.cmd_worker(args)
+    if args.command == "install":
+        from ancilla_bot.cli.commands import install as install_cmd
+
+        return install_cmd.cmd_install(args)
+    if args.command == "setup":
+        from ancilla_bot.cli.commands import setup as setup_cmd
+
+        return setup_cmd.cmd_setup(args)
     if args.command == "run":
         _run_resident(args)
         return 0
