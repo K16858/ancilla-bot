@@ -6,7 +6,7 @@ import argparse
 import sys
 import time
 
-from ancilla_bot.cli import health, process, ux
+from ancilla_bot.cli import envfile, health, process, ux
 from ancilla_bot.cli.paths import ensure_runtime_dirs, get_root, log_path
 
 
@@ -28,6 +28,14 @@ def _normalize_targets(raw: list[str] | None, *, default_core: bool = True) -> l
         if name not in out:
             out.append(name)
     return out
+
+
+def _adapter_configured(name: str) -> bool:
+    if name == "discord":
+        return bool(envfile.get_value("DISCORD_BOT_TOKEN"))
+    if name == "slack":
+        return bool(envfile.get_value("SLACK_BOT_TOKEN") and envfile.get_value("SLACK_APP_TOKEN"))
+    return True
 
 
 def cmd_start(args: argparse.Namespace) -> int:
@@ -56,17 +64,36 @@ def cmd_start(args: argparse.Namespace) -> int:
             next_cmds=["ancilla start", "ancilla start core", "ancilla start all"],
         )
 
-    for name in targets:
-        if name != CORE:
-            return ux.fail(
-                f"Adapter '{name}' is not available yet.",
-                cause="Discord/Slack lifecycle lands in a later phase.",
-                next_cmds=["ancilla start", "ancilla start core"],
-            )
+    start_all = bool(getattr(args, "targets", None)) and any(
+        t.strip().lower() == "all" for t in (args.targets or [])
+    )
+    need_core = CORE in targets or any(t in ADAPTERS for t in targets)
+    if need_core:
+        already = process.is_running(CORE) and health.check_health()
+        rc = _start_core(quiet_already=start_all or (CORE not in targets and not start_all))
+        if rc != 0:
+            return rc
+        if start_all:
+            print(f"[ok] core      {'running' if already else 'started'}")
 
-    rc = _start_core()
-    if rc != 0:
-        return rc
+    for name in ADAPTERS:
+        if name not in targets:
+            continue
+        if not _adapter_configured(name):
+            if start_all:
+                print(f"- {name:<9} skipped (not configured)")
+                continue
+            return ux.fail(
+                f"{name} is not configured.",
+                cause="Missing required tokens in .env",
+                next_cmds=["ancilla setup keys", f"ancilla start {name}"],
+            )
+        already = process.is_running(name)
+        rc = _start_adapter(name, quiet=start_all)
+        if rc != 0:
+            return rc
+        if start_all:
+            print(f"[ok] {name:<9} {'running' if already else 'started'}")
 
     if getattr(args, "cli", False):
         from ancilla_bot.cli.main import run_client_repl
@@ -75,12 +102,13 @@ def cmd_start(args: argparse.Namespace) -> int:
     return 0
 
 
-def _start_core() -> int:
+def _start_core(*, quiet_already: bool = False) -> int:
     endpoint = health.display_endpoint()
     if process.is_running(CORE):
         if health.check_health():
-            print(f"Core already running (pid={process.get_running_pid(CORE)}).")
-            print(f"API ready at {endpoint}")
+            if not quiet_already:
+                print(f"Core already running (pid={process.get_running_pid(CORE)}).")
+                print(f"API ready at {endpoint}")
             return 0
         print("Core process exists but is unhealthy. Restarting...")
         process.stop_process(CORE)
@@ -113,6 +141,41 @@ def _start_core() -> int:
         )
 
     print(f"[ok] API ready at {endpoint}")
+    return 0
+
+
+def _start_adapter(name: str, *, quiet: bool = False) -> int:
+    if process.is_running(name):
+        if not quiet:
+            print(f"{name} already running (pid={process.get_running_pid(name)}).")
+        return 0
+
+    # ensure core healthy
+    if not health.check_health():
+        rc = _start_core()
+        if rc != 0:
+            return rc
+
+    if not quiet:
+        print(f"Starting {name}...")
+    try:
+        pid = process.spawn_worker(name)
+    except OSError as e:
+        return ux.fail(
+            f"Failed to start {name}.",
+            cause=str(e),
+            next_cmds=[f"ancilla logs {name}", "ancilla doctor"],
+        )
+    # brief settle
+    time.sleep(1.0)
+    if not process.is_running(name):
+        return ux.fail(
+            f"{name} exited immediately.",
+            cause=f"See: ancilla logs {name}",
+            next_cmds=[f"ancilla logs {name}", "ancilla setup keys"],
+        )
+    if not quiet:
+        print(f"[ok] {name} started (pid {pid})")
     return 0
 
 
@@ -175,7 +238,9 @@ def cmd_status(_args: argparse.Namespace) -> int:
             else:
                 print(f"{label:<10} unhealthy      pid={pid}")
         else:
-            if pid is None:
+            if not _adapter_configured(name):
+                print(f"{label:<10} not configured")
+            elif pid is None:
                 print(f"{label:<10} stopped")
             else:
                 print(f"{label:<10} running        pid={pid}")
@@ -232,4 +297,14 @@ def cmd_worker(args: argparse.Namespace) -> int:
         from ancilla_bot.cli.main import run_core_worker
 
         return run_core_worker(args)
+    if name == "discord":
+        from ancilla_bot.discord_bot import main as discord_main
+
+        discord_main()
+        return 0
+    if name == "slack":
+        from ancilla_bot.slack_bot import main as slack_main
+
+        slack_main()
+        return 0
     return ux.fail(f"Unknown worker: {name}")
