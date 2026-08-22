@@ -15,20 +15,24 @@ from ancilla_bot.notifications.pending_take import requeue_pending_jsonl_lines, 
 MAX_RESPONSE_CHARS = 1900
 NOTIFY_POLL_INTERVAL = 30
 NOTIFY_MAX_MESSAGE_CHARS = 1900
-API_HOST = os.getenv("ANCILLA_API_HOST", "127.0.0.1")
-API_PORT = int(os.getenv("ANCILLA_API_PORT", "8765"))
 NOTIFICATIONS_DIR = Path(
     os.getenv("ANCILLA_NOTIFICATIONS_DIR", "data/notifications")
 )
 PENDING_FILE = "pending.jsonl"
 
 
+def _core_base() -> str:
+    from ancilla_bot.cli.health import core_url
+
+    return core_url()
+
+
 def _get_api_url() -> str:
-    return f"http://{API_HOST}:{API_PORT}/chat"
+    return f"{_core_base()}/chat"
 
 
 def _get_cancel_url() -> str:
-    return f"http://{API_HOST}:{API_PORT}/cancel"
+    return f"{_core_base()}/cancel"
 
 
 async def _request_cancel() -> bool:
