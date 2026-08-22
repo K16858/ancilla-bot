@@ -66,6 +66,7 @@ def _menu() -> int:
             _setup_api()
         elif choice == "6":
             _setup_show()
+            input("\nPress Enter to continue...")
         else:
             print("Invalid choice.")
 
