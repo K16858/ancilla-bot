@@ -13,6 +13,7 @@ dependencies = [
     "discord.py",
     "httpx",
     "mcp>=2",
+    "psutil",
     "pydantic",
     "python-dotenv",
     "pyyaml",
