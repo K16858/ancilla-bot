@@ -50,13 +50,17 @@ else
 fi
 
 cd "$ROOT"
-if [[ ! -d .venv ]]; then
-  "$PYTHON" -m venv .venv
+VENV_PYTHON="$ROOT/.venv/bin/python"
+if [[ ! -x "$VENV_PYTHON" ]]; then
+  rm -rf "$ROOT/.venv"
+  if ! "$PYTHON" -m venv .venv; then
+    echo "Failed to create venv. On Debian/Ubuntu install the venv package, e.g.:"
+    echo "  sudo apt install $(basename "$PYTHON")-venv"
+    exit 1
+  fi
 fi
-# shellcheck disable=SC1091
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -e .
+"$VENV_PYTHON" -m pip install --upgrade pip
+"$VENV_PYTHON" -m pip install -e .
 
 mkdir -p "$BIN_DIR"
 LAUNCHER="$BIN_DIR/ancilla"
