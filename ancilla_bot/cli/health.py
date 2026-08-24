@@ -68,3 +68,22 @@ def host_port_from_url(url: str) -> tuple[str, int]:
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     return host, port
+
+
+def ollama_models(base_url: str | None = None, *, timeout: float = 3.0) -> list[str] | None:
+    """Ollama の /api/tags のモデル名一覧。到達不能なら None、0 件なら空リスト。"""
+    base = (base_url or os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.get(f"{base}/api/tags")
+            if resp.status_code != 200:
+                return None
+            return [m.get("name", "") for m in (resp.json().get("models") or [])]
+    except Exception:
+        return None
+
+
+def ollama_has_model(models: list[str], model: str) -> bool:
+    """タグ省略（llama3 で llama3:8b にマッチ）を許容した存在判定。"""
+    stem = model.split(":")[0]
+    return any(n == model or n.startswith(f"{stem}:") for n in models)

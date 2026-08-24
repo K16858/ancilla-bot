@@ -1052,7 +1052,18 @@ def main() -> int:
         "topic",
         nargs="?",
         default="",
-        help="provider / keys / api / show（省略時はメニュー）",
+        help="provider / embeddings / search / keys / notify / api / show / set / edit（省略時はメニュー）",
+    )
+    setup_parser.add_argument(
+        "args",
+        nargs="*",
+        default=[],
+        help="setup set 用の KEY=VALUE",
+    )
+    setup_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="setup show で .env.example の全キーを表示",
     )
 
     subparsers.add_parser("doctor", help="環境診断")
