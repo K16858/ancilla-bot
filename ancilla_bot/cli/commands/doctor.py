@@ -3,12 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import sys
-from pathlib import Path
-
-import httpx
 
 from ancilla_bot.cli import envfile, health, process
 from ancilla_bot.cli.paths import get_root
@@ -65,25 +61,11 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
         check("LLM provider", bool(base and model), f"openai base={base or '?'} model={model or '?'}", next_cmd="ancilla setup provider")
     else:
         ollama = (envfile.get_value("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
-        reachable = False
-        try:
-            with httpx.Client(timeout=3.0) as client:
-                r = client.get(f"{ollama}/api/tags")
-                reachable = r.status_code == 200
-        except Exception:
-            reachable = False
-        check("Ollama reachable", reachable, ollama, next_cmd="ancilla setup provider")
+        models = health.ollama_models(ollama)
+        check("Ollama reachable", models is not None, ollama, next_cmd="ancilla setup provider")
         model = (envfile.get_value("OLLAMA_MODEL") or "qwen3:4b").strip()
-        model_ok = False
-        if reachable:
-            try:
-                with httpx.Client(timeout=3.0) as client:
-                    r = client.get(f"{ollama}/api/tags")
-                    names = [m.get("name", "") for m in (r.json().get("models") or [])]
-                    model_ok = any(model == n or n.startswith(model.split(":")[0]) for n in names)
-            except Exception:
-                model_ok = False
-        check("Ollama model", model_ok if reachable else False, model, next_cmd="ancilla setup provider")
+        model_ok = models is not None and health.ollama_has_model(models, model)
+        check("Ollama model", model_ok, model, next_cmd="ancilla setup provider")
 
     embed = envfile.get_value("OLLAMA_EMBED_MODEL") or envfile.get_value("LLM_EMBED_MODEL") or "nomic-embed-text"
     check("Embedding model configured", bool(embed), str(embed))
