@@ -12,6 +12,7 @@ dependencies = [
     "ddgs",
     "discord.py",
     "httpx",
+    "loguru",
     "mcp>=2",
     "psutil",
     "pydantic",
