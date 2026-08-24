@@ -13,7 +13,7 @@ load_dotenv()
 
 DEFAULT_BASE_URL = os.getenv("LLM_BASE_URL", "")
 DEFAULT_MODEL = os.getenv("LLM_MODEL", "")
-DEFAULT_EMBED_MODEL = os.getenv("LLM_EMBED_MODEL") or os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+DEFAULT_EMBED_MODEL = os.getenv("LLM_EMBED_MODEL") or os.getenv("OLLAMA_EMBED_MODEL", "")
 DEFAULT_TIMEOUT = float(os.getenv("LLM_TIMEOUT") or os.getenv("OLLAMA_TIMEOUT", "60"))
 VISION_ENABLED = os.getenv("OLLAMA_VISION_ENABLED", "true").strip().lower() in ("1", "true", "yes")
 # think 未対応／不安定なモデル名の目印（既定 ON の例外）
@@ -275,6 +275,8 @@ def embed_text(
     resolved_base = (base_url if base_url is not None else DEFAULT_BASE_URL).strip().rstrip("/")
     if not resolved_base:
         raise ValueError("LLM_PROVIDER=openai のときは LLM_BASE_URL が必要です")
+    if not model.strip():
+        raise ValueError("埋め込みには LLM_EMBED_MODEL が必要です")
     url = f"{resolved_base}/v1/embeddings"
     body: dict[str, Any] = {"model": model, "input": text}
     logger.debug("openai embed url={} model={} text_len={}", url, model, len(text))

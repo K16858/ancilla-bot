@@ -29,17 +29,18 @@ def _all_providers() -> dict[str, SearchProvider]:
 
 def _build_chain() -> list[SearchProvider]:
     providers = _all_providers()
-    main_name = (os.getenv("WEB_SEARCH_PROVIDER") or "searxng").strip().lower()
-    if main_name not in providers:
-        logger.warning("unknown WEB_SEARCH_PROVIDER={!r}, falling back to searxng", main_name)
-        main_name = "searxng"
+    main_name = (os.getenv("WEB_SEARCH_PROVIDER") or "").strip().lower()
+    if main_name and main_name not in providers:
+        logger.warning("unknown WEB_SEARCH_PROVIDER={!r}, ignoring", main_name)
+        main_name = ""
 
     chain: list[SearchProvider] = []
-    main = providers[main_name]
-    if main.available():
-        chain.append(main)
-    else:
-        logger.warning("main provider {} is not available, skipping", main_name)
+    if main_name:
+        main = providers[main_name]
+        if main.available():
+            chain.append(main)
+        else:
+            logger.warning("main provider {} is not available, skipping", main_name)
 
     for name in _PROVIDER_ORDER:
         if name == main_name:
