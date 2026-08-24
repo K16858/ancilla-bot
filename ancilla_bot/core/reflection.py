@@ -32,7 +32,7 @@ def verify_answer(user_input: str, final_answer: str) -> bool:
         {"role": "user", "content": prompt},
     ]
     try:
-        verify_model = os.getenv("ANCILLA_VERIFY_MODEL") or os.getenv("OLLAMA_MODEL")
+        verify_model = os.getenv("ANCILLA_VERIFY_MODEL") or None
         raw = send_chat(messages, format=None, model=verify_model, think=False)
     except Exception as e:
         logger.warning("verify_answer LLM error: {} -> treat as true", e)
