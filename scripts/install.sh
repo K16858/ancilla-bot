@@ -53,11 +53,13 @@ cd "$ROOT"
 VENV_PYTHON="$ROOT/.venv/bin/python"
 if [[ ! -x "$VENV_PYTHON" ]]; then
   rm -rf "$ROOT/.venv"
-  if ! "$PYTHON" -m venv .venv; then
-    echo "Failed to create venv. On Debian/Ubuntu install the venv package, e.g.:"
-    echo "  sudo apt install $(basename "$PYTHON")-venv"
-    exit 1
-  fi
+  "$PYTHON" -m venv .venv || true
+fi
+if ! "$VENV_PYTHON" -m pip --version >/dev/null 2>&1; then
+  echo "venv is unusable (no pip). On Debian/Ubuntu install the venv package:"
+  echo "  sudo apt install $(basename "$PYTHON")-venv"
+  echo "then run: rm -rf \"$ROOT/.venv\" and re-run this installer."
+  exit 1
 fi
 "$VENV_PYTHON" -m pip install --upgrade pip
 "$VENV_PYTHON" -m pip install -e .
