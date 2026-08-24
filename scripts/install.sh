@@ -55,6 +55,10 @@ if [[ ! -x "$VENV_PYTHON" ]]; then
   rm -rf "$ROOT/.venv"
   "$PYTHON" -m venv .venv || true
 fi
+if [[ -x "$VENV_PYTHON" ]] && ! "$VENV_PYTHON" -m pip --version >/dev/null 2>&1; then
+  echo "venv has no pip; trying ensurepip..."
+  "$VENV_PYTHON" -m ensurepip --upgrade || true
+fi
 if ! "$VENV_PYTHON" -m pip --version >/dev/null 2>&1; then
   echo "venv is unusable (no pip). On Debian/Ubuntu install the venv package:"
   echo "  sudo apt install $(basename "$PYTHON")-venv"
