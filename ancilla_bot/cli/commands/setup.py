@@ -244,7 +244,7 @@ def _setup_embeddings() -> int:
     v = _prompt("LLM_EMBED_PROVIDER", before.get("LLM_EMBED_PROVIDER"), fallback="same as LLM_PROVIDER")
     if v is not None:
         updates["LLM_EMBED_PROVIDER"] = v
-    v = _prompt("OLLAMA_EMBED_MODEL", before.get("OLLAMA_EMBED_MODEL"), fallback="nomic-embed-text")
+    v = _prompt("OLLAMA_EMBED_MODEL", before.get("OLLAMA_EMBED_MODEL"))
     if v is not None:
         updates["OLLAMA_EMBED_MODEL"] = v
     v = _prompt("LLM_EMBED_MODEL", before.get("LLM_EMBED_MODEL"))
@@ -256,10 +256,10 @@ def _setup_embeddings() -> int:
 def _setup_web_search() -> int:
     before = envfile.read_env_map()
     updates: dict[str, str | None] = {}
-    v = _prompt("WEB_SEARCH_PROVIDER", before.get("WEB_SEARCH_PROVIDER"), fallback="searxng")
+    v = _prompt("WEB_SEARCH_PROVIDER", before.get("WEB_SEARCH_PROVIDER"), fallback="ddgs only")
     if v is not None:
         updates["WEB_SEARCH_PROVIDER"] = v
-    v = _prompt("SEARXNG_URL", before.get("SEARXNG_URL"), fallback="http://localhost:8080")
+    v = _prompt("SEARXNG_URL", before.get("SEARXNG_URL"))
     if v is not None:
         updates["SEARXNG_URL"] = v
     v = _prompt("SEARXNG_USER", before.get("SEARXNG_USER"))

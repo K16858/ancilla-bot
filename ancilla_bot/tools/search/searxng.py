@@ -11,7 +11,7 @@ from ancilla_bot.tools.search.base import SearchHit
 
 load_dotenv()
 
-DEFAULT_URL = os.getenv("SEARXNG_URL") or os.getenv("SEARXNG_BASE_URL", "http://localhost:8080")
+DEFAULT_URL = os.getenv("SEARXNG_URL") or os.getenv("SEARXNG_BASE_URL", "")
 DEFAULT_TIMEOUT = float(os.getenv("SEARXNG_TIMEOUT", "10"))
 
 
@@ -38,7 +38,7 @@ class SearXNGProvider:
         self._timeout = timeout
 
     def available(self) -> bool:
-        return True
+        return bool(self._base_url.strip())
 
     def search(self, query: str, max_results: int = 5) -> list[SearchHit]:
         url = f"{self._base_url.rstrip('/')}/search"

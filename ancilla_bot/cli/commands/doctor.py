@@ -67,12 +67,16 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
         model_ok = bool(model) and models is not None and health.ollama_has_model(models, model)
         check("Ollama model", model_ok, model or "not set", next_cmd="ancilla setup provider")
 
-    embed = envfile.get_value("OLLAMA_EMBED_MODEL") or envfile.get_value("LLM_EMBED_MODEL") or "nomic-embed-text"
-    check("Embedding model configured", bool(embed), str(embed))
+    rag_on = (envfile.get_value("ANCILLA_RAG_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
+    embed = (envfile.get_value("OLLAMA_EMBED_MODEL") or envfile.get_value("LLM_EMBED_MODEL") or "").strip()
+    if rag_on:
+        check("Embedding model configured", bool(embed), embed or "not set", next_cmd="ancilla setup embeddings")
+    else:
+        check("Embedding model configured", True, "RAG disabled")
 
-    search = (envfile.get_value("WEB_SEARCH_PROVIDER") or "searxng").strip().lower()
+    search = (envfile.get_value("WEB_SEARCH_PROVIDER") or "").strip().lower()
     search_ok = True
-    search_detail = search
+    search_detail = search or "ddgs (fallback only)"
     if search == "brave" and not envfile.get_value("BRAVE_API_KEY"):
         search_ok = False
         search_detail = "brave (missing BRAVE_API_KEY)"

@@ -14,7 +14,7 @@ load_dotenv()
 
 DEFAULT_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "")
-DEFAULT_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+DEFAULT_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "")
 DEFAULT_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "60"))
 VISION_ENABLED = os.getenv("OLLAMA_VISION_ENABLED", "true").strip().lower() in ("1", "true", "yes")
 # think 未対応／不安定なモデル名の目印（既定 ON の例外）
@@ -220,6 +220,8 @@ def embed_text(
     Returns:
         埋め込みベクトル（float のリスト）。エラー時は例外を投げる。
     """
+    if not model.strip():
+        raise ValueError("埋め込みには OLLAMA_EMBED_MODEL が必要です")
     url = f"{base_url.rstrip('/')}/api/embed"
     body: dict[str, Any] = {"model": model, "input": text}
     logger.debug("ollama embed url={} model={} text_len={}", url, model, len(text))
