@@ -137,7 +137,7 @@ def extract_and_update(messages: list[dict[str, str]]) -> None:
         "Omit empty fields.\n\n"
         + "\n".join(text_lines)
     )
-    verify_model = os.getenv("ANCILLA_VERIFY_MODEL") or os.getenv("OLLAMA_MODEL")
+    verify_model = os.getenv("ANCILLA_VERIFY_MODEL") or None
     raw = send_chat([{"role": "user", "content": prompt}], format=None, model=verify_model, think=False)
     try:
         extracted = json.loads(raw)

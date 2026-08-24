@@ -216,13 +216,15 @@ def _setup_provider() -> int:
             print("  Available models (enter a number or a name):")
             for i, name in enumerate(models, 1):
                 print(f"    [{i}] {name}")
-        v = _prompt("OLLAMA_MODEL", before.get("OLLAMA_MODEL"), fallback="qwen3:4b")
+        v = _prompt("OLLAMA_MODEL", before.get("OLLAMA_MODEL"))
         if v is not None:
             if models and v.isdigit() and 1 <= int(v) <= len(models):
                 v = models[int(v) - 1]
             updates["OLLAMA_MODEL"] = v
-        model = updates.get("OLLAMA_MODEL") or before.get("OLLAMA_MODEL") or "qwen3:4b"
-        if models and not health.ollama_has_model(models, model):
+        model = updates.get("OLLAMA_MODEL") or before.get("OLLAMA_MODEL") or ""
+        if not model:
+            print("  ! OLLAMA_MODEL is required for LLM_PROVIDER=ollama")
+        elif models and not health.ollama_has_model(models, model):
             print(f"  ! {model} is not pulled on {base}")
     else:
         v = _prompt("LLM_BASE_URL", before.get("LLM_BASE_URL"))

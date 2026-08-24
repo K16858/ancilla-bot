@@ -13,12 +13,19 @@ from loguru import logger
 load_dotenv()
 
 DEFAULT_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "")
 DEFAULT_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 DEFAULT_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "60"))
 VISION_ENABLED = os.getenv("OLLAMA_VISION_ENABLED", "true").strip().lower() in ("1", "true", "yes")
 # think 未対応／不安定なモデル名の目印（既定 ON の例外）
 _NON_THINKING_MODEL_MARKERS = ("granite", "llama", "mistral", "phi", "sarashina")
+
+
+def _require_model(model: str | None) -> str:
+    use_model = (model if model is not None else DEFAULT_MODEL).strip()
+    if not use_model:
+        raise ValueError("LLM_PROVIDER=ollama のときは OLLAMA_MODEL が必要です")
+    return use_model
 
 
 def _model_base_name(model: str) -> str:
@@ -76,7 +83,7 @@ def send_chat(
     Returns:
         LLM が返したテキスト。format 指定時は JSON 文字列。エラー時は例外を投げる。
     """
-    use_model = model if model is not None else DEFAULT_MODEL
+    use_model = _require_model(model)
     if images and not VISION_ENABLED:
         raise ValueError("画像付きリクエストには OLLAMA_VISION_ENABLED=true が必要です")
     if images and VISION_ENABLED:
@@ -155,7 +162,7 @@ def send_chat_message(
     """
     Ollama /api/chat を呼び出し、message オブジェクト全体を返す。native tool calling 用。
     """
-    use_model = model if model is not None else DEFAULT_MODEL
+    use_model = _require_model(model)
     if images and not VISION_ENABLED:
         raise ValueError("画像付きリクエストには OLLAMA_VISION_ENABLED=true が必要です")
     if images and VISION_ENABLED:
