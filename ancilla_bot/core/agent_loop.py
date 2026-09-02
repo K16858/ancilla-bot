@@ -44,7 +44,7 @@ NATIVE_MISSING_ACTION_MESSAGE: Final[str] = (
 
 SUMMARY_MAX_LEN = 200
 
-MAX_TOOL_TURNS: Final[int] = int(os.getenv("ANCILLA_MAX_TOOL_TURNS", "15"))
+MAX_TOOL_TURNS: Final[int] = int(os.getenv("ANCILLA_MAX_TOOL_TURNS", "60"))
 
 _FORCE_SUMMARY_PROMPT: Final[str] = (
     "Summarize what you have thought and gathered so far, and give the best answer you can."
