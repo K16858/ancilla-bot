@@ -20,15 +20,9 @@ Use the tool names exactly as listed. Tool parameters are defined by the API; ca
 ### Memory / state
 
 - search_memory: Search past conversation summaries (keyword; also vector when RAG enabled).
-- add_task: Add a user task.
-- list_tasks: List user tasks.
-- complete_task: Mark a user task complete by id.
-- add_reminder: Schedule a reminder (notified at scheduled_at via heartbeat).
-- add_finance: Record income or expense.
-- add_interest: Track a topic the user cares about.
 - get_user_context: Return the structured user profile snapshot.
 - update_user_goal: Add a short-term or long-term user goal.
-- manage_state: CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log. Use for list/update/delete (including reminders).
+- manage_state: CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log.
 
 ### Notifications
 
@@ -50,7 +44,7 @@ Use the tool names exactly as listed. Tool parameters are defined by the API; ca
 
 ### Notes
 
-- For timed user notifications, add with add_reminder; list/update/delete with manage_state (table=reminders).
+- Tasks, reminders, finances, and interests all go through manage_state.
 - scheduled_at must be YYYY-MM-DD HH:MM:SS.
 - Edge device tools require an active edge session (use_edgedevice first).
 - MCP tools from connected servers appear in the MCP catalog as server__tool_name.

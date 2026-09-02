@@ -100,50 +100,6 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         },
         required=["query"],
     ),
-    "add_task": _schema(
-        {
-            "content": {"type": "string", "description": "Task description"},
-            "scheduled_at": {
-                "type": "string",
-                "description": "YYYY-MM-DD HH:MM:SS (optional, defaults to now)",
-            },
-        },
-        required=["content"],
-    ),
-    "list_tasks": _schema(
-        {
-            "completed": {"type": "boolean", "description": "Filter by completion (default false)"},
-            "limit": {"type": "integer", "description": "Max tasks to return (default 10)"},
-        },
-    ),
-    "complete_task": _schema(
-        {"id": {"type": "integer", "description": "Task id to mark complete"}},
-        required=["id"],
-    ),
-    "add_reminder": _schema(
-        {
-            "content": {"type": "string", "description": "Reminder text"},
-            "scheduled_at": {"type": "string", "description": "YYYY-MM-DD HH:MM:SS"},
-        },
-        required=["content", "scheduled_at"],
-    ),
-    "add_finance": _schema(
-        {
-            "amount": {"type": "number", "description": "Amount (negative for expense)"},
-            "category": {"type": "string", "description": "Category name"},
-            "memo": {"type": "string", "description": "Optional memo"},
-            "date": {"type": "string", "description": "YYYY-MM-DD (optional)"},
-        },
-        required=["amount", "category"],
-    ),
-    "add_interest": _schema(
-        {
-            "name": {"type": "string", "description": "Topic name"},
-            "description": {"type": "string", "description": "Optional description"},
-            "url": {"type": "string", "description": "Optional reference URL"},
-        },
-        required=["name"],
-    ),
     "get_user_context": _EMPTY_OBJECT,
     "update_user_goal": _schema(
         {
