@@ -13,7 +13,7 @@ from loguru import logger
 from ancilla_bot.llm.client import send_chat, send_chat_message
 from ancilla_bot.llm.schemas import AgentResponseWithTools
 from ancilla_bot.tools.registry import TOOL_DESCRIPTIONS, _short_tool_description
-from ancilla_bot.tools.schemas import NATIVE_EXCLUDED_TOOLS, get_native_parameters
+from ancilla_bot.tools.schemas import get_native_parameters
 
 
 def is_native_tool_mode() -> bool:
@@ -89,8 +89,6 @@ def _build_native_tool_message(
 def _build_ollama_tools() -> list[dict[str, Any]]:
     tools: list[dict[str, Any]] = []
     for name, desc in TOOL_DESCRIPTIONS.items():
-        if name in NATIVE_EXCLUDED_TOOLS:
-            continue
         short = _short_tool_description(desc)
         tools.append(
             {

@@ -118,6 +118,12 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "update_user_goal": (
         "Add a user goal. action_input: {\"goal\": \"...\", \"term\": \"short|long\"}. term defaults to short."
     ),
+    "manage_state": (
+        "CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log. "
+        "action_input: {\"table\": \"reminders\", \"operation\": \"select|insert|update|delete\", "
+        "\"payload\": {}}. select: optional completed/limit. update/delete: payload.id required. "
+        "insert: table-specific fields (reminders need scheduled_at and content)."
+    ),
     # ── Notifications ─────────────────────────────────────────────────────
     "notify_user": (
         "Send a proactive notification to the user (via Discord). "
@@ -306,7 +312,6 @@ def build_tools_system_prompt() -> str:
         tools_block = "\n".join(
             f"- {name}: {_short_tool_description(desc)}"
             for name, desc in TOOL_DESCRIPTIONS.items()
-            if name != "manage_state"
         )
     else:
         tools_block = "\n".join(
