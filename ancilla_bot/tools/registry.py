@@ -17,14 +17,6 @@ from ancilla_bot.tools.bash import bash as bash_impl
 from ancilla_bot.tools.search import search as web_search_impl
 from ancilla_bot.tools.workspace_io import edit_file_safe as workspace_edit_file_safe
 from ancilla_bot.tools.workspace_io import list_workspace as workspace_list_workspace
-from ancilla_bot.tools.tasks import (
-    add_finance,
-    add_interest,
-    add_reminder,
-    add_task,
-    complete_task,
-    list_tasks,
-)
 from ancilla_bot.personal_model import get_user_context, update_user_goal
 from ancilla_bot.tools.use_edgedevice import use_edgedevice
 from ancilla_bot.skills.loader import read_skill as load_skill_impl
@@ -86,32 +78,6 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "action_input: {\"query\": \"search terms\", \"max_results\": 3}. "
         "Use when you need to recall previously discussed topics. max_results optional (default 3)."
     ),
-    "add_task": (
-        "Add a user task. "
-        "action_input: {\"content\": \"...\", \"scheduled_at\": \"YYYY-MM-DD HH:MM:SS\"}. "
-        "scheduled_at is optional (defaults to now)."
-    ),
-    "list_tasks": (
-        "List user tasks. "
-        "action_input: {\"completed\": false, \"limit\": 10}. Both optional."
-    ),
-    "complete_task": (
-        "Mark a user task complete. action_input: {\"id\": 3}."
-    ),
-    "add_reminder": (
-        "Schedule a reminder (heartbeat will notify at scheduled_at). "
-        "action_input: {\"content\": \"...\", \"scheduled_at\": \"YYYY-MM-DD HH:MM:SS\"}."
-    ),
-    "add_finance": (
-        "Record income or expense. "
-        "action_input: {\"amount\": -1200, \"category\": \"food\", \"memo\": \"...\", \"date\": \"YYYY-MM-DD\"}. "
-        "memo and date are optional."
-    ),
-    "add_interest": (
-        "Track a topic the user cares about. "
-        "action_input: {\"name\": \"...\", \"description\": \"...\", \"url\": \"...\"}. "
-        "description and url are optional."
-    ),
     "get_user_context": (
         "Return structured user profile from personal_model.yaml. action_input: {}."
     ),
@@ -122,7 +88,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log. "
         "action_input: {\"table\": \"reminders\", \"operation\": \"select|insert|update|delete\", "
         "\"payload\": {}}. select: optional completed/limit. update/delete: payload.id required. "
-        "insert: table-specific fields (reminders need scheduled_at and content)."
+        "insert: reminders/tasks need scheduled_at+content; finances need amount+category; interests need name."
     ),
     # ── Notifications ─────────────────────────────────────────────────────
     "notify_user": (
@@ -274,12 +240,6 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "read_file": read_file,
     "write_file": write_file,
     "search_memory": search_memory,
-    "add_task": add_task,
-    "list_tasks": list_tasks,
-    "complete_task": complete_task,
-    "add_reminder": add_reminder,
-    "add_finance": add_finance,
-    "add_interest": add_interest,
     "get_user_context": get_user_context,
     "update_user_goal": update_user_goal,
     "manage_state": manage_state,

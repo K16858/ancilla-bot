@@ -20,13 +20,7 @@ Use the tool name exactly as listed. action must be a string matching the tool n
 ### Memory / state
 
 - search_memory: Search past conversation summaries (long-term memory) via keyword search, plus vector search when RAG is enabled. action_input: {"query": "search terms", "max_results": 3}. Use when recalling previously discussed topics. max_results optional (default 3).
-- add_task: Add a user task. action_input: {"content": "...", "scheduled_at": "YYYY-MM-DD HH:MM:SS"}. scheduled_at optional (defaults to now).
-- list_tasks: List user tasks. action_input: {"completed": false, "limit": 10}. Both optional.
-- complete_task: Mark a user task complete. action_input: {"id": 3}.
-- add_reminder: Schedule a reminder (heartbeat notifies at scheduled_at). action_input: {"content": "...", "scheduled_at": "YYYY-MM-DD HH:MM:SS"}.
-- add_finance: Record income/expense. action_input: {"amount": -1200, "category": "food", "memo": "...", "date": "YYYY-MM-DD"}. memo and date optional.
-- add_interest: Track a topic. action_input: {"name": "...", "description": "...", "url": "..."}. description and url optional.
-- manage_state: CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log. action_input: {"table": "reminders", "operation": "select|insert|update|delete", "payload": {}}. select: optional completed/limit. update/delete: payload.id required. Use this to list/update/delete reminders.
+- manage_state: CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log. action_input: {"table": "reminders", "operation": "select|insert|update|delete", "payload": {}}. select: optional completed/limit. update/delete: payload.id required. insert: reminders/tasks need scheduled_at+content; finances need amount+category; interests need name.
 
 ### Notifications
 
