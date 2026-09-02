@@ -28,6 +28,7 @@ Use the tool names exactly as listed. Tool parameters are defined by the API; ca
 - add_interest: Track a topic the user cares about.
 - get_user_context: Return the structured user profile snapshot.
 - update_user_goal: Add a short-term or long-term user goal.
+- manage_state: CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log. Use for list/update/delete (including reminders).
 
 ### Notifications
 
@@ -49,7 +50,7 @@ Use the tool names exactly as listed. Tool parameters are defined by the API; ca
 
 ### Notes
 
-- For timed user notifications, always use add_reminder.
+- For timed user notifications, add with add_reminder; list/update/delete with manage_state (table=reminders).
 - scheduled_at must be YYYY-MM-DD HH:MM:SS.
 - Edge device tools require an active edge session (use_edgedevice first).
 - MCP tools from connected servers appear in the MCP catalog as server__tool_name.

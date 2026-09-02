@@ -6,8 +6,6 @@ from __future__ import annotations
 
 from typing import Any
 
-NATIVE_EXCLUDED_TOOLS: frozenset[str] = frozenset({"manage_state"})
-
 _EMPTY_OBJECT: dict[str, Any] = {
     "type": "object",
     "properties": {},
@@ -157,6 +155,49 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
             },
         },
         required=["goal"],
+    ),
+    "manage_state": _schema(
+        {
+            "table": {
+                "type": "string",
+                "enum": [
+                    "user_tasks",
+                    "agent_tasks",
+                    "reminders",
+                    "finances",
+                    "interests",
+                    "audit_log",
+                ],
+                "description": "Target table",
+            },
+            "operation": {
+                "type": "string",
+                "enum": ["insert", "select", "update", "delete"],
+                "description": "CRUD operation",
+            },
+            "payload": {
+                "type": "object",
+                "description": "Operation args (id, content, scheduled_at, completed, limit, ...)",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "content": {"type": "string"},
+                    "scheduled_at": {"type": "string"},
+                    "completed": {"type": "boolean"},
+                    "limit": {"type": "integer"},
+                    "source": {"type": "string"},
+                    "status": {"type": "string"},
+                    "amount": {"type": "number"},
+                    "category": {"type": "string"},
+                    "memo": {"type": "string"},
+                    "date": {"type": "string"},
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "url": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        required=["table", "operation"],
     ),
     "notify_user": _schema(
         {

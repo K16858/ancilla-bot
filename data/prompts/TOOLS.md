@@ -26,6 +26,7 @@ Use the tool name exactly as listed. action must be a string matching the tool n
 - add_reminder: Schedule a reminder (heartbeat notifies at scheduled_at). action_input: {"content": "...", "scheduled_at": "YYYY-MM-DD HH:MM:SS"}.
 - add_finance: Record income/expense. action_input: {"amount": -1200, "category": "food", "memo": "...", "date": "YYYY-MM-DD"}. memo and date optional.
 - add_interest: Track a topic. action_input: {"name": "...", "description": "...", "url": "..."}. description and url optional.
+- manage_state: CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log. action_input: {"table": "reminders", "operation": "select|insert|update|delete", "payload": {}}. select: optional completed/limit. update/delete: payload.id required. Use this to list/update/delete reminders.
 
 ### Notifications
 
