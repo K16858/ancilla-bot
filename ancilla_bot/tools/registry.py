@@ -127,7 +127,8 @@ def get_time(**kwargs: Any) -> str:
     現在の日時を返す。action_input は {} でよい。
     """
     _ = kwargs
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now()
+    return f"{now.strftime('%Y-%m-%d %A %H:%M:%S')}"
 
 
 def web_search(query: str, max_results: int = 5, **kwargs: Any) -> str:
