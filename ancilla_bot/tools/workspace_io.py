@@ -147,6 +147,12 @@ def edit_file_safe(
         return "Error: パスは workspace 以下のみ許可されています。"
     if operation not in ("append", "replace"):
         return "Error: operation は append または replace を指定してください。"
+    if content is not None:
+        content = str(content)
+    if old is not None:
+        old = str(old)
+    if new is not None:
+        new = str(new)
 
     if operation == "append":
         if content is None:
