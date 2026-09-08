@@ -32,10 +32,14 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
     "get_time": _EMPTY_OBJECT,
     "web_search": _schema(
         {
-            "query": {"type": "string", "description": "Search query"},
+            "unknown": {"type": "string", "description": "What to look up (sent to the search API)"},
+            "hypothesis": {
+                "type": "string",
+                "description": "Optional guess; not included in the search query",
+            },
             "max_results": {"type": "integer", "description": "Max results (default 5)"},
         },
-        required=["query"],
+        required=["unknown"],
     ),
     "fetch_page": _schema(
         {
