@@ -17,7 +17,16 @@ DEFAULT_CONVERSATION_DIR = Path(
 )
 
 # ツールから操作可能なテーブル（ホワイトリスト）
-ALLOWED_TABLES = ("user_tasks", "agent_tasks", "reminders", "finances", "interests", "audit_log", "idle_memory")
+ALLOWED_TABLES = (
+    "user_tasks",
+    "agent_tasks",
+    "reminders",
+    "finances",
+    "interests",
+    "audit_log",
+    "idle_memory",
+    "memories",
+)
 
 
 def get_db_path() -> Path:
@@ -168,6 +177,20 @@ CREATE TABLE IF NOT EXISTS notification_sends (
 )
 """
 
+_SCHEMA_MEMORIES = """
+CREATE TABLE IF NOT EXISTS memories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    subject TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL,
+    status TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    evidence_id INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
 
 def ensure_schema() -> None:
     """全テーブルがなければ作成する。既存テーブルへのマイグレーションも実行。"""
@@ -182,6 +205,7 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_AGENT_RUN_STEPS)
         c.executescript(_SCHEMA_NOTIFICATION_SENDS)
         c.executescript(_SCHEMA_IDLE_MEMORY)
+        c.executescript(_SCHEMA_MEMORIES)
         for sql in (_MIGRATE_AGENT_TASKS_SOURCE, _MIGRATE_AGENT_TASKS_STATUS):
             try:
                 c.execute(sql)
@@ -444,6 +468,9 @@ def _normalize_scheduled_at(value: str) -> str:
 _OWNERS = frozenset({"user", "agent", "shared"})
 _SOURCES = frozenset({"user", "idle", "scheduler", "external", "derived"})
 _REMINDER_KINDS = frozenset({"user_reminder", "agent_wakeup"})
+_MEMORY_KINDS = frozenset({"profile", "fact", "goal", "note"})
+_MEMORY_STATUSES = frozenset({"user", "observed", "hypothesis"})
+_MEMORY_SOURCE_TYPES = frozenset({"user", "tool", "model"})
 
 
 def _norm_choice(value: object, allowed: frozenset[str], default: str) -> str:
@@ -498,6 +525,85 @@ def user_commitment_exists(commitment_id: int) -> bool:
     return False
 
 
+def _evidence_exists(evidence_id: int) -> bool:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM agent_run_steps WHERE id = ?",
+            (evidence_id,),
+        ).fetchone()
+        return row is not None
+
+
+def _memory_meta_for_insert(payload: dict[str, Any]) -> tuple[str, str, int | None] | str:
+    """status / source_type は書き込み経路で決める。モデル指定は使わない。"""
+    from ancilla_bot.core.run_context import is_autonomous
+
+    raw_eid = payload.get("evidence_id")
+    evidence_id: int | None = None
+    if raw_eid is not None and str(raw_eid).strip() != "":
+        try:
+            evidence_id = int(raw_eid)
+        except (TypeError, ValueError):
+            return "Error: evidence_id must be an integer (agent_run_steps id)."
+        if evidence_id <= 0 or not _evidence_exists(evidence_id):
+            return "Error: evidence_id does not match a tool observation."
+        return "observed", "tool", evidence_id
+    if is_autonomous():
+        return "hypothesis", "model", None
+    return "user", "user", None
+
+
+def _memory_meta_for_update(
+    payload: dict[str, Any],
+    existing: dict[str, Any],
+) -> tuple[str, str, int | None] | str:
+    from ancilla_bot.core.run_context import is_autonomous
+
+    status = str(existing.get("status") or "hypothesis")
+    source_type = str(existing.get("source_type") or "model")
+    evidence_id = existing.get("evidence_id")
+    if evidence_id is not None:
+        try:
+            evidence_id = int(evidence_id)
+        except (TypeError, ValueError):
+            evidence_id = None
+
+    raw_eid = payload.get("evidence_id")
+    if raw_eid is not None and str(raw_eid).strip() != "":
+        try:
+            new_eid = int(raw_eid)
+        except (TypeError, ValueError):
+            return "Error: evidence_id must be an integer (agent_run_steps id)."
+        if new_eid <= 0 or not _evidence_exists(new_eid):
+            return "Error: evidence_id does not match a tool observation."
+        return "observed", "tool", new_eid
+
+    if status == "hypothesis" and is_autonomous():
+        return status, source_type, evidence_id
+    if status == "hypothesis" and not is_autonomous():
+        return "user", "user", evidence_id
+    if is_autonomous() and status == "user":
+        return "Error: autonomous runs cannot modify user-status memories."
+    return status, source_type, evidence_id
+
+
+def list_memories(*, durable_only: bool = False) -> list[dict[str, Any]]:
+    ensure_schema()
+    with _conn() as conn:
+        if durable_only:
+            cur = conn.execute(
+                "SELECT id, kind, subject, content, status, source_type, evidence_id, "
+                "created_at, updated_at FROM memories "
+                "WHERE status IN ('user', 'observed') ORDER BY id ASC"
+            )
+        else:
+            cur = conn.execute(
+                "SELECT id, kind, subject, content, status, source_type, evidence_id, "
+                "created_at, updated_at FROM memories ORDER BY id ASC"
+            )
+        return [_row_to_dict(cur, row) for row in cur.fetchall()]
+
+
 def try_record_notification_send(intent: str, subject_key: str) -> bool:
     """未送信なら記録して True。同じ (intent, subject_key) なら False。"""
     ensure_schema()
@@ -534,6 +640,10 @@ def _validate_insert_payload(table: str, payload: dict[str, Any]) -> str | None:
     if table == "idle_memory":
         if not payload.get("kind") or not payload.get("content"):
             return "Error: idle_memory requires kind and content."
+        return None
+    if table == "memories":
+        if not payload.get("kind") or not payload.get("content"):
+            return "Error: memories require kind and content."
         return None
     return "Error: unknown table."
 
@@ -634,6 +744,24 @@ def manage_state(
                         "INSERT INTO idle_memory (kind, subject, content, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
                         (kind, subject, mem_content, status, now, now),
                     )
+                elif table == "memories":
+                    kind = str(payload.get("kind", "")).strip().lower()
+                    if kind not in _MEMORY_KINDS:
+                        return "Error: memories kind must be profile, fact, goal, or note."
+                    subject = str(payload.get("subject", "")).strip()[:200]
+                    mem_content = str(payload.get("content", "")).strip()
+                    if not mem_content:
+                        return "Error: content is required."
+                    meta = _memory_meta_for_insert(payload)
+                    if isinstance(meta, str):
+                        return meta
+                    status, source_type, evidence_id = meta
+                    c.execute(
+                        "INSERT INTO memories "
+                        "(kind, subject, content, status, source_type, evidence_id, created_at, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (kind, subject, mem_content, status, source_type, evidence_id, now, now),
+                    )
                 else:  # audit_log
                     tool_name = str(payload.get("tool_name", "")).strip() or "unknown"
                     args_summary = str(payload.get("args_summary", "")).strip()[:500]
@@ -642,6 +770,11 @@ def manage_state(
                         (tool_name, args_summary, now),
                     )
                 row_id = c.lastrowid
+                if table == "memories":
+                    conn.commit()
+                    from ancilla_bot.memory.store import project_memories
+
+                    project_memories()
                 return f"Inserted into {table} id={row_id}."
 
             if operation == "select":
@@ -711,6 +844,27 @@ def manage_state(
                         f"SELECT id, kind, subject, content, status, created_at, updated_at FROM idle_memory{where_sql} ORDER BY id DESC LIMIT ?",
                         params_m,
                     )
+                elif table == "memories":
+                    where = []
+                    params_mem: list[Any] = []
+                    if payload.get("kind"):
+                        where.append("kind = ?")
+                        params_mem.append(str(payload["kind"]).strip().lower())
+                    if payload.get("status"):
+                        st = str(payload["status"]).strip().lower()
+                        if st in _MEMORY_STATUSES:
+                            where.append("status = ?")
+                            params_mem.append(st)
+                    if payload.get("subject"):
+                        where.append("subject = ?")
+                        params_mem.append(str(payload["subject"]).strip())
+                    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+                    params_mem.append(limit)
+                    c.execute(
+                        "SELECT id, kind, subject, content, status, source_type, evidence_id, "
+                        f"created_at, updated_at FROM memories{where_sql} ORDER BY id DESC LIMIT ?",
+                        params_mem,
+                    )
                 else:  # audit_log
                     c.execute(
                         "SELECT id, tool_name, args_summary, created_at FROM audit_log ORDER BY id DESC LIMIT ?",
@@ -754,6 +908,24 @@ def manage_state(
                     err = _guard_owned_write(table, "update", payload, existing)
                     if err:
                         return err
+                memory_meta: tuple[str, str, int | None] | None = None
+                if table == "memories":
+                    c.execute(
+                        "SELECT status, source_type, evidence_id FROM memories WHERE id = ?",
+                        (row_id,),
+                    )
+                    found = c.fetchone()
+                    if not found:
+                        return "Error: row not found."
+                    existing_mem = {
+                        "status": found[0],
+                        "source_type": found[1],
+                        "evidence_id": found[2],
+                    }
+                    meta = _memory_meta_for_update(payload, existing_mem)
+                    if isinstance(meta, str):
+                        return meta
+                    memory_meta = meta
                 allowed_cols = (
                     {"completed", "scheduled_at", "content", "source", "status"} if table == "agent_tasks"
                     else {"completed", "scheduled_at", "content", "owner", "source", "kind"} if table == "reminders"
@@ -761,6 +933,7 @@ def manage_state(
                     else {"amount", "category", "memo", "date"} if table == "finances"
                     else {"name", "description", "status", "url"} if table == "interests"
                     else {"kind", "subject", "content", "status"} if table == "idle_memory"
+                    else {"kind", "subject", "content"} if table == "memories"
                     else set()
                 )
                 if not allowed_cols:
@@ -777,14 +950,31 @@ def manage_state(
                         elif k == "scheduled_at":
                             params.append(_normalize_scheduled_at(str(v)))
                         else:
+                            if k == "kind" and table == "memories" and str(v).strip().lower() not in _MEMORY_KINDS:
+                                return "Error: memories kind must be profile, fact, goal, or note."
                             params.append(v)
-                if not sets:
+                if not sets and not (table == "memories" and payload.get("evidence_id") is not None):
                     return "Error: no updatable fields in payload."
                 if table == "idle_memory":
                     sets.append("updated_at = ?")
                     params.append(now)
+                if table == "memories" and memory_meta is not None:
+                    status, source_type, evidence_id = memory_meta
+                    sets.append("status = ?")
+                    params.append(status)
+                    sets.append("source_type = ?")
+                    params.append(source_type)
+                    sets.append("evidence_id = ?")
+                    params.append(evidence_id)
+                    sets.append("updated_at = ?")
+                    params.append(now)
                 params.append(row_id)
                 c.execute(f"UPDATE {table} SET {', '.join(sets)} WHERE id = ?", params)
+                if table == "memories":
+                    conn.commit()
+                    from ancilla_bot.memory.store import project_memories
+
+                    project_memories()
                 return f"Updated {table} id={row_id}."
 
             if operation == "delete":
@@ -804,7 +994,24 @@ def manage_state(
                     err = _guard_owned_write(table, "delete", payload, existing)
                     if err:
                         return err
+                if table == "memories":
+                    c.execute(
+                        "SELECT status FROM memories WHERE id = ?",
+                        (row_id,),
+                    )
+                    found = c.fetchone()
+                    if not found:
+                        return "Error: row not found."
+                    from ancilla_bot.core.run_context import is_autonomous
+
+                    if is_autonomous() and str(found[0]) == "user":
+                        return "Error: autonomous runs cannot delete user-status memories."
                 c.execute(f"DELETE FROM {table} WHERE id = ?", (row_id,))
+                if table == "memories":
+                    conn.commit()
+                    from ancilla_bot.memory.store import project_memories
+
+                    project_memories()
                 return f"Deleted {table} id={row_id}."
     except (ValueError, TypeError, sqlite3.Error) as e:
         return f"Error: {e!s}"

@@ -628,9 +628,6 @@ def _run_summarize_with_lock(lock: threading.Lock) -> None:
     lock.acquire()
     try:
         run_summarize()
-        from ancilla_bot.personal_model import extract_and_update
-
-        extract_and_update(load_overflow() + load_active_history())
     except Exception as e:
         logger.warning("batch summarize failed: {}", e)
     finally:
@@ -889,6 +886,9 @@ def _run_resident(args: argparse.Namespace) -> None:
     stop = threading.Event()
     conversation_history = load_active_history()
     _shared_history = conversation_history  # 全スレッドで共有
+    from ancilla_bot.memory.store import maybe_import_user_md
+
+    maybe_import_user_md()
     api_host = os.getenv("ANCILLA_API_BIND_HOST") or os.getenv("ANCILLA_API_HOST", "127.0.0.1")
     api_host = api_host.strip() or "127.0.0.1"
     api_port = int(os.getenv("ANCILLA_API_PORT", "8765"))
