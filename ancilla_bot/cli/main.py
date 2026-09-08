@@ -386,6 +386,26 @@ def _load_pending_self_tasks() -> str:
         return ""
 
 
+def _load_idle_working_memory() -> str:
+    try:
+        import json
+        raw = db_manage_state(
+            table="idle_memory",
+            operation="select",
+            payload={"status": "open", "limit": 20},
+        )
+        items = json.loads(raw) if raw and raw.startswith("[") else []
+        wakeups = get_due_reminders(kind="agent_wakeup")
+        lines: list[str] = []
+        for it in items:
+            lines.append(f"  [{it.get('id')}][{it.get('kind')}] {it.get('subject')}: {it.get('content')}")
+        for w in wakeups:
+            lines.append(f"  [wakeup {w['id']}] {w['content']} @ {w['scheduled_at']}")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
 def _build_idle_reflection_message(idle_min: int = 0) -> str:
     """
     Idle Reflection メッセージを組み立てる。
@@ -400,6 +420,7 @@ def _build_idle_reflection_message(idle_min: int = 0) -> str:
     idle_str = f"{idle_min} minutes" if idle_min > 0 else "a while"
 
     pending_tasks_str = _load_pending_self_tasks()
+    idle_mem_str = _load_idle_working_memory()
     if pending_tasks_str:
         pending_block = (
             "\n\n[Your pending self-tasks (source=self, completed=0) — loaded automatically]:\n"
@@ -408,6 +429,11 @@ def _build_idle_reflection_message(idle_min: int = 0) -> str:
         )
     else:
         pending_block = ""
+    if idle_mem_str:
+        pending_block += (
+            "\n\n[Idle working memory (open) and due agent_wakeups]:\n"
+            + idle_mem_str
+        )
 
     return (
         f"[SYSTEM_EVENT: IDLE_REFLECTION] No user input for {idle_str}.\n\n"

@@ -85,7 +85,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "Add a user goal. action_input: {\"goal\": \"...\", \"term\": \"short|long\"}. term defaults to short."
     ),
     "manage_state": (
-        "CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log. "
+        "CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log, idle_memory. "
         "action_input: {\"table\": \"reminders\", \"operation\": \"select|insert|update|delete\", "
         "\"payload\": {}}. select: optional completed/limit. update/delete: payload.id required. "
         "insert: reminders/tasks need scheduled_at+content; finances need amount+category; interests need name. "

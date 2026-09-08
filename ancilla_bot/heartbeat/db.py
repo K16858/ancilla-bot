@@ -17,7 +17,7 @@ DEFAULT_CONVERSATION_DIR = Path(
 )
 
 # ツールから操作可能なテーブル（ホワイトリスト）
-ALLOWED_TABLES = ("user_tasks", "agent_tasks", "reminders", "finances", "interests", "audit_log")
+ALLOWED_TABLES = ("user_tasks", "agent_tasks", "reminders", "finances", "interests", "audit_log", "idle_memory")
 
 
 def get_db_path() -> Path:
@@ -146,6 +146,19 @@ CREATE TABLE IF NOT EXISTS agent_run_steps (
 """
 
 
+_SCHEMA_IDLE_MEMORY = """
+CREATE TABLE IF NOT EXISTS idle_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    subject TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
+
 _SCHEMA_NOTIFICATION_SENDS = """
 CREATE TABLE IF NOT EXISTS notification_sends (
     intent TEXT NOT NULL,
@@ -168,6 +181,7 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_AGENT_RUNS)
         c.executescript(_SCHEMA_AGENT_RUN_STEPS)
         c.executescript(_SCHEMA_NOTIFICATION_SENDS)
+        c.executescript(_SCHEMA_IDLE_MEMORY)
         for sql in (_MIGRATE_AGENT_TASKS_SOURCE, _MIGRATE_AGENT_TASKS_STATUS):
             try:
                 c.execute(sql)
@@ -517,6 +531,10 @@ def _validate_insert_payload(table: str, payload: dict[str, Any]) -> str | None:
         if not payload.get("tool_name"):
             return "Error: audit_log requires tool_name. args_summary optional."
         return None
+    if table == "idle_memory":
+        if not payload.get("kind") or not payload.get("content"):
+            return "Error: idle_memory requires kind and content."
+        return None
     return "Error: unknown table."
 
 
@@ -603,6 +621,19 @@ def manage_state(
                         "INSERT INTO interests (name, description, status, url, created_at) VALUES (?, ?, ?, ?, ?)",
                         (name, description, status, url, now),
                     )
+                elif table == "idle_memory":
+                    kind = str(payload.get("kind", "")).strip().lower()
+                    if kind not in ("journal", "finding", "decision"):
+                        return "Error: idle_memory kind must be journal, finding, or decision."
+                    subject = str(payload.get("subject", "")).strip()[:200]
+                    mem_content = str(payload.get("content", "")).strip()
+                    status = str(payload.get("status", "open")).strip().lower() or "open"
+                    if status not in ("open", "done"):
+                        status = "open"
+                    c.execute(
+                        "INSERT INTO idle_memory (kind, subject, content, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                        (kind, subject, mem_content, status, now, now),
+                    )
                 else:  # audit_log
                     tool_name = str(payload.get("tool_name", "")).strip() or "unknown"
                     args_summary = str(payload.get("args_summary", "")).strip()[:500]
@@ -662,6 +693,24 @@ def manage_state(
                         "SELECT id, name, description, status, url, created_at FROM interests ORDER BY id DESC LIMIT ?",
                         (limit,),
                     )
+                elif table == "idle_memory":
+                    where = []
+                    params_m: list[Any] = []
+                    if payload.get("kind"):
+                        where.append("kind = ?")
+                        params_m.append(str(payload["kind"]).strip().lower())
+                    if payload.get("status"):
+                        where.append("status = ?")
+                        params_m.append(str(payload["status"]).strip().lower())
+                    if payload.get("subject"):
+                        where.append("subject = ?")
+                        params_m.append(str(payload["subject"]).strip())
+                    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+                    params_m.append(limit)
+                    c.execute(
+                        f"SELECT id, kind, subject, content, status, created_at, updated_at FROM idle_memory{where_sql} ORDER BY id DESC LIMIT ?",
+                        params_m,
+                    )
                 else:  # audit_log
                     c.execute(
                         "SELECT id, tool_name, args_summary, created_at FROM audit_log ORDER BY id DESC LIMIT ?",
@@ -711,6 +760,7 @@ def manage_state(
                     else {"completed", "scheduled_at", "content", "owner", "source"} if table == "user_tasks"
                     else {"amount", "category", "memo", "date"} if table == "finances"
                     else {"name", "description", "status", "url"} if table == "interests"
+                    else {"kind", "subject", "content", "status"} if table == "idle_memory"
                     else set()
                 )
                 if not allowed_cols:
@@ -730,6 +780,9 @@ def manage_state(
                             params.append(v)
                 if not sets:
                     return "Error: no updatable fields in payload."
+                if table == "idle_memory":
+                    sets.append("updated_at = ?")
+                    params.append(now)
                 params.append(row_id)
                 c.execute(f"UPDATE {table} SET {', '.join(sets)} WHERE id = ?", params)
                 return f"Updated {table} id={row_id}."
