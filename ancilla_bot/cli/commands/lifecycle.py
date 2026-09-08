@@ -114,6 +114,12 @@ def _start_core(*, quiet_already: bool = False) -> int:
         process.stop_process(CORE)
 
     print("Starting Ancilla Core...")
+    if not process.reclaim_listen_port(health.api_bind_port()):
+        return ux.fail(
+            "API port is already in use.",
+            cause=f"port={health.api_bind_port()}",
+            next_cmds=["ancilla status", "ancilla stop", "ancilla doctor"],
+        )
     try:
         pid = process.spawn_worker(CORE)
     except OSError as e:

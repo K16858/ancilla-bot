@@ -76,6 +76,51 @@ def any_managed_running() -> list[str]:
     return [n for n in MANAGED_NAMES if is_running(n)]
 
 
+def pid_listening_on_port(port: int) -> int | None:
+    try:
+        conns = psutil.net_connections(kind="inet")
+    except psutil.Error:
+        return None
+    for conn in conns:
+        if not conn.laddr or conn.pid is None:
+            continue
+        if conn.status != psutil.CONN_LISTEN:
+            continue
+        if int(conn.laddr.port) != int(port):
+            continue
+        return int(conn.pid)
+    return None
+
+
+def reclaim_listen_port(port: int) -> bool:
+    """ポートを Listen しているのが Ancilla なら止めて True。空きも True。他プロセスなら False。"""
+    for name in MANAGED_NAMES:
+        get_running_pid(name)
+    pid = pid_listening_on_port(port)
+    if pid is None:
+        return True
+    try:
+        proc = psutil.Process(pid)
+    except psutil.Error:
+        return True
+    if not _is_ancilla_process(proc):
+        return False
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except (psutil.Error, psutil.TimeoutExpired):
+        pass
+    if proc.is_running():
+        try:
+            proc.kill()
+        except psutil.Error:
+            pass
+    for name in MANAGED_NAMES:
+        if read_pid(name) == pid:
+            clear_pid(name)
+    return pid_listening_on_port(port) is None
+
+
 def spawn_worker(name: str, *, extra_args: list[str] | None = None) -> int:
     """`ancilla _worker <name>` をデタッチ起動し PID を返す。"""
     if name not in MANAGED_NAMES:
