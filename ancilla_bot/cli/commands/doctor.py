@@ -7,7 +7,7 @@ import shutil
 import sys
 
 from ancilla_bot.cli import envfile, health, process
-from ancilla_bot.cli.paths import get_root
+from ancilla_bot.cli.paths import get_root, get_workspace
 
 
 def cmd_doctor(_args: argparse.Namespace) -> int:
@@ -36,7 +36,7 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
     env_p = envfile.env_path(root)
     check(".env", env_p.is_file(), str(env_p) if env_p.is_file() else "missing", next_cmd="ancilla install core")
 
-    ws = root / "workspace"
+    ws = get_workspace()
     writable = False
     try:
         ws.mkdir(parents=True, exist_ok=True)

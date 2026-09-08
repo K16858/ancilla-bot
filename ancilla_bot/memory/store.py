@@ -9,13 +9,13 @@ import yaml
 
 from ancilla_bot.personal_model import DEFAULT_PATH as PERSONAL_MODEL_PATH
 from ancilla_bot.personal_model import _default_model
-from ancilla_bot.tools.workspace_io import WORKSPACE_ROOT
+from ancilla_bot.tools.workspace_io import get_workspace_root
 
 _USER_MD_HEADER = "# ユーザーについて\n"
 
 
 def _user_md_path() -> Path:
-    return Path(WORKSPACE_ROOT) / "USER.md"
+    return get_workspace_root() / "USER.md"
 
 
 def memories_to_user_md(rows: list[dict[str, Any]]) -> str:

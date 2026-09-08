@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from ancilla_bot.cli import envfile, ux
-from ancilla_bot.cli.paths import ensure_runtime_dirs, get_root
+from ancilla_bot.cli.paths import ensure_runtime_dirs, ensure_workspace, get_root
 
 
 def cmd_install(args: argparse.Namespace) -> int:
@@ -24,8 +24,7 @@ def cmd_install(args: argparse.Namespace) -> int:
 def _install_core() -> int:
     root = get_root()
     ensure_runtime_dirs(root)
-    workspace = root / "workspace"
-    workspace.mkdir(parents=True, exist_ok=True)
+    workspace = ensure_workspace(root)
     conv = root / "data" / "conversation"
     conv.mkdir(parents=True, exist_ok=True)
     (root / "data" / "vector_store").mkdir(parents=True, exist_ok=True)

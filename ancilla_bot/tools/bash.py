@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import subprocess
 
-from ancilla_bot.tools.workspace_io import WORKSPACE_ROOT
+from ancilla_bot.tools.workspace_io import get_workspace_root
 
 DEFAULT_TIMEOUT_SEC = 60
 MAX_TIMEOUT_SEC = 300
@@ -118,7 +118,7 @@ def bash(
         return denied
 
     timeout_sec = min(max(int(timeout_sec), 1), MAX_TIMEOUT_SEC)
-    cwd = str(WORKSPACE_ROOT.resolve())
+    cwd = str(get_workspace_root().resolve())
 
     try:
         if SANDBOX_MODE == "docker":
