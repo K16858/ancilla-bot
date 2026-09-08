@@ -9,7 +9,7 @@ from typing import Any, Callable, Final
 from loguru import logger
 
 from ancilla_bot.api.ws_server import take_staged_vlm_images
-from ancilla_bot.core.cancel import is_cancelled, reset_cancel
+from ancilla_bot.core.cancel import is_cancelled, is_suspended, reset_cancel
 from ancilla_bot.core.reflection import verify_answer
 from ancilla_bot.core.run_context import run_source
 from ancilla_bot.heartbeat.db import (
@@ -42,6 +42,7 @@ NATIVE_RETRY_USER_MESSAGE: Final[str] = (
 NATIVE_MISSING_ACTION_MESSAGE: Final[str] = (
     "Call a tool, or call finish with your user-facing message."
 )
+SUSPENDED_REPLY: Final[str] = "処理を中断し、後で再開します。"
 
 SUMMARY_MAX_LEN = 200
 
@@ -216,6 +217,13 @@ def _run_agent_loop_with_tools(
             write_event(run_id, "run_cancelled", turn_index=turn)
             update_agent_run_status(run_id, "cancelled")
             return "処理をキャンセルしました。", None
+        if is_suspended():
+            write_event(run_id, "run_suspended", turn_index=turn)
+            update_agent_run_status(run_id, "suspended")
+            from ancilla_bot.core.execution import get_runtime
+
+            get_runtime().note_suspended(run_id)
+            return SUSPENDED_REPLY, None
         logger.debug("ReAct turn {} messages={}", turn + 1, messages)
         send_images: list[str] | None = None
         if turn == 0 and images:
@@ -386,6 +394,9 @@ def _run_agent_loop_with_tools(
                 _turns_since_manage_state = 0
             if on_turn is not None:
                 on_turn(parsed_result.thought, parsed_result.action, args, observation)
+            from ancilla_bot.core.execution import get_runtime
+
+            get_runtime().note_tool()
             if is_native_tool_mode() and parsed_result.assistant_message:
                 messages.append(parsed_result.assistant_message)
                 messages.append(_build_native_tool_message(parsed_result.assistant_message, tool_content))

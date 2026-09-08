@@ -18,8 +18,9 @@ import httpx
 from dotenv import load_dotenv
 from loguru import logger
 
-from ancilla_bot.core.agent_loop import is_exit_command, run_agent_loop_with_tools
+from ancilla_bot.core.agent_loop import SUSPENDED_REPLY, is_exit_command, run_agent_loop_with_tools
 from ancilla_bot.core.cancel import reset_cancel, request_cancel
+from ancilla_bot.core.execution import FIRST_REPLY_SEC, AgentRuntime, get_runtime
 from ancilla_bot.llm import send_chat
 from ancilla_bot.llm.context_window import resolve_max_history_chars
 from ancilla_bot.llm.ollama_client import VISION_ENABLED
@@ -82,6 +83,8 @@ _AGENT_ERROR_PREFIXES: Final[tuple[str, ...]] = (
 def _is_agent_success(response: str) -> bool:
     """エージェント応答が有効（エラーでない）かどうか判定する。"""
     if not response or len(response) < 5:
+        return False
+    if response.strip() == SUSPENDED_REPLY:
         return False
     for prefix in _AGENT_ERROR_PREFIXES:
         if response.startswith(prefix):
@@ -152,7 +155,7 @@ def _parse_heartbeat_time(s: str) -> tuple[int, int]:
         return (3, 0)
 
 
-def _slow_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
+def _slow_heartbeat_loop(runtime: AgentRuntime, stop: threading.Event) -> None:
     """1分ごとに時刻を確認し、設定時刻かつ未実行なら run_summarize を実行。"""
     hour_target, minute_target = _parse_heartbeat_time(HEARTBEAT_TIME_STR)
     last_run_path = Path(os.getenv("ANCILLA_CONVERSATION_DIR", str(DEFAULT_CONVERSATION_DIR))) / "heartbeat_last_run.txt"
@@ -174,7 +177,7 @@ def _slow_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 if is_edge_session():
                     stop.wait(HEARTBEAT_INTERVAL_SEC)
                     continue
-                if lock.acquire(blocking=False):
+                if runtime.try_begin("maintenance"):
                     try:
                         from ancilla_bot.batch.summarize import run_summarize
 
@@ -185,7 +188,7 @@ def _slow_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                     except Exception as e:
                         logger.warning("run_summarize failed: {}", e)
                     finally:
-                        lock.release()
+                        runtime.end()
         except Exception as e:
             logger.warning("loop error: {}", e)
         stop.wait(HEARTBEAT_INTERVAL_SEC)
@@ -242,7 +245,7 @@ def _load_proactive_rules() -> list[dict[str, Any]]:
     return [r for r in rules if isinstance(r, dict)]
 
 
-def _maybe_run_proactive(snapshot: dict[str, Any], lock: threading.Lock) -> None:
+def _maybe_run_proactive(snapshot: dict[str, Any], runtime: AgentRuntime) -> None:
     global _last_proactive_dt
     from ancilla_bot.personal_model import load as load_personal_model
     from ancilla_bot.proactive import can_interrupt, evaluate
@@ -258,7 +261,7 @@ def _maybe_run_proactive(snapshot: dict[str, Any], lock: threading.Lock) -> None
     action = evaluate(snapshot, load_personal_model(), rules, last_interaction)
     if action is None or not can_interrupt(action, _last_proactive_dt):
         return
-    if not lock.acquire(blocking=False):
+    if not runtime.try_begin("autonomous"):
         return
     try:
         pseudo = f"[SYSTEM_EVENT:PROACTIVE:{action.trigger}] {action.content}"
@@ -279,10 +282,10 @@ def _maybe_run_proactive(snapshot: dict[str, Any], lock: threading.Lock) -> None
     except Exception as e:
         logger.warning("proactive run failed: {}", e)
     finally:
-        lock.release()
+        runtime.end()
 
 
-def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
+def _fast_heartbeat_loop(runtime: AgentRuntime, stop: threading.Event) -> None:
     """該当タスク・リマインダーがあれば擬似メッセージを ReAct に投入"""
     while not stop.is_set():
         try:
@@ -301,13 +304,13 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                     logger.debug("ambient snapshot keys={}", list(snapshot.keys()))
                     threading.Thread(
                         target=_maybe_run_proactive,
-                        args=(snapshot, lock),
+                        args=(snapshot, runtime),
                         daemon=True,
                         name="proactive",
                     ).start()
                 stop.wait(HEARTBEAT_INTERVAL_SEC)
                 continue
-            if not lock.acquire(blocking=False):
+            if not runtime.try_begin("autonomous"):
                 stop.wait(HEARTBEAT_INTERVAL_SEC)
                 continue
             try:
@@ -362,7 +365,7 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
             except Exception as e:
                 logger.warning("fast heartbeat run failed: {}", e)
             finally:
-                lock.release()
+                runtime.end()
         except Exception as e:
             logger.warning("fast heartbeat loop error: {}", e)
         stop.wait(HEARTBEAT_INTERVAL_SEC)
@@ -463,7 +466,7 @@ def _build_idle_reflection_message(idle_min: int = 0) -> str:
     )
 
 
-def _idle_reflection_loop(lock: threading.Lock, stop: threading.Event) -> None:
+def _idle_reflection_loop(runtime: AgentRuntime, stop: threading.Event) -> None:
     """
     アイドル時間を監視し、閾値を超えたら Idle Reflection を実行する。
     ANCILLA_IDLE_THRESHOLD_MIN（デフォルト30分）以上入力がなく、
@@ -484,7 +487,7 @@ def _idle_reflection_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 continue
             if since_last < IDLE_COOLDOWN_SEC:
                 continue
-            if not lock.acquire(blocking=False):
+            if not runtime.try_begin("autonomous"):
                 continue
             try:
                 idle_min = int(idle_sec / 60)
@@ -505,7 +508,7 @@ def _idle_reflection_loop(lock: threading.Lock, stop: threading.Event) -> None:
             except Exception as e:
                 logger.warning("idle reflection failed: {}", e)
             finally:
-                lock.release()
+                runtime.end()
         except Exception as e:
             logger.warning("idle reflection loop error: {}", e)
 
@@ -513,7 +516,7 @@ def _idle_reflection_loop(lock: threading.Lock, stop: threading.Event) -> None:
 def _handle_message(
     user_input: str,
     conversation_history: list[dict[str, str]],
-    agent_lock: threading.Lock | None,
+    agent_runtime: AgentRuntime | None,
     max_chars: int,
     on_turn: Any,
     images: list[str] | None = None,
@@ -530,40 +533,60 @@ def _handle_message(
     if not (user_input or "").strip() and not images:
         return "メッセージが空です。"
 
-    if agent_lock is not None and not agent_lock.acquire(blocking=False):
+    runtime = agent_runtime or get_runtime()
+    if runtime.current_kind() == "interactive":
         PENDING_MESSAGES.append(
             {"input": user_input, "images": images, "source": source or "unknown"}
         )
-        return "バックグラウンド処理中です。しばらくお待ちください。"
-    try:
-        result = _process_message_core(
-            user_input,
-            conversation_history,
-            max_chars=max_chars,
-            on_turn=on_turn,
-            images=images,
-            source=source or "unknown",
-            parent_run_id=parent_run_id,
-        )
-        if agent_lock is not None:
+        return "いま別の会話を処理しています。しばらくお待ちください。"
+
+    runtime.preempt_for_interactive()
+    detach = (source or "") in ("api", "mcp")
+    result_holder: list[str] = []
+
+    def work() -> None:
+        try:
+            result = _process_message_core(
+                user_input,
+                conversation_history,
+                max_chars=max_chars,
+                on_turn=on_turn,
+                images=images,
+                source=source or "unknown",
+                parent_run_id=parent_run_id,
+            )
+            result_holder.append(result)
+            runtime.offer_first_reply(result)
+            if runtime._returned_early and (result or "").strip():
+                append_notification(
+                    result.strip(),
+                    source="system",
+                    level="info",
+                    detail="final",
+                )
+        finally:
+            runtime.end()
             threading.Thread(
                 target=_run_compress_with_lock,
-                args=(conversation_history, max_chars, agent_lock),
+                args=(conversation_history, max_chars, runtime),
                 daemon=True,
                 name="compress",
             ).start()
             threading.Thread(
                 target=_run_summarize_with_lock,
-                args=(agent_lock,),
+                args=(runtime,),
                 daemon=True,
                 name="summarize",
             ).start()
-        else:
-            _run_compress_loop(conversation_history, max_chars)
-        return result
-    finally:
-        if agent_lock is not None:
-            agent_lock.release()
+
+    if detach:
+        t = threading.Thread(target=work, daemon=True, name="interactive")
+        t.start()
+        text = runtime.wait_first_reply(FIRST_REPLY_SEC)
+        return text or (result_holder[0] if result_holder else "作業を開始しました。")
+
+    work()
+    return result_holder[0] if result_holder else ""
 
 
 def _process_message_core(
@@ -609,35 +632,35 @@ def _run_compress_loop(history: list[dict[str, str]], max_chars: int) -> None:
 
 
 def _run_compress_with_lock(
-    history: list[dict[str, str]], max_chars: int, lock: threading.Lock
+    history: list[dict[str, str]], max_chars: int, runtime: AgentRuntime
 ) -> None:
-    """agent_lock を取得してから _run_compress_loop を実行する（バックグラウンド用）。"""
-    lock.acquire()
+    """maintenance として圧縮する。"""
+    runtime.begin("maintenance")
     try:
         _run_compress_loop(history, max_chars)
     finally:
-        lock.release()
+        runtime.end()
 
 
-def _run_summarize_with_lock(lock: threading.Lock) -> None:
+def _run_summarize_with_lock(runtime: AgentRuntime) -> None:
     """overflow が十分たまったらバッチ要約を実行する（バックグラウンド用）。"""
     from ancilla_bot.batch.summarize import TURNS_PER_BLOCK, run_summarize
 
     if len(load_overflow()) < 2 * TURNS_PER_BLOCK:
         return
-    lock.acquire()
+    runtime.begin("maintenance")
     try:
         run_summarize()
     except Exception as e:
         logger.warning("batch summarize failed: {}", e)
     finally:
-        lock.release()
+        runtime.end()
 
 
 def _run_repl(
     args: argparse.Namespace,
     *,
-    agent_lock: threading.Lock | None = None,
+    agent_runtime: AgentRuntime | None = None,
     conversation_history: list[dict[str, str]] | None = None,
 ) -> None:
     level = "DEBUG" if args.verbose else os.getenv("ANCILLA_LOG_LEVEL", "INFO")
@@ -650,40 +673,22 @@ def _run_repl(
 
     try:
         while True:
-            # まずキューに溜まったメッセージを処理する（REPL 起動中のみ）
             while PENDING_MESSAGES:
                 pending = PENDING_MESSAGES.pop(0)
                 pending_input = (pending.get("input") or "").strip()
                 pending_images = pending.get("images")
                 if not pending_input and not pending_images:
                     continue
-                # Lock があれば取得してから処理する
-                if agent_lock is not None and not agent_lock.acquire(blocking=False):
-                    # まだ処理できないので先頭に戻して後回し
-                    PENDING_MESSAGES.insert(0, pending)
-                    break
-                try:
-                    response = _process_message_core(
-                        pending_input,
-                        history,
-                        max_chars=MAX_HISTORY_CHARS,
-                        on_turn=on_turn,
-                        images=pending_images,
-                        source=str(pending.get("source") or "queued"),
-                    )
-                    if agent_lock is not None:
-                        threading.Thread(
-                            target=_run_compress_with_lock,
-                            args=(history, MAX_HISTORY_CHARS, agent_lock),
-                            daemon=True,
-                            name="compress",
-                        ).start()
-                    else:
-                        _run_compress_loop(history, MAX_HISTORY_CHARS)
-                    print(f"Ancilla (queued): {response}")
-                finally:
-                    if agent_lock is not None and agent_lock.locked():
-                        agent_lock.release()
+                response = _handle_message(
+                    pending_input,
+                    history,
+                    agent_runtime,
+                    MAX_HISTORY_CHARS,
+                    on_turn,
+                    pending_images,
+                    source=str(pending.get("source") or "queued"),
+                )
+                print(f"Ancilla (queued): {response}")
 
             try:
                 user_input = input("Ancilla CLI > ")
@@ -698,7 +703,7 @@ def _run_repl(
             response = _handle_message(
                 user_input,
                 history,
-                agent_lock,
+                agent_runtime,
                 MAX_HISTORY_CHARS,
                 on_turn,
                 source="repl",
@@ -882,13 +887,35 @@ def _run_mcp_stdio(args: argparse.Namespace) -> None:
 
 def _run_resident(args: argparse.Namespace) -> None:
     global _shared_history
-    agent_lock = threading.Lock()
+    runtime = get_runtime()
     stop = threading.Event()
     conversation_history = load_active_history()
     _shared_history = conversation_history  # 全スレッドで共有
     from ancilla_bot.memory.store import maybe_import_user_md
 
     maybe_import_user_md()
+
+    def _resume_suspended(run_id: str) -> None:
+        run = get_agent_run(run_id)
+        if run is None:
+            return
+        history = _shared_history if _shared_history is not None else load_active_history()
+        runtime.begin("autonomous")
+        try:
+            prompt = _build_resume_prompt(run, list_agent_run_steps(run_id))
+            run_agent_loop_with_tools(
+                prompt,
+                history,
+                on_turn=None,
+                source=str(run.get("source") or "resume"),
+                parent_run_id=run_id,
+            )
+        except Exception as e:
+            logger.warning("resume failed run_id={}: {}", run_id, e)
+        finally:
+            runtime.end()
+
+    runtime.set_resume_handler(_resume_suspended)
     api_host = os.getenv("ANCILLA_API_BIND_HOST") or os.getenv("ANCILLA_API_HOST", "127.0.0.1")
     api_host = api_host.strip() or "127.0.0.1"
     api_port = int(os.getenv("ANCILLA_API_PORT", "8765"))
@@ -897,7 +924,7 @@ def _run_resident(args: argparse.Namespace) -> None:
         return _handle_message(
             msg,
             conversation_history,
-            agent_lock,
+            runtime,
             MAX_HISTORY_CHARS,
             None,
             images=imgs,
@@ -924,7 +951,7 @@ def _run_resident(args: argparse.Namespace) -> None:
 
     mcp_http_thread = threading.Thread(
         target=run_http,
-        kwargs={"host": mcp_http_host, "port": mcp_http_port, "agent_lock": agent_lock},
+        kwargs={"host": mcp_http_host, "port": mcp_http_port},
         daemon=True,
         name="mcp-http",
     )
@@ -941,8 +968,7 @@ def _run_resident(args: argparse.Namespace) -> None:
         _last_user_input_time = time.time()
 
         conv_history: list[dict[str, str]] = history if history is not None else []
-        if agent_lock is not None and not agent_lock.acquire(blocking=False):
-            return "バックグラウンド処理中です。しばらくお待ちください。", None
+        runtime.preempt_for_interactive()
         try:
             answer, emotion = run_agent_loop_with_tools(
                 text,
@@ -963,16 +989,14 @@ def _run_resident(args: argparse.Namespace) -> None:
             if dropped:
                 append_overflow(dropped)
             save_active_history(conversation_history)
-            # compress は別スレッドで（ロックは既に保持中なので直接実行）
             _run_compress_loop(conversation_history, MAX_HISTORY_CHARS)
             return answer, emotion
         finally:
-            if agent_lock is not None:
-                agent_lock.release()
+            runtime.end()
 
     def _run_observe_ws(image_b64: str, history: list[dict[str, str]] | None = None) -> str | None:
         """エージェント自律観察: 画像を見て短いコメントを生成する（ReAct なし）。"""
-        if agent_lock is not None and not agent_lock.acquire(blocking=False):
+        if not runtime.try_begin("maintenance"):
             return None
         try:
             system_prompt = build_character_prompt()
@@ -986,8 +1010,7 @@ def _run_resident(args: argparse.Namespace) -> None:
             logger.warning("observe ws error: {}", exc)
             return None
         finally:
-            if agent_lock is not None:
-                agent_lock.release()
+            runtime.end()
 
     obs_cfg = ObservationConfig(
         enabled=os.getenv("ANCILLA_OBS_ENABLED", "true").strip().lower() in ("1", "true", "yes"),
@@ -1012,19 +1035,19 @@ def _run_resident(args: argparse.Namespace) -> None:
 
     slow_thread = threading.Thread(
         target=_slow_heartbeat_loop,
-        args=(agent_lock, stop),
+        args=(runtime, stop),
         daemon=True,
         name="slow_heartbeat",
     )
     fast_thread = threading.Thread(
         target=_fast_heartbeat_loop,
-        args=(agent_lock, stop),
+        args=(runtime, stop),
         daemon=True,
         name="fast_heartbeat",
     )
     idle_thread = threading.Thread(
         target=_idle_reflection_loop,
-        args=(agent_lock, stop),
+        args=(runtime, stop),
         daemon=True,
         name="idle_reflection",
     )
@@ -1049,7 +1072,7 @@ def _run_resident(args: argparse.Namespace) -> None:
             while not stop.wait(1):
                 pass
         else:
-            _run_repl(args, agent_lock=agent_lock, conversation_history=conversation_history)
+            _run_repl(args, agent_runtime=runtime, conversation_history=conversation_history)
     finally:
         signal.signal(signal.SIGTERM, previous_sigterm)
         save_active_history(conversation_history)
