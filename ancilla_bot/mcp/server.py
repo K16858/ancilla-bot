@@ -5,12 +5,14 @@ Ancilla を MCP Server として公開する。外部には ask_ancilla のみ�
 from __future__ import annotations
 
 import threading
+
 from loguru import logger
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS
 
 from ancilla_bot.core.agent_loop import run_agent_loop_with_tools
+from ancilla_bot.core.execution import get_runtime
 from ancilla_bot.llm.context_window import resolve_max_history_chars
 from ancilla_bot.memory.short_term import append_and_trim
 
@@ -47,10 +49,7 @@ class _AncillaMCPServer(MCPServer):
         return await super().call_tool(name, arguments, context)
 
 
-def create_ancilla_mcp_server(
-    *,
-    agent_lock: threading.Lock | None = None,
-) -> MCPServer:
+def create_ancilla_mcp_server() -> MCPServer:
     histories: dict[str, list[dict[str, str]]] = {}
     hist_lock = threading.Lock()
     server = _AncillaMCPServer(
@@ -71,8 +70,8 @@ def create_ancilla_mcp_server(
         key = _session_key(ctx)
         with hist_lock:
             history = histories.setdefault(key, [])
-        if agent_lock is not None and not agent_lock.acquire(blocking=False):
-            return "バックグラウンド処理中です。しばらくお待ちください。"
+        runtime = get_runtime()
+        runtime.preempt_for_interactive()
         try:
             answer, _emotion = run_agent_loop_with_tools(
                 text,
@@ -89,8 +88,7 @@ def create_ancilla_mcp_server(
             )
             return answer
         finally:
-            if agent_lock is not None:
-                agent_lock.release()
+            runtime.end()
 
     handlers = server._lowlevel_server._request_handlers
     for method in _NON_TOOL_METHODS:
@@ -98,18 +96,17 @@ def create_ancilla_mcp_server(
     return server
 
 
-def run_stdio(agent_lock: threading.Lock | None = None) -> None:
-    create_ancilla_mcp_server(agent_lock=agent_lock).run(transport="stdio")
+def run_stdio() -> None:
+    create_ancilla_mcp_server().run(transport="stdio")
 
 
 def run_http(
     *,
     host: str = "127.0.0.1",
     port: int = 8767,
-    agent_lock: threading.Lock | None = None,
 ) -> None:
     logger.info("MCP HTTP http://{}:{}/mcp", host, port)
-    create_ancilla_mcp_server(agent_lock=agent_lock).run(
+    create_ancilla_mcp_server().run(
         transport="streamable-http",
         host=host,
         port=port,
