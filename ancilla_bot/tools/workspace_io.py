@@ -5,6 +5,8 @@ workspace 内のファイル読み書き。パスは workspace 以下に制限�
 from __future__ import annotations
 
 import os
+import shutil
+from datetime import datetime
 from pathlib import Path
 
 from ancilla_bot.cli.paths import get_workspace
@@ -242,3 +244,90 @@ def write_file(path: str, content: str, **kwargs: object) -> str:
         return f"書き込み完了: {path}"
     except OSError as e:
         return f"Error: 書き込みに失敗しました: {e}"
+
+
+def trash_file(path: str, **kwargs: object) -> str:
+    _ = kwargs
+    resolved = _resolve(path)
+    if resolved is None:
+        return "Error: パスは workspace 以下のみ許可されています。"
+    if _is_user_md(resolved):
+        return "Error: USER.md is a projection. Use manage_state table=memories."
+    root = get_workspace_root().resolve()
+    trash = (root / ".trash").resolve()
+    try:
+        resolved.relative_to(trash)
+        return "Error: 既に .trash 内です。"
+    except ValueError:
+        pass
+    if not resolved.exists():
+        return f"Error: パスが存在しません: {path}"
+    trash.mkdir(parents=True, exist_ok=True)
+    dest = trash / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}_{resolved.name}"
+    n = 1
+    while dest.exists():
+        dest = trash / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}_{n}_{resolved.name}"
+        n += 1
+    try:
+        shutil.move(str(resolved), str(dest))
+    except OSError as e:
+        return f"Error: 移動に失敗しました: {e}"
+    rel = dest.relative_to(root)
+    return f"Moved to {rel}"
+
+
+def move_file(src: str, dest: str, **kwargs: object) -> str:
+    _ = kwargs
+    src_p = _resolve(src)
+    dest_p = _resolve(dest)
+    if src_p is None or dest_p is None:
+        return "Error: パスは workspace 以下のみ許可されています。"
+    if _is_user_md(src_p) or _is_user_md(dest_p):
+        return "Error: USER.md is a projection. Use manage_state table=memories."
+    if not src_p.exists():
+        return f"Error: パスが存在しません: {src}"
+    if dest_p.exists():
+        return f"Error: 移動先が既に存在します: {dest}"
+    try:
+        dest_p.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src_p), str(dest_p))
+    except OSError as e:
+        return f"Error: 移動に失敗しました: {e}"
+    return f"Moved {src} -> {dest}"
+
+
+def workspace_inventory(
+    path: str = "",
+    max_entries: int = 200,
+    **kwargs: object,
+) -> str:
+    _ = kwargs
+    path_str = path.strip() or "."
+    resolved = _resolve(path_str)
+    if resolved is None:
+        return "Error: パスは workspace 以下のみ許可されています。"
+    if not resolved.exists():
+        return f"Error: パスが存在しません: {path_str}"
+    root = get_workspace_root().resolve()
+    limit = min(max(max_entries, 1), MAX_LIST_ENTRIES_LIMIT)
+    lines: list[str] = []
+    try:
+        if resolved.is_file():
+            rel = resolved.relative_to(root)
+            size = resolved.stat().st_size
+            return f"{rel}\t{size}"
+        for child in sorted(resolved.rglob("*"), key=lambda p: str(p).lower()):
+            if len(lines) >= limit:
+                lines.append(f"... truncated at {limit}")
+                break
+            try:
+                rel = child.relative_to(root)
+                if child.is_dir():
+                    lines.append(f"{rel}/")
+                else:
+                    lines.append(f"{rel}\t{child.stat().st_size}")
+            except (OSError, ValueError):
+                continue
+    except OSError as e:
+        return f"Error: 一覧に失敗しました: {e}"
+    return "\n".join(lines) if lines else "(空)"

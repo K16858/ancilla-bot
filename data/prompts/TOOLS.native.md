@@ -14,6 +14,9 @@ Use the tool names exactly as listed. Tool parameters are defined by the API; ca
 - read_file: Read a file inside workspace.
 - write_file: Overwrite a file inside workspace. Use edit_file_safe for partial edits.
 - edit_file_safe: Append or partially replace a file (no full overwrite).
+- trash_file: Move a workspace path into .trash/.
+- move_file: Move a file or directory inside workspace.
+- workspace_inventory: List workspace paths with sizes.
 - bash: Run a shell command with workspace as the working directory.
 - load_skill: Load a skill's instructions by name. Provide the skill name from the catalog.
 
