@@ -318,8 +318,9 @@ def _get_due_from_table(table: str, *, at: datetime | None = None) -> list[dict[
                 (ts,),
             )
         else:
+            extra = ", owner, source, kind" if table == "reminders" else ", owner, source"
             cur = conn.execute(
-                f"SELECT id, scheduled_at, content, completed, created_at FROM {table} "
+                f"SELECT id, scheduled_at, content, completed, created_at{extra} FROM {table} "
                 "WHERE datetime(scheduled_at) <= datetime(?) AND completed = 0 ORDER BY scheduled_at ASC",
                 (ts,),
             )
@@ -341,12 +342,15 @@ def get_due_tasks(*, at: datetime | None = None) -> list[dict[str, Any]]:
     return tasks
 
 
-def get_due_reminders(*, at: datetime | None = None) -> list[dict[str, Any]]:
+def get_due_reminders(*, at: datetime | None = None, kind: str | None = None) -> list[dict[str, Any]]:
     """
     実行予定時刻 <= at かつ未完了の reminders を返す。
-    at 省略時は現在時刻。
+    kind を指定するとその kind だけ。
     """
-    return _get_due_from_table("reminders", at=at)
+    rows = _get_due_from_table("reminders", at=at)
+    if kind is None:
+        return rows
+    return [r for r in rows if str(r.get("kind") or "user_reminder") == kind]
 
 
 def has_due_work(*, at: datetime | None = None) -> bool:

@@ -219,6 +219,18 @@ def _build_fast_heartbeat_message(
     return "\n".join(parts)
 
 
+def _build_agent_wakeup_message(wakeups: list) -> str:
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    parts = [
+        f"[SYSTEM_EVENT: AGENT_WAKEUP] 現在時刻は{now_str}です。",
+        "これらは Ancilla 自身の再開予約です。ユーザーへの行動要求やリマインド通知はしないでください。",
+    ]
+    for r in wakeups:
+        parts.append(f"wakeup #{r['id']}: {r['content']}（予定: {r['scheduled_at']}）")
+    parts.append("作業を再開し、完了したら当該 wakeup を completed にしてください。")
+    return "\n".join(parts)
+
+
 def _load_proactive_rules() -> list[dict[str, Any]]:
     import yaml
 
@@ -300,39 +312,53 @@ def _fast_heartbeat_loop(lock: threading.Lock, stop: threading.Event) -> None:
                 continue
             try:
                 tasks = get_due_tasks(at=now)
-                reminders = get_due_reminders(at=now)
-                if not date_changed and not tasks and not reminders:
+                reminders = get_due_reminders(at=now, kind="user_reminder")
+                wakeups = get_due_reminders(at=now, kind="agent_wakeup")
+                if not date_changed and not tasks and not reminders and not wakeups:
                     continue
-                pseudo = _build_fast_heartbeat_message(
-                    tasks,
-                    reminders,
-                    date_changed=date_changed,
-                    today=today,
-                )
                 history = _shared_history if _shared_history is not None else load_active_history()
-                response, _emotion = run_agent_loop_with_tools(
-                    pseudo, history, on_turn=None, source="heartbeat"
-                )
-                if _is_agent_success(response):
-                    user_ids = [t["id"] for t in tasks if t.get("_table") == "user_tasks"]
-                    agent_ids = [t["id"] for t in tasks if t.get("_table") == "agent_tasks"]
-                    mark_user_tasks_completed(user_ids)
-                    mark_agent_tasks_completed(agent_ids)
-                    mark_reminders_completed([r["id"] for r in reminders])
-                    if response.strip():
-                        append_notification(
-                            response.strip(),
-                            source="system",
-                            level="info",
-                            detail=f"tasks={len(tasks)}, reminders={len(reminders)}",
-                        )
-                    # SYSTEM_EVENT 往復は共有履歴/overflow に残さない
-                    logger.info("fast heartbeat: processed {} tasks, {} reminders", len(tasks), len(reminders))
-                else:
-                    logger.warning(
-                        "fast heartbeat: agent response looks like an error, NOT marking completed. response={!r}",
-                        response[:120],
+                if date_changed or tasks or reminders:
+                    pseudo = _build_fast_heartbeat_message(
+                        tasks,
+                        reminders,
+                        date_changed=date_changed,
+                        today=today,
                     )
+                    response, _emotion = run_agent_loop_with_tools(
+                        pseudo, history, on_turn=None, source="heartbeat"
+                    )
+                    if _is_agent_success(response):
+                        user_ids = [t["id"] for t in tasks if t.get("_table") == "user_tasks"]
+                        agent_ids = [t["id"] for t in tasks if t.get("_table") == "agent_tasks"]
+                        mark_user_tasks_completed(user_ids)
+                        mark_agent_tasks_completed(agent_ids)
+                        mark_reminders_completed([r["id"] for r in reminders])
+                        if response.strip():
+                            append_notification(
+                                response.strip(),
+                                source="system",
+                                level="info",
+                                detail=f"tasks={len(tasks)}, reminders={len(reminders)}",
+                            )
+                        logger.info("fast heartbeat: processed {} tasks, {} reminders", len(tasks), len(reminders))
+                    else:
+                        logger.warning(
+                            "fast heartbeat: agent response looks like an error, NOT marking completed. response={!r}",
+                            response[:120],
+                        )
+                if wakeups:
+                    pseudo = _build_agent_wakeup_message(wakeups)
+                    response, _emotion = run_agent_loop_with_tools(
+                        pseudo, history, on_turn=None, source="heartbeat"
+                    )
+                    if _is_agent_success(response):
+                        mark_reminders_completed([r["id"] for r in wakeups])
+                        logger.info("agent wakeup: processed {}", len(wakeups))
+                    else:
+                        logger.warning(
+                            "agent wakeup: agent response looks like an error, NOT marking completed. response={!r}",
+                            response[:120],
+                        )
             except Exception as e:
                 logger.warning("fast heartbeat run failed: {}", e)
             finally:
