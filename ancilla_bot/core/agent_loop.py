@@ -40,7 +40,7 @@ NATIVE_RETRY_USER_MESSAGE: Final[str] = (
     "Self-verification found the answer insufficient. Use a tool once more or revise your reply."
 )
 NATIVE_MISSING_ACTION_MESSAGE: Final[str] = (
-    "Use an available tool or reply to the user in plain Japanese."
+    "Call a tool, or call finish with your user-facing message."
 )
 
 SUMMARY_MAX_LEN = 200
@@ -309,6 +309,22 @@ def _run_agent_loop_with_tools(
             if on_turn is not None:
                 on_turn(parsed_result.thought, None, None, None)
             logger.info("final_answer returned len={}", len(user_answer))
+            write_event(
+                run_id,
+                "final_answer",
+                turn_index=turn,
+                payload={"final_answer": user_answer},
+            )
+            complete_agent_run_step(step_id, "completed", observation=user_answer)
+            update_agent_run_status(run_id, "completed")
+            return user_answer, parsed_result.emotion
+
+        if parsed_result.action == "finish":
+            args = parsed_result.action_input or {}
+            user_answer = str(args.get("message") or parsed_result.raw or "").strip()
+            if not user_answer:
+                user_answer = (parsed_result.thought or "").strip()
+            logger.info("finish returned len={}", len(user_answer))
             write_event(
                 run_id,
                 "final_answer",

@@ -25,6 +25,7 @@ Use the tool name exactly as listed. action must be a string matching the tool n
 ### Notifications
 
 - notify_user: Send a proactive notification. action_input: {"message": "...", "intent": "inform|suggest|remind|request_action|warning"}. remind/request_action require commitment_id of a user-owned reminder or user_task. Optional title, source, level, subject (dedupe key).
+- finish: End the turn with the user-facing reply. action_input: {"message": "..."}.
 
 ### Edge device
 
