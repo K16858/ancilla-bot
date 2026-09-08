@@ -26,7 +26,7 @@ Use the tool names exactly as listed. Tool parameters are defined by the API; ca
 
 ### Notifications
 
-- notify_user: Send a proactive notification to the user (via Discord).
+- notify_user: Send a proactive notification. Requires intent (inform|suggest|remind|request_action|warning). remind/request_action need commitment_id.
 
 ### Edge device
 

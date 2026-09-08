@@ -88,14 +88,15 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log. "
         "action_input: {\"table\": \"reminders\", \"operation\": \"select|insert|update|delete\", "
         "\"payload\": {}}. select: optional completed/limit. update/delete: payload.id required. "
-        "insert: reminders/tasks need scheduled_at+content; finances need amount+category; interests need name."
+        "insert: reminders/tasks need scheduled_at+content; finances need amount+category; interests need name. "
+        "Reminders: owner=user|agent, kind=user_reminder|agent_wakeup. Idle cannot create user-owned rows."
     ),
     # ── Notifications ─────────────────────────────────────────────────────
     "notify_user": (
-        "Send a proactive notification to the user (via Discord). "
-        "action_input: {\"message\": \"...\", \"title\": \"...\", "
-        "\"source\": \"report|system|email\", \"level\": \"info|notice|warning|critical\"}. "
-        "title, source, level are optional."
+        "Send a proactive notification. "
+        "action_input: {\"message\": \"...\", \"intent\": \"inform|suggest|remind|request_action|warning\"}. "
+        "remind/request_action require commitment_id of a user-owned reminder or user_task. "
+        "Optional: title, source, level, subject (dedupe key for inform/suggest/warning)."
     ),
     # ── Edge device ───────────────────────────────────────────────────────
     "use_edgedevice": (
