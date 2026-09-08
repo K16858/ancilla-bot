@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS user_tasks (
     scheduled_at TEXT NOT NULL,
     content TEXT NOT NULL,
     completed INTEGER NOT NULL DEFAULT 0,
+    owner TEXT NOT NULL DEFAULT 'user',
+    source TEXT NOT NULL DEFAULT 'user',
     created_at TEXT NOT NULL
 )
 """
@@ -60,6 +62,13 @@ _MIGRATE_AGENT_TASKS_SOURCE = (
 _MIGRATE_AGENT_TASKS_STATUS = (
     "ALTER TABLE agent_tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'"
 )
+_OWNERSHIP_MIGRATIONS = (
+    ("user_tasks", "owner", "TEXT NOT NULL DEFAULT 'user'"),
+    ("user_tasks", "source", "TEXT NOT NULL DEFAULT 'user'"),
+    ("reminders", "owner", "TEXT NOT NULL DEFAULT 'user'"),
+    ("reminders", "source", "TEXT NOT NULL DEFAULT 'user'"),
+    ("reminders", "kind", "TEXT NOT NULL DEFAULT 'user_reminder'"),
+)
 
 _SCHEMA_REMINDERS = """
 CREATE TABLE IF NOT EXISTS reminders (
@@ -67,6 +76,9 @@ CREATE TABLE IF NOT EXISTS reminders (
     scheduled_at TEXT NOT NULL,
     content TEXT NOT NULL,
     completed INTEGER NOT NULL DEFAULT 0,
+    owner TEXT NOT NULL DEFAULT 'user',
+    source TEXT NOT NULL DEFAULT 'user',
+    kind TEXT NOT NULL DEFAULT 'user_reminder',
     created_at TEXT NOT NULL
 )
 """
@@ -145,16 +157,16 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_AUDIT_LOG)
         c.executescript(_SCHEMA_AGENT_RUNS)
         c.executescript(_SCHEMA_AGENT_RUN_STEPS)
-        # agent_tasks.source カラムが既存 DB に無ければ追加
-        try:
-            c.execute(_MIGRATE_AGENT_TASKS_SOURCE)
-        except Exception:
-            pass  # カラムが既にあれば無視
-        # agent_tasks.status カラムが既存 DB に無ければ追加
-        try:
-            c.execute(_MIGRATE_AGENT_TASKS_STATUS)
-        except Exception:
-            pass  # カラムが既にあれば無視
+        for sql in (_MIGRATE_AGENT_TASKS_SOURCE, _MIGRATE_AGENT_TASKS_STATUS):
+            try:
+                c.execute(sql)
+            except sqlite3.OperationalError:
+                pass
+        for table, column, spec in _OWNERSHIP_MIGRATIONS:
+            try:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {spec}")
+            except sqlite3.OperationalError:
+                pass
 
 
 def append_audit_log(tool_name: str, args_summary: str = "") -> None:
