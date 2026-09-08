@@ -142,6 +142,8 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
                     "limit": {"type": "integer"},
                     "source": {"type": "string"},
                     "status": {"type": "string"},
+                    "owner": {"type": "string"},
+                    "kind": {"type": "string"},
                     "amount": {"type": "number"},
                     "category": {"type": "string"},
                     "memo": {"type": "string"},
