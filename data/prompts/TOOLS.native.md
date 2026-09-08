@@ -22,7 +22,7 @@ Use the tool names exactly as listed. Tool parameters are defined by the API; ca
 - search_memory: Search past conversation summaries (keyword; also vector when RAG enabled).
 - get_user_context: Return the structured user profile snapshot.
 - update_user_goal: Add a short-term or long-term user goal.
-- manage_state: CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log.
+- manage_state: CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log, idle_memory.
 
 ### Notifications
 

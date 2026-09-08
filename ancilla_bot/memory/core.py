@@ -67,7 +67,10 @@ def build_core_memory(tools_block: str) -> str:
     agent_name = "AGENT.native.md" if native else "AGENT.md"
     tools_name = "TOOLS.native.md" if native else "TOOLS.md"
     agent = _load_file(workspace / agent_name)
-    user = _load_file(workspace / "USER.md")
+    from ancilla_bot.core.run_context import run_source
+
+    include_user = run_source.get() != "idle_reflection"
+    user = _load_file(workspace / "USER.md") if include_user else ""
     tools_md = _load_file(prompts / tools_name)
     character = _load_file(prompts / "CHARACTER.md")
 
