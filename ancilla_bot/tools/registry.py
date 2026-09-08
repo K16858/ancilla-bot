@@ -31,8 +31,8 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_time": "Return current date/time. action_input: {}.",
     "web_search": (
         "Search the web. "
-        "action_input: {\"query\": \"search terms\", \"max_results\": 5}. "
-        "max_results optional (default 5)."
+        "action_input: {\"unknown\": \"search terms\", \"hypothesis\": \"optional guess\", \"max_results\": 5}. "
+        "Only unknown is sent to the search API. hypothesis is not searched. max_results optional (default 5)."
     ),
     "fetch_page": (
         "Fetch the main text of a web page (HTML stripped). "
@@ -138,13 +138,20 @@ def get_time(**kwargs: Any) -> str:
     return f"{now.strftime('%Y-%m-%d %A %H:%M:%S')}"
 
 
-def web_search(query: str, max_results: int = 5, **kwargs: Any) -> str:
+def web_search(
+    unknown: str,
+    hypothesis: str = "",
+    max_results: int = 5,
+    **kwargs: Any,
+) -> str:
     """
-    Web 検索を行う。
-    action_input: {"query": "検索クエリ", "max_results": 5}
+    Web 検索を行う。投げる query は unknown のみ。
     """
-    _ = kwargs
-    return web_search_impl(query=query, max_results=max_results)
+    _ = hypothesis, kwargs
+    q = (unknown or "").strip()
+    if not q:
+        return "Error: unknown is required."
+    return web_search_impl(query=q, max_results=max_results)
 
 
 def list_workspace(
