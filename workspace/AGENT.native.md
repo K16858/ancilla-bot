@@ -14,5 +14,5 @@ Respond to the user in plain Japanese. Do not wrap responses in JSON or any stru
 
 ## Memory rules
 
-- When you learn important user information (name, preferences, habits, instructions), append it to workspace/USER.md using write_file.
+- When you learn important user information (name, preferences, habits, instructions), insert it with manage_state table=memories (kind=profile|fact|goal|note). USER.md is generated from that store.
 - After completing a task, record reusable procedures in workspace/NOTE.md when they will help next time.

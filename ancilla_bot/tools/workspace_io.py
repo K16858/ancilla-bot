@@ -8,6 +8,11 @@ import os
 from pathlib import Path
 
 WORKSPACE_ROOT = Path(os.getenv("ANCILLA_WORKSPACE_DIR", "workspace"))
+_USER_MD_NAME = "user.md"
+
+
+def _is_user_md(resolved: Path) -> bool:
+    return resolved.name.lower() == _USER_MD_NAME
 
 
 def _resolve(path_str: str) -> Path | None:
@@ -145,6 +150,8 @@ def edit_file_safe(
     resolved = _resolve(path)
     if resolved is None:
         return "Error: パスは workspace 以下のみ許可されています。"
+    if _is_user_md(resolved):
+        return "Error: USER.md is a projection. Use manage_state table=memories."
     if operation not in ("append", "replace"):
         return "Error: operation は append または replace を指定してください。"
     if content is not None:
@@ -222,6 +229,8 @@ def write_file(path: str, content: str, **kwargs: object) -> str:
     resolved = _resolve(path)
     if resolved is None:
         return "Error: パスは workspace 以下のみ許可されています。"
+    if _is_user_md(resolved):
+        return "Error: USER.md is a projection. Use manage_state table=memories."
     try:
         resolved.parent.mkdir(parents=True, exist_ok=True)
         resolved.write_text(content, encoding="utf-8")

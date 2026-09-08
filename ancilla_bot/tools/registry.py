@@ -79,16 +79,18 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "Use when you need to recall previously discussed topics. max_results optional (default 3)."
     ),
     "get_user_context": (
-        "Return structured user profile from personal_model.yaml. action_input: {}."
+        "Return structured user profile from MemoryStore. action_input: {}."
     ),
     "update_user_goal": (
         "Add a user goal. action_input: {\"goal\": \"...\", \"term\": \"short|long\"}. term defaults to short."
     ),
     "manage_state": (
-        "CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log, idle_memory. "
+        "CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log, idle_memory, memories. "
         "action_input: {\"table\": \"reminders\", \"operation\": \"select|insert|update|delete\", "
         "\"payload\": {}}. select: optional completed/limit. update/delete: payload.id required. "
-        "insert: reminders/tasks need scheduled_at+content; finances need amount+category; interests need name. "
+        "insert: reminders/tasks need scheduled_at+content; finances need amount+category; interests need name; "
+        "memories need kind (profile|fact|goal|note) and content; optional subject, evidence_id (tool step id). "
+        "status/source_type are set by the write path. Durable facts need evidence_id. "
         "Reminders: owner=user|agent, kind=user_reminder|agent_wakeup. Idle cannot create user-owned rows."
     ),
     # ── Notifications ─────────────────────────────────────────────────────
