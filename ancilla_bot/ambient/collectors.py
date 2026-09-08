@@ -6,11 +6,10 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from pathlib import Path
 
 from ancilla_bot.ambient.base import AmbientSignal, SignalCollector
+from ancilla_bot.cli.paths import get_workspace
 
-_WORKSPACE = Path(os.getenv("ANCILLA_WORKSPACE_DIR", "workspace"))
 _FS_SNAPSHOT: dict[str, float] = {}
 
 
@@ -44,12 +43,10 @@ class ConversationGapCollector(SignalCollector):
 
 
 class FilesystemCollector(SignalCollector):
-    watched_dir: Path = _WORKSPACE
-
     def collect(self) -> AmbientSignal | None:
         global _FS_SNAPSHOT
         current: dict[str, float] = {}
-        root = self.watched_dir
+        root = get_workspace()
         if not root.exists():
             return None
         for path in root.rglob("*"):

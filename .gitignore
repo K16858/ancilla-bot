@@ -14,3 +14,6 @@ data/*
 sessions/
 *jsonl
 mcp.json
+workspace/USER.md
+workspace/NOTE.md
+workspace/.trash/

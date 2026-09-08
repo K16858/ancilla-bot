@@ -11,8 +11,9 @@ from pathlib import Path
 
 import yaml
 
+from ancilla_bot.cli.paths import get_workspace
+
 DEFAULT_SKILLS_DIR = Path(os.getenv("ANCILLA_SKILLS_DIR", "skills"))
-DEFAULT_WORKSPACE_DIR = Path(os.getenv("ANCILLA_WORKSPACE_DIR", "workspace"))
 
 
 @dataclass(frozen=True)
@@ -67,7 +68,7 @@ def _scan_dir(root: Path) -> dict[str, SkillMeta]:
 
 def list_skills() -> list[SkillMeta]:
     bundled = Path(os.getenv("ANCILLA_SKILLS_DIR", str(DEFAULT_SKILLS_DIR)))
-    workspace = Path(os.getenv("ANCILLA_WORKSPACE_DIR", str(DEFAULT_WORKSPACE_DIR))) / "skills"
+    workspace = get_workspace() / "skills"
     merged = _scan_dir(bundled)
     merged.update(_scan_dir(workspace))
     return sorted(merged.values(), key=lambda s: s.name)

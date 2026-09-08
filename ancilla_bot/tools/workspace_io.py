@@ -7,8 +7,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-WORKSPACE_ROOT = Path(os.getenv("ANCILLA_WORKSPACE_DIR", "workspace"))
+from ancilla_bot.cli.paths import get_workspace
+
 _USER_MD_NAME = "user.md"
+
+
+def get_workspace_root() -> Path:
+    return get_workspace()
 
 
 def _is_user_md(resolved: Path) -> bool:
@@ -19,7 +24,7 @@ def _resolve(path_str: str) -> Path | None:
     """
     パスを workspace 内に正規化する。外へ出る場合は None を返す。
     """
-    root = WORKSPACE_ROOT.resolve()
+    root = get_workspace_root().resolve()
     p = (root / path_str).resolve()
     try:
         p.relative_to(root)
@@ -85,14 +90,14 @@ def list_workspace(
         return f"Error: パスが存在しません: {path_str}"
     if resolved.is_file():
         try:
-            rel = resolved.relative_to(WORKSPACE_ROOT.resolve())
+            rel = resolved.relative_to(get_workspace_root().resolve())
             return str(rel)
         except ValueError:
             return "Error: パスは workspace 以下のみ許可されています。"
 
     max_entries = min(max(max_entries, 1), MAX_LIST_ENTRIES_LIMIT)
     max_depth = min(max(max_depth, 0), MAX_LIST_DEPTH_LIMIT)
-    root = WORKSPACE_ROOT.resolve()
+    root = get_workspace_root().resolve()
     collected: list[str] = []
 
     def _scan(current: Path, depth: int) -> None:

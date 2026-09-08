@@ -11,8 +11,9 @@ from pathlib import Path
 from ancilla_bot.skills.loader import format_skills_catalog
 from ancilla_bot.mcp.catalog import format_mcp_catalog
 
+from ancilla_bot.cli.paths import get_workspace
+
 DEFAULT_PROMPTS_DIR = Path(os.getenv("ANCILLA_PROMPTS_DIR", "data/prompts"))
-DEFAULT_WORKSPACE_DIR = Path(os.getenv("ANCILLA_WORKSPACE_DIR", "workspace"))
 
 
 def _load_file(path: Path) -> str:
@@ -33,7 +34,7 @@ def build_character_prompt() -> str:
     """CHARACTER.md + USER.md のみ（ツール・エージェント指示なし）。
     ReAct JSON 形式を使わない自由応答用システムプロンプト。"""
     prompts = DEFAULT_PROMPTS_DIR
-    workspace = DEFAULT_WORKSPACE_DIR
+    workspace = get_workspace()
 
     character = _load_file(prompts / "CHARACTER.md")
     user      = _load_file(workspace / "USER.md")
@@ -59,7 +60,7 @@ def build_core_memory(tools_block: str) -> str:
         system プロンプトとして使う文字列。
     """
     prompts = DEFAULT_PROMPTS_DIR
-    workspace = DEFAULT_WORKSPACE_DIR
+    workspace = get_workspace()
     from ancilla_bot.llm.tool_adapter import is_native_tool_mode
 
     native = is_native_tool_mode()

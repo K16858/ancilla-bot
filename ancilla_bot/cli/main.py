@@ -1092,6 +1092,9 @@ def main() -> int:
             os.chdir(root)
         except OSError:
             pass
+    from ancilla_bot.cli.paths import ensure_workspace
+
+    ensure_workspace()
 
     parser = argparse.ArgumentParser(description="Ancilla-Bot CLI")
     parser.add_argument("-v", "--verbose", action="store_true", help="DEBUG レベルでログを出力")
