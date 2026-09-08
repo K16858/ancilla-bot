@@ -102,7 +102,6 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
             "max_entries": {"type": "integer", "description": "Max entries (default 200)"},
         },
     ),
-    ),
     "bash": _schema(
         {
             "command": {"type": "string", "description": "Shell command to run"},
@@ -146,6 +145,7 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
                     "interests",
                     "audit_log",
                     "idle_memory",
+                    "memories",
                 ],
                 "description": "Target table",
             },
