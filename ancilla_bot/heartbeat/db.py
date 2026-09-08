@@ -412,6 +412,45 @@ def _normalize_scheduled_at(value: str) -> str:
     return s  # パース不能な場合はそのまま返す
 
 
+_OWNERS = frozenset({"user", "agent", "shared"})
+_SOURCES = frozenset({"user", "idle", "scheduler", "external", "derived"})
+_REMINDER_KINDS = frozenset({"user_reminder", "agent_wakeup"})
+
+
+def _norm_choice(value: object, allowed: frozenset[str], default: str) -> str:
+    s = str(value or "").strip().lower()
+    return s if s in allowed else default
+
+
+def _guard_owned_write(table: str, operation: str, payload: dict[str, Any], existing: dict[str, Any] | None = None) -> str | None:
+    """idle/heartbeat が user-owned を作ったり昇格したりしない。本文は見ない。"""
+    if table not in ("user_tasks", "reminders"):
+        return None
+    from ancilla_bot.core.run_context import is_autonomous
+
+    auto = is_autonomous()
+    if not auto:
+        return None
+    if operation == "insert":
+        owner = _norm_choice(payload.get("owner"), _OWNERS, "agent")
+        if table == "user_tasks" or owner == "user":
+            return "Error: autonomous runs cannot create user-owned tasks or reminders."
+        if table == "reminders":
+            kind = _norm_choice(payload.get("kind"), _REMINDER_KINDS, "agent_wakeup")
+            if kind != "agent_wakeup" or owner != "agent":
+                return "Error: autonomous reminder insert must be kind=agent_wakeup and owner=agent."
+        return None
+    if existing is None:
+        return "Error: row not found."
+    if str(existing.get("owner") or "user") == "user":
+        return "Error: autonomous runs cannot modify user-owned rows."
+    if _norm_choice(payload.get("owner"), _OWNERS, str(existing.get("owner") or "agent")) == "user":
+        return "Error: autonomous runs cannot promote owner to user."
+    if table == "reminders" and _norm_choice(payload.get("kind"), _REMINDER_KINDS, str(existing.get("kind") or "")) == "user_reminder":
+        return "Error: autonomous runs cannot set kind=user_reminder."
+    return None
+
+
 def _validate_insert_payload(table: str, payload: dict[str, Any]) -> str | None:
     """insert 用 payload を検証。エラー時はメッセージ、OK 時は None。"""
     if table in ("user_tasks", "agent_tasks", "reminders"):
@@ -461,6 +500,9 @@ def manage_state(
                 err = _validate_insert_payload(table, payload)
                 if err:
                     return err
+                err = _guard_owned_write(table, "insert", payload)
+                if err:
+                    return err
                 if table in ("user_tasks", "agent_tasks", "reminders"):
                     scheduled_at = _normalize_scheduled_at(str(payload.get("scheduled_at", "")))
                     content = str(payload.get("content", "")).strip()
@@ -476,10 +518,23 @@ def manage_state(
                             (scheduled_at, content, source, status, now),
                         )
                     else:
-                        c.execute(
-                            f"INSERT INTO {table} (scheduled_at, content, completed, created_at) VALUES (?, ?, 0, ?)",
-                            (scheduled_at, content, now),
-                        )
+                        from ancilla_bot.core.run_context import current_source, is_autonomous
+
+                        owner_default = "agent" if is_autonomous() else "user"
+                        owner = _norm_choice(payload.get("owner"), _OWNERS, owner_default)
+                        source = _norm_choice(payload.get("source"), _SOURCES, current_source())
+                        if table == "reminders":
+                            kind_default = "agent_wakeup" if is_autonomous() else "user_reminder"
+                            kind = _norm_choice(payload.get("kind"), _REMINDER_KINDS, kind_default)
+                            c.execute(
+                                "INSERT INTO reminders (scheduled_at, content, completed, owner, source, kind, created_at) VALUES (?, ?, 0, ?, ?, ?, ?)",
+                                (scheduled_at, content, owner, source, kind, now),
+                            )
+                        else:
+                            c.execute(
+                                "INSERT INTO user_tasks (scheduled_at, content, completed, owner, source, created_at) VALUES (?, ?, 0, ?, ?, ?)",
+                                (scheduled_at, content, owner, source, now),
+                            )
                 elif table == "finances":
                     amount = float(payload.get("amount", 0))
                     category = str(payload.get("category", "")).strip() or "other"
@@ -541,7 +596,9 @@ def manage_state(
                     select_cols = (
                         "id, scheduled_at, content, completed, source, status, created_at"
                         if table == "agent_tasks"
-                        else "id, scheduled_at, content, completed, created_at"
+                        else "id, scheduled_at, content, completed, owner, source, kind, created_at"
+                        if table == "reminders"
+                        else "id, scheduled_at, content, completed, owner, source, created_at"
                     )
                     c.execute(
                         f"SELECT {select_cols} FROM {table}{where_sql} {order} LIMIT ?",
@@ -587,9 +644,23 @@ def manage_state(
                 if row_id is None:
                     return "Error: update requires id in payload."
                 row_id = int(row_id)
+                existing = None
+                if table in ("user_tasks", "reminders"):
+                    cols = "owner, kind" if table == "reminders" else "owner"
+                    c.execute(f"SELECT {cols} FROM {table} WHERE id = ?", (row_id,))
+                    found = c.fetchone()
+                    if not found:
+                        return "Error: row not found."
+                    existing = {"owner": found[0]}
+                    if table == "reminders":
+                        existing["kind"] = found[1]
+                    err = _guard_owned_write(table, "update", payload, existing)
+                    if err:
+                        return err
                 allowed_cols = (
                     {"completed", "scheduled_at", "content", "source", "status"} if table == "agent_tasks"
-                    else {"completed", "scheduled_at", "content"} if table in ("user_tasks", "reminders")
+                    else {"completed", "scheduled_at", "content", "owner", "source", "kind"} if table == "reminders"
+                    else {"completed", "scheduled_at", "content", "owner", "source"} if table == "user_tasks"
                     else {"amount", "category", "memo", "date"} if table == "finances"
                     else {"name", "description", "status", "url"} if table == "interests"
                     else set()
@@ -620,6 +691,18 @@ def manage_state(
                 if row_id is None:
                     return "Error: delete requires id in payload."
                 row_id = int(row_id)
+                if table in ("user_tasks", "reminders"):
+                    cols = "owner, kind" if table == "reminders" else "owner"
+                    c.execute(f"SELECT {cols} FROM {table} WHERE id = ?", (row_id,))
+                    found = c.fetchone()
+                    if not found:
+                        return "Error: row not found."
+                    existing = {"owner": found[0]}
+                    if table == "reminders":
+                        existing["kind"] = found[1]
+                    err = _guard_owned_write(table, "delete", payload, existing)
+                    if err:
+                        return err
                 c.execute(f"DELETE FROM {table} WHERE id = ?", (row_id,))
                 return f"Deleted {table} id={row_id}."
     except (ValueError, TypeError, sqlite3.Error) as e:

@@ -11,6 +11,7 @@ from loguru import logger
 from ancilla_bot.api.ws_server import take_staged_vlm_images
 from ancilla_bot.core.cancel import is_cancelled, reset_cancel
 from ancilla_bot.core.reflection import verify_answer
+from ancilla_bot.core.run_context import run_source
 from ancilla_bot.heartbeat.db import (
     append_audit_log,
     complete_agent_run_step,
@@ -154,6 +155,37 @@ def run_agent_loop_with_tools(
     on_turn(thought, action, action_input, observation) を 1 回呼ぶ。
     """
     logger.info("user_input={!r}", user_input[:100] + "..." if len(user_input) > 100 else user_input)
+    token = run_source.set(source)
+    try:
+        return _run_agent_loop_with_tools(
+            user_input,
+            conversation_history,
+            on_turn=on_turn,
+            images=images,
+            max_turns=max_turns,
+            nag_interval=nag_interval,
+            nag_message=nag_message,
+            source=source,
+            parent_run_id=parent_run_id,
+        )
+    finally:
+        run_source.reset(token)
+
+
+def _run_agent_loop_with_tools(
+    user_input: str,
+    conversation_history: list[dict[str, str]] | None,
+    *,
+    on_turn: Callable[
+        [str, str | None, dict[str, Any] | None, str | None], None
+    ] | None,
+    images: list[str] | None,
+    max_turns: int | None,
+    nag_interval: int | None,
+    nag_message: str | None,
+    source: str,
+    parent_run_id: str | None,
+) -> tuple[str, str | None]:
     run_id = new_run_id()
     write_event(
         run_id,
