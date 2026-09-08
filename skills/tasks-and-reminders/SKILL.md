@@ -5,6 +5,8 @@ description: タスク・リマインダ・家計の操作手順。予定、リ�
 
 Use manage_state. scheduled_at must be YYYY-MM-DD HH:MM:SS.
 
+User reminders use payload.kind=user_reminder (default on user turns). Agent self-wakeups use kind=agent_wakeup and owner=agent; they do not notify the user.
+
 **Reminder** (table=reminders):
 ```json
 {"table": "reminders", "operation": "insert", "payload": {"content": "Meeting reminder", "scheduled_at": "2026-03-25 19:00:00"}}

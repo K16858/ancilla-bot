@@ -160,6 +160,11 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
     "notify_user": _schema(
         {
             "message": {"type": "string", "description": "Notification body"},
+            "intent": {
+                "type": "string",
+                "enum": ["inform", "suggest", "remind", "request_action", "warning"],
+                "description": "Why this notification is sent",
+            },
             "title": {"type": "string", "description": "Optional title"},
             "source": {
                 "type": "string",
@@ -171,8 +176,16 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
                 "enum": ["info", "notice", "warning", "critical"],
                 "description": "Severity level",
             },
+            "commitment_id": {
+                "type": "integer",
+                "description": "user-owned reminder or user_task id (required for remind/request_action)",
+            },
+            "subject": {
+                "type": "string",
+                "description": "Dedupe key for inform/suggest/warning",
+            },
         },
-        required=["message"],
+        required=["message", "intent"],
     ),
     "use_edgedevice": _schema(
         {

@@ -146,6 +146,16 @@ CREATE TABLE IF NOT EXISTS agent_run_steps (
 """
 
 
+_SCHEMA_NOTIFICATION_SENDS = """
+CREATE TABLE IF NOT EXISTS notification_sends (
+    intent TEXT NOT NULL,
+    subject_key TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (intent, subject_key)
+)
+"""
+
+
 def ensure_schema() -> None:
     """全テーブルがなければ作成する。既存テーブルへのマイグレーションも実行。"""
     with _conn() as c:
@@ -157,6 +167,7 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_AUDIT_LOG)
         c.executescript(_SCHEMA_AGENT_RUNS)
         c.executescript(_SCHEMA_AGENT_RUN_STEPS)
+        c.executescript(_SCHEMA_NOTIFICATION_SENDS)
         for sql in (_MIGRATE_AGENT_TASKS_SOURCE, _MIGRATE_AGENT_TASKS_STATUS):
             try:
                 c.execute(sql)
@@ -453,6 +464,39 @@ def _guard_owned_write(table: str, operation: str, payload: dict[str, Any], exis
     if table == "reminders" and _norm_choice(payload.get("kind"), _REMINDER_KINDS, str(existing.get("kind") or "")) == "user_reminder":
         return "Error: autonomous runs cannot set kind=user_reminder."
     return None
+
+
+def user_commitment_exists(commitment_id: int) -> bool:
+    ensure_schema()
+    with _conn() as conn:
+        r = conn.execute(
+            "SELECT owner, kind FROM reminders WHERE id = ?",
+            (commitment_id,),
+        ).fetchone()
+        if r and str(r[0]) == "user" and str(r[1] or "user_reminder") == "user_reminder":
+            return True
+        t = conn.execute(
+            "SELECT owner FROM user_tasks WHERE id = ?",
+            (commitment_id,),
+        ).fetchone()
+        if t and str(t[0]) == "user":
+            return True
+    return False
+
+
+def try_record_notification_send(intent: str, subject_key: str) -> bool:
+    """未送信なら記録して True。同じ (intent, subject_key) なら False。"""
+    ensure_schema()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with _conn() as c:
+            c.execute(
+                "INSERT INTO notification_sends (intent, subject_key, created_at) VALUES (?, ?, ?)",
+                (intent, subject_key, now),
+            )
+        return True
+    except sqlite3.IntegrityError:
+        return False
 
 
 def _validate_insert_payload(table: str, payload: dict[str, Any]) -> str | None:

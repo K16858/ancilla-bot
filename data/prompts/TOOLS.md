@@ -20,11 +20,11 @@ Use the tool name exactly as listed. action must be a string matching the tool n
 ### Memory / state
 
 - search_memory: Search past conversation summaries (long-term memory) via keyword search, plus vector search when RAG is enabled. action_input: {"query": "search terms", "max_results": 3}. Use when recalling previously discussed topics. max_results optional (default 3).
-- manage_state: CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log. action_input: {"table": "reminders", "operation": "select|insert|update|delete", "payload": {}}. select: optional completed/limit. update/delete: payload.id required. insert: reminders/tasks need scheduled_at+content; finances need amount+category; interests need name.
+- manage_state: CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log. action_input: {"table": "reminders", "operation": "select|insert|update|delete", "payload": {}}. payload may include owner (user|agent), source, and for reminders kind (user_reminder|agent_wakeup). Idle/heartbeat cannot create user-owned rows; use kind=agent_wakeup for the agent's own later resume. select: optional completed/limit. update/delete: payload.id required. insert: reminders/tasks need scheduled_at+content; finances need amount+category; interests need name.
 
 ### Notifications
 
-- notify_user: Send a proactive notification to the user (via Discord). action_input: {"message": "...", "title": "...", "source": "report|system|email", "level": "info|notice|warning|critical"}. title, source, level are optional.
+- notify_user: Send a proactive notification. action_input: {"message": "...", "intent": "inform|suggest|remind|request_action|warning"}. remind/request_action require commitment_id of a user-owned reminder or user_task. Optional title, source, level, subject (dedupe key).
 
 ### Edge device
 
