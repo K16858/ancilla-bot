@@ -27,6 +27,7 @@ Use the tool names exactly as listed. Tool parameters are defined by the API; ca
 ### Notifications
 
 - notify_user: Send a proactive notification. Requires intent (inform|suggest|remind|request_action|warning). remind/request_action need commitment_id.
+- finish: End the turn. Provide the user-facing message. Plain text without a tool call is not a finished reply.
 
 ### Edge device
 

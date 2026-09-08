@@ -98,6 +98,10 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "remind/request_action require commitment_id of a user-owned reminder or user_task. "
         "Optional: title, source, level, subject (dedupe key for inform/suggest/warning)."
     ),
+    "finish": (
+        "End the turn and send the user-facing reply. "
+        "action_input: {\"message\": \"...\"}."
+    ),
     # ── Edge device ───────────────────────────────────────────────────────
     "use_edgedevice": (
         "Switch to edge session to enable microphone and camera. "
@@ -231,6 +235,11 @@ def manage_state(table: str, operation: str, payload: dict[str, Any] | None = No
     return heartbeat_manage_state(table=table, operation=operation, payload=payload or {})
 
 
+def finish(message: str, **kwargs: Any) -> str:
+    _ = kwargs
+    return str(message or "").strip()
+
+
 TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "get_time": get_time,
     "web_search": web_search,
@@ -246,6 +255,7 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "update_user_goal": update_user_goal,
     "manage_state": manage_state,
     "notify_user": notify_user,
+    "finish": finish,
     "end_edge_session": end_edge_session,
     "use_edgedevice": use_edgedevice,
     "get_image": get_image,

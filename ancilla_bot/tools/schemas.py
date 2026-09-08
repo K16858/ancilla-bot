@@ -189,6 +189,10 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         },
         required=["message", "intent"],
     ),
+    "finish": _schema(
+        {"message": {"type": "string", "description": "User-facing reply"}},
+        required=["message"],
+    ),
     "use_edgedevice": _schema(
         {
             "target": {"type": "string", "description": "Optional edge device target"},
