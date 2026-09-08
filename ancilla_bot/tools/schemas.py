@@ -85,6 +85,24 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         },
         required=["path", "operation"],
     ),
+    "trash_file": _schema(
+        {"path": {"type": "string", "description": "Path to move into .trash/"}},
+        required=["path"],
+    ),
+    "move_file": _schema(
+        {
+            "src": {"type": "string", "description": "Source path inside workspace"},
+            "dest": {"type": "string", "description": "Destination path inside workspace"},
+        },
+        required=["src", "dest"],
+    ),
+    "workspace_inventory": _schema(
+        {
+            "path": {"type": "string", "description": "Relative path inside workspace"},
+            "max_entries": {"type": "integer", "description": "Max entries (default 200)"},
+        },
+    ),
+    ),
     "bash": _schema(
         {
             "command": {"type": "string", "description": "Shell command to run"},

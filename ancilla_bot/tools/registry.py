@@ -17,11 +17,14 @@ from ancilla_bot.tools.bash import bash as bash_impl
 from ancilla_bot.tools.search import search as web_search_impl
 from ancilla_bot.tools.workspace_io import edit_file_safe as workspace_edit_file_safe
 from ancilla_bot.tools.workspace_io import list_workspace as workspace_list_workspace
-from ancilla_bot.personal_model import get_user_context, update_user_goal
-from ancilla_bot.tools.use_edgedevice import use_edgedevice
-from ancilla_bot.skills.loader import read_skill as load_skill_impl
+from ancilla_bot.tools.workspace_io import move_file as workspace_move_file
 from ancilla_bot.tools.workspace_io import read_file as workspace_read_file
+from ancilla_bot.tools.workspace_io import trash_file as workspace_trash_file
+from ancilla_bot.tools.workspace_io import workspace_inventory as workspace_inventory_impl
 from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
+from ancilla_bot.personal_model import get_user_context, update_user_goal
+from ancilla_bot.skills.loader import read_skill as load_skill_impl
+from ancilla_bot.tools.use_edgedevice import use_edgedevice
 
 # NOTE: When data/prompts/TOOLS.md exists it takes priority over this dict
 # (see build_core_memory). Edit TOOLS.md for the live system prompt;
@@ -60,6 +63,18 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "operation=\"append\": {\"path\": \"...\", \"content\": \"...\"}. "
         "operation=\"replace\" (string): {\"path\": \"...\", \"old\": \"...\", \"new\": \"...\"}. "
         "operation=\"replace\" (lines): {\"path\": \"...\", \"start_line\": N, \"end_line\": M, \"new\": \"...\"} (1-based)."
+    ),
+    "trash_file": (
+        "Move a workspace file or directory to .trash/. "
+        "action_input: {\"path\": \"old.md\"}."
+    ),
+    "move_file": (
+        "Move a file or directory inside workspace. "
+        "action_input: {\"src\": \"a.md\", \"dest\": \"b.md\"}."
+    ),
+    "workspace_inventory": (
+        "List workspace paths with file sizes. "
+        "action_input: {\"path\": \"\"}, optional {\"max_entries\": 200}."
     ),
     "bash": (
         "Run a shell command (cwd=workspace root). Returns stdout+stderr. "
@@ -212,6 +227,18 @@ def write_file(path: str, content: str, **kwargs: Any) -> str:
     return workspace_write_file(path=path, content=content, **kwargs)
 
 
+def trash_file(path: str, **kwargs: Any) -> str:
+    return workspace_trash_file(path=path, **kwargs)
+
+
+def move_file(src: str, dest: str, **kwargs: Any) -> str:
+    return workspace_move_file(src=src, dest=dest, **kwargs)
+
+
+def workspace_inventory(path: str = "", max_entries: int = 200, **kwargs: Any) -> str:
+    return workspace_inventory_impl(path=path, max_entries=max_entries, **kwargs)
+
+
 def load_skill(name: str, **kwargs: Any) -> str:
     """SKILL.md の本文を返す。"""
     return load_skill_impl(name=name, **kwargs)
@@ -259,6 +286,9 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "load_skill": load_skill,
     "read_file": read_file,
     "write_file": write_file,
+    "trash_file": trash_file,
+    "move_file": move_file,
+    "workspace_inventory": workspace_inventory,
     "search_memory": search_memory,
     "get_user_context": get_user_context,
     "update_user_goal": update_user_goal,

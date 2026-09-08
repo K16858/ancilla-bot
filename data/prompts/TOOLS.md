@@ -14,6 +14,9 @@ Use the tool name exactly as listed. action must be a string matching the tool n
 - read_file: Read a file inside workspace. action_input: {"path": "NOTE.md"}, optional {"max_lines": 2000}. Output is truncated at max_lines.
 - write_file: Overwrite a file inside workspace. action_input: {"path": "NOTE.md", "content": "..."}. Replaces the entire file. Use edit_file_safe for partial edits.
 - edit_file_safe: Append or partially replace a file (no full overwrite). operation="append": {"path": "...", "content": "..."}. operation="replace" (string): {"path": "...", "old": "...", "new": "..."}. operation="replace" (lines): {"path": "...", "start_line": N, "end_line": M, "new": "..."} (1-based).
+- trash_file: Move a workspace file or directory to .trash/. action_input: {"path": "old.md"}.
+- move_file: Move a file or directory inside workspace. action_input: {"src": "a.md", "dest": "b.md"}.
+- workspace_inventory: List workspace paths with file sizes. action_input: {"path": ""}, optional {"max_entries": 200}.
 - bash: Run a shell command (cwd=workspace root). Returns stdout+stderr. action_input: {"command": "ls -la"}, optional {"timeout_sec": 60, "stdin_text": "..."}. timeout_sec default 60, max 300. Python also works: {"command": "python script.py"}.
 - load_skill: Load a skill's instructions by name. action_input: {"name": "skill-name"}. Call when a listed skill matches the current task.
 
