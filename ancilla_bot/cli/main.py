@@ -894,6 +894,16 @@ def _run_resident(args: argparse.Namespace) -> None:
     from ancilla_bot.memory.store import maybe_import_user_md
 
     maybe_import_user_md()
+    from ancilla_bot.cli.health import api_bind_port
+    from ancilla_bot.cli.preflight import run_preflight
+    from ancilla_bot.cli.process import reclaim_listen_port
+
+    if not reclaim_listen_port(api_bind_port()):
+        logger.error("API port {} is in use by another process", api_bind_port())
+        raise SystemExit(1)
+    preflight_error = run_preflight()
+    if preflight_error:
+        logger.error("preflight failed: {}", preflight_error)
 
     def _resume_suspended(run_id: str) -> None:
         run = get_agent_run(run_id)
@@ -1051,14 +1061,17 @@ def _run_resident(args: argparse.Namespace) -> None:
         daemon=True,
         name="idle_reflection",
     )
-    slow_thread.start()
-    fast_thread.start()
-    idle_thread.start()
-    logger.info(
-        "idle reflection: threshold={}min cooldown={}min",
-        IDLE_THRESHOLD_SEC // 60,
-        IDLE_COOLDOWN_SEC // 60,
-    )
+    if preflight_error is None:
+        slow_thread.start()
+        fast_thread.start()
+        idle_thread.start()
+        logger.info(
+            "idle reflection: threshold={}min cooldown={}min",
+            IDLE_THRESHOLD_SEC // 60,
+            IDLE_COOLDOWN_SEC // 60,
+        )
+    else:
+        logger.error("heartbeat and idle disabled: {}", preflight_error)
     previous_sigterm = signal.getsignal(signal.SIGTERM)
 
     def _request_resident_stop(signum: int, frame: Any) -> None:
@@ -1080,9 +1093,10 @@ def _run_resident(args: argparse.Namespace) -> None:
         from ancilla_bot.mcp.manager import get_manager
 
         get_manager().shutdown()
-        slow_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
-        fast_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
-        idle_thread.join(timeout=IDLE_POLL_SEC + 5)
+        if preflight_error is None:
+            slow_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
+            fast_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
+            idle_thread.join(timeout=IDLE_POLL_SEC + 5)
 
 
 def main() -> int:
