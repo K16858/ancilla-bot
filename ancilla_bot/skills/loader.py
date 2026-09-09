@@ -1,6 +1,7 @@
 """
 SKILL.md の発見と読み込み。
-同梱 skills/ のあと workspace/skills/ を読み、同名は workspace を優先する。
+同梱 skills/ の名前は workspace から上書きできない。
+workspace Skill は catalog 上の Capability だけを要求できる。
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ class SkillMeta:
     requires_capabilities: tuple[str, ...] = ()
     recommended_modes: tuple[str, ...] = ()
     risk: str = "read_only"
+    status: str = "active"
 
 
 def _split_frontmatter(text: str) -> tuple[dict, str]:
@@ -65,6 +67,9 @@ def _load_skill_file(path: Path, dir_name: str) -> SkillMeta | None:
     except (TypeError, ValueError):
         version = 1
     risk = str(meta.get("risk") or "read_only").strip() or "read_only"
+    status = str(meta.get("status") or "active").strip().lower() or "active"
+    if status not in ("active", "trial"):
+        return None
     return SkillMeta(
         name=name,
         description=description,
@@ -74,6 +79,7 @@ def _load_skill_file(path: Path, dir_name: str) -> SkillMeta | None:
         requires_capabilities=tuple(str(c) for c in caps),
         recommended_modes=tuple(str(m) for m in modes),
         risk=risk,
+        status=status,
     )
 
 
@@ -91,11 +97,22 @@ def _scan_dir(root: Path) -> dict[str, SkillMeta]:
     return found
 
 
+def _requires_known_capabilities(skill: SkillMeta) -> bool:
+    from ancilla_bot.runtime.capability import get_capability
+
+    return all(get_capability(name) is not None for name in skill.requires_capabilities)
+
+
 def list_skills() -> list[SkillMeta]:
     bundled = Path(os.getenv("ANCILLA_SKILLS_DIR", str(DEFAULT_SKILLS_DIR)))
     workspace = get_workspace() / "skills"
     merged = _scan_dir(bundled)
-    merged.update(_scan_dir(workspace))
+    for name, skill in _scan_dir(workspace).items():
+        if name in merged:
+            continue
+        if not _requires_known_capabilities(skill):
+            continue
+        merged[name] = skill
     return sorted(merged.values(), key=lambda s: s.name)
 
 
@@ -120,5 +137,6 @@ def format_skills_catalog() -> str:
     lines = ["## Available skills", ""]
     for skill in skills:
         desc = skill.description or "(no description)"
-        lines.append(f"- {skill.name}: {desc}")
+        label = f"{skill.name} [trial]" if skill.status == "trial" else skill.name
+        lines.append(f"- {label}: {desc}")
     return "\n".join(lines)
