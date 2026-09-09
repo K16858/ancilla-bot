@@ -25,6 +25,7 @@ from ancilla_bot.llm import send_chat
 from ancilla_bot.llm.context_window import resolve_max_history_chars
 from ancilla_bot.llm.ollama_client import VISION_ENABLED
 from ancilla_bot.memory.core import build_character_prompt, build_core_memory
+from ancilla_bot.heartbeat import retry as heartbeat_retry
 from ancilla_bot.heartbeat.db import (
     get_due_reminders,
     get_due_tasks,
@@ -77,6 +78,7 @@ _AGENT_ERROR_PREFIXES: Final[tuple[str, ...]] = (
     "処理を完了できませんでした",
     "バックグラウンド処理中",
     "応答の解析に失敗",
+    "処理をキャンセル",
 )
 
 
@@ -94,6 +96,37 @@ def _is_agent_success(response: str) -> bool:
     if stripped.startswith("{") and stripped.endswith("}"):
         return False
     return True
+
+
+def _is_heartbeat_interrupted(response: str) -> bool:
+    if not response:
+        return False
+    if response.strip() == SUSPENDED_REPLY:
+        return True
+    return response.startswith("処理をキャンセル")
+
+
+def _complete_due_rows(rows: list[dict[str, Any]]) -> None:
+    user_ids = [t["id"] for t in rows if t.get("_table") == "user_tasks"]
+    agent_ids = [t["id"] for t in rows if t.get("_table") == "agent_tasks"]
+    reminder_ids = [t["id"] for t in rows if t.get("_table") == "reminders"]
+    mark_user_tasks_completed(user_ids)
+    mark_agent_tasks_completed(agent_ids)
+    mark_reminders_completed(reminder_ids)
+
+
+def _poison_due_rows(rows: list[dict[str, Any]], response: str) -> None:
+    if not rows:
+        return
+    _complete_due_rows(rows)
+    ids = [r["id"] for r in rows]
+    append_notification(
+        f"ハートビートが繰り返し失敗したため完了にしました: {ids}",
+        source="system",
+        level="warning",
+        detail=(response or "")[:200],
+    )
+    logger.warning("fast heartbeat: poisoned ids={}", ids)
 
 # Idle Reflection: 最終ユーザー入力時刻・最終 reflection 実行時刻（epoch 秒）。
 _last_user_input_time: float = time.time()
@@ -310,15 +343,16 @@ def _fast_heartbeat_loop(runtime: AgentRuntime, stop: threading.Event) -> None:
                     ).start()
                 stop.wait(HEARTBEAT_INTERVAL_SEC)
                 continue
+            tasks = heartbeat_retry.actionable(get_due_tasks(at=now))
+            reminders = heartbeat_retry.actionable(get_due_reminders(at=now, kind="user_reminder"))
+            wakeups = heartbeat_retry.actionable(get_due_reminders(at=now, kind="agent_wakeup"))
+            if not date_changed and not tasks and not reminders and not wakeups:
+                stop.wait(HEARTBEAT_INTERVAL_SEC)
+                continue
             if not runtime.try_begin("autonomous"):
                 stop.wait(HEARTBEAT_INTERVAL_SEC)
                 continue
             try:
-                tasks = get_due_tasks(at=now)
-                reminders = get_due_reminders(at=now, kind="user_reminder")
-                wakeups = get_due_reminders(at=now, kind="agent_wakeup")
-                if not date_changed and not tasks and not reminders and not wakeups:
-                    continue
                 history = _shared_history if _shared_history is not None else load_active_history()
                 if date_changed or tasks or reminders:
                     pseudo = _build_fast_heartbeat_message(
@@ -330,12 +364,12 @@ def _fast_heartbeat_loop(runtime: AgentRuntime, stop: threading.Event) -> None:
                     response, _emotion = run_agent_loop_with_tools(
                         pseudo, history, on_turn=None, source="heartbeat"
                     )
-                    if _is_agent_success(response):
-                        user_ids = [t["id"] for t in tasks if t.get("_table") == "user_tasks"]
-                        agent_ids = [t["id"] for t in tasks if t.get("_table") == "agent_tasks"]
-                        mark_user_tasks_completed(user_ids)
-                        mark_agent_tasks_completed(agent_ids)
-                        mark_reminders_completed([r["id"] for r in reminders])
+                    due_rows = tasks + reminders
+                    if _is_heartbeat_interrupted(response):
+                        logger.info("fast heartbeat: interrupted")
+                    elif _is_agent_success(response):
+                        _complete_due_rows(due_rows)
+                        heartbeat_retry.record_success(due_rows)
                         if response.strip():
                             append_notification(
                                 response.strip(),
@@ -349,19 +383,24 @@ def _fast_heartbeat_loop(runtime: AgentRuntime, stop: threading.Event) -> None:
                             "fast heartbeat: agent response looks like an error, NOT marking completed. response={!r}",
                             response[:120],
                         )
+                        _poison_due_rows(heartbeat_retry.record_failure(due_rows, response), response)
                 if wakeups:
                     pseudo = _build_agent_wakeup_message(wakeups)
                     response, _emotion = run_agent_loop_with_tools(
                         pseudo, history, on_turn=None, source="heartbeat"
                     )
-                    if _is_agent_success(response):
+                    if _is_heartbeat_interrupted(response):
+                        logger.info("agent wakeup: interrupted")
+                    elif _is_agent_success(response):
                         mark_reminders_completed([r["id"] for r in wakeups])
+                        heartbeat_retry.record_success(wakeups)
                         logger.info("agent wakeup: processed {}", len(wakeups))
                     else:
                         logger.warning(
                             "agent wakeup: agent response looks like an error, NOT marking completed. response={!r}",
                             response[:120],
                         )
+                        _poison_due_rows(heartbeat_retry.record_failure(wakeups, response), response)
             except Exception as e:
                 logger.warning("fast heartbeat run failed: {}", e)
             finally:
