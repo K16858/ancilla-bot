@@ -13,6 +13,7 @@ from ancilla_bot.mcp.catalog import format_mcp_catalog
 
 from ancilla_bot.cli.paths import get_workspace
 from ancilla_bot.runtime.mode import format_mode_overlay
+from ancilla_bot.runtime.self_model import format_runtime_self_model
 
 DEFAULT_PROMPTS_DIR = Path(os.getenv("ANCILLA_PROMPTS_DIR", "data/prompts"))
 
@@ -52,7 +53,7 @@ def build_character_prompt() -> str:
 
 def build_core_memory(tools_block: str) -> str:
     """
-    主記憶を組み立てる。注入順: CHARACTER → USER → AGENT → Mode → tools catalog → skills → MCP。
+    主記憶を組み立てる。注入順: CHARACTER → USER → Mode → Runtime Self Model → AGENT → tools → skills → MCP。
     ツール一覧の正本は tools_block（Capability / registry）。TOOLS.md は使わない。
     """
     prompts = DEFAULT_PROMPTS_DIR
@@ -74,11 +75,14 @@ def build_core_memory(tools_block: str) -> str:
         parts.append(character.strip())
     if user:
         parts.append(_section(user, None))
-    if agent:
-        parts.append(_section(agent, None))
     overlay = format_mode_overlay()
     if overlay:
         parts.append(_section(overlay, None))
+    self_model = format_runtime_self_model()
+    if self_model:
+        parts.append(_section(self_model, None))
+    if agent:
+        parts.append(_section(agent, None))
     parts.append(_section(tools_block, None))
 
     catalog = format_skills_catalog()
