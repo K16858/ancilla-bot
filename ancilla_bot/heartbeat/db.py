@@ -583,10 +583,12 @@ def _evidence_exists(evidence_id: int) -> bool:
         return row is not None
 
 
-def _memory_meta_for_insert(payload: dict[str, Any]) -> tuple[str, str, int | None] | str:
+def _memory_meta_for_insert(
+    payload: dict[str, Any],
+    *,
+    trusted_user: bool = False,
+) -> tuple[str, str, int | None] | str:
     """status / source_type は書き込み経路で決める。モデル指定は使わない。"""
-    from ancilla_bot.core.run_context import is_autonomous
-
     raw_eid = payload.get("evidence_id")
     evidence_id: int | None = None
     if raw_eid is not None and str(raw_eid).strip() != "":
@@ -597,9 +599,9 @@ def _memory_meta_for_insert(payload: dict[str, Any]) -> tuple[str, str, int | No
         if evidence_id <= 0 or not _evidence_exists(evidence_id):
             return "Error: evidence_id does not match a tool observation."
         return "observed", "tool", evidence_id
-    if is_autonomous():
-        return "hypothesis", "model", None
-    return "user", "user", None
+    if trusted_user:
+        return "user", "user", None
+    return "hypothesis", "model", None
 
 
 def _memory_meta_for_update(
@@ -627,10 +629,8 @@ def _memory_meta_for_update(
             return "Error: evidence_id does not match a tool observation."
         return "observed", "tool", new_eid
 
-    if status == "hypothesis" and is_autonomous():
+    if status == "hypothesis":
         return status, source_type, evidence_id
-    if status == "hypothesis" and not is_autonomous():
-        return "user", "user", evidence_id
     if is_autonomous() and status == "user":
         return "Error: autonomous runs cannot modify user-status memories."
     return status, source_type, evidence_id
@@ -757,6 +757,8 @@ def manage_state(
     table: str,
     operation: str,
     payload: dict[str, Any] | None = None,
+    *,
+    trusted_user: bool = False,
 ) -> str:
     """
     SQLite の CRUD。テーブルはホワイトリストのみ。
@@ -860,7 +862,7 @@ def manage_state(
                     mem_content = str(payload.get("content", "")).strip()
                     if not mem_content:
                         return "Error: content is required."
-                    meta = _memory_meta_for_insert(payload)
+                    meta = _memory_meta_for_insert(payload, trusted_user=trusted_user)
                     if isinstance(meta, str):
                         return meta
                     status, source_type, evidence_id = meta
