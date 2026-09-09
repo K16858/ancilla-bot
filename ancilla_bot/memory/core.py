@@ -52,13 +52,8 @@ def build_character_prompt() -> str:
 
 def build_core_memory(tools_block: str) -> str:
     """
-    主記憶を組み立てる。注入順: CHARACTER → AGENT → USER → TOOLS。
-
-    Args:
-        tools_block: 利用可能なツールの説明（registry から生成。TOOLS.md が無いときに使う）。
-
-    Returns:
-        system プロンプトとして使う文字列。
+    主記憶を組み立てる。注入順: CHARACTER → USER → AGENT → Mode → tools catalog → skills → MCP。
+    ツール一覧の正本は tools_block（Capability / registry）。TOOLS.md は使わない。
     """
     prompts = DEFAULT_PROMPTS_DIR
     workspace = get_workspace()
@@ -67,16 +62,12 @@ def build_core_memory(tools_block: str) -> str:
     native = is_native_tool_mode()
 
     agent_name = "AGENT.native.md" if native else "AGENT.md"
-    tools_name = "TOOLS.native.md" if native else "TOOLS.md"
     agent = _load_file(workspace / agent_name)
     from ancilla_bot.core.run_context import run_source
 
     include_user = run_source.get() != "idle_reflection"
     user = _load_file(workspace / "USER.md") if include_user else ""
-    tools_md = _load_file(prompts / tools_name)
     character = _load_file(prompts / "CHARACTER.md")
-
-    tools_content = tools_md if tools_md else tools_block
 
     parts: list[str] = []
     if character:
@@ -88,7 +79,7 @@ def build_core_memory(tools_block: str) -> str:
     overlay = format_mode_overlay()
     if overlay:
         parts.append(_section(overlay, None))
-    parts.append(_section(tools_content, None))
+    parts.append(_section(tools_block, None))
 
     catalog = format_skills_catalog()
     if catalog:

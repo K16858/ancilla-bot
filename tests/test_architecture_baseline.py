@@ -55,6 +55,16 @@ def test_core_memory_includes_character_agent_skills(monkeypatch):
     assert "## Available skills" in prompt
 
 
+def test_tools_catalog_includes_set_mode(monkeypatch):
+    monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(ROOT / "workspace"))
+    monkeypatch.setenv("ANCILLA_SKILLS_DIR", str(ROOT / "skills"))
+    monkeypatch.setattr(memory_core, "DEFAULT_PROMPTS_DIR", ROOT / "data" / "prompts")
+    from ancilla_bot.tools.registry import build_tools_system_prompt
+
+    prompt = build_tools_system_prompt()
+    assert "set_mode" in prompt
+
+
 def test_load_skill_bash(monkeypatch):
     monkeypatch.setenv("ANCILLA_SKILLS_DIR", str(ROOT / "skills"))
     monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(ROOT / "workspace"))

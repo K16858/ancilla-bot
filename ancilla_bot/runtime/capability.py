@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ancilla_bot.tools.registry import TOOL_DESCRIPTIONS, TOOL_REGISTRY
+from ancilla_bot.tools.registry import TOOL_DESCRIPTIONS, TOOL_REGISTRY, _short_tool_description
 
 _RISK = {
     "bash": "shell",
@@ -50,8 +50,7 @@ def format_tools_block(*, native: bool) -> str:
     for name in TOOL_REGISTRY:
         desc = TOOL_DESCRIPTIONS.get(name, name)
         if native:
-            head = desc.split("action_input:", 1)[0].strip().rstrip(".") + "."
-            lines.append(f"- {name}: {head}")
+            lines.append(f"- {name}: {_short_tool_description(desc)}")
         else:
             lines.append(f"- {name}: {desc}")
     return "\n".join(lines)
