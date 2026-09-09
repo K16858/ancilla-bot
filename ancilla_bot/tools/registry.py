@@ -15,6 +15,7 @@ from ancilla_bot.tools.get_image import get_image
 from ancilla_bot.tools.notify_user import notify_user
 from ancilla_bot.tools.bash import bash as bash_impl
 from ancilla_bot.tools.search import search as web_search_impl
+from ancilla_bot.tools.search_arxiv import search_arxiv as search_arxiv_impl
 from ancilla_bot.tools.workspace_io import edit_file_safe as workspace_edit_file_safe
 from ancilla_bot.tools.workspace_io import list_workspace as workspace_list_workspace
 from ancilla_bot.tools.workspace_io import move_file as workspace_move_file
@@ -40,6 +41,10 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "Fetch the main text of a web page (HTML stripped). "
         "action_input: {\"url\": \"https://example.com\", \"max_chars\": 8000}. "
         "max_chars optional. Only http/https; private IPs and localhost are rejected."
+    ),
+    "search_arxiv": (
+        "Search arXiv papers. "
+        "action_input: {\"query\": \"...\", \"max_results\": 5}."
     ),
     # ── File operations ───────────────────────────────────────────────────
     "list_workspace": (
@@ -169,6 +174,10 @@ def web_search(
     if not q:
         return "Error: unknown is required."
     return web_search_impl(query=q, max_results=max_results)
+
+
+def search_arxiv(query: str, max_results: int = 5, **kwargs: Any) -> str:
+    return search_arxiv_impl(query=query, max_results=max_results, **kwargs)
 
 
 def list_workspace(
@@ -323,6 +332,7 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "get_time": get_time,
     "web_search": web_search,
     "fetch_page": fetch_page,
+    "search_arxiv": search_arxiv,
     "list_workspace": list_workspace,
     "edit_file_safe": edit_file_safe,
     "bash": bash,
@@ -345,10 +355,8 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "get_audio": get_audio,
 }
 
-from ancilla_bot.plugins.loader import register_plugin_tools
 from ancilla_bot.mcp.bridge import register_meta_tools
 
-register_plugin_tools(TOOL_REGISTRY, TOOL_DESCRIPTIONS)
 register_meta_tools()
 
 

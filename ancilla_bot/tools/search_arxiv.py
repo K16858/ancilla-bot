@@ -1,7 +1,3 @@
-"""
-Research Assistant Plugin
-"""
-
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
@@ -9,8 +5,6 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-
-from ancilla_bot.plugins.base import AncillaPlugin
 
 
 def search_arxiv(query: str, max_results: int = 5, **kwargs: Any) -> str:
@@ -41,13 +35,3 @@ def search_arxiv(query: str, max_results: int = 5, **kwargs: Any) -> str:
         arxiv_id = (entry.findtext("a:id", default="", namespaces=ns) or "").split("/abs/")[-1]
         lines.append(f"- {title}\n  id: {arxiv_id}\n  url: {link}\n  {summary[:300]}...")
     return "\n\n".join(lines)
-
-
-class ResearchPlugin(AncillaPlugin):
-    name = "research"
-    tools = {"search_arxiv": search_arxiv}
-    descriptions = {
-        "search_arxiv": (
-            "Search arXiv papers. action_input: {\"query\": \"...\", \"max_results\": 5}."
-        ),
-    }

@@ -3,7 +3,6 @@ from pathlib import Path
 from ancilla_bot.heartbeat import db
 from ancilla_bot.memory import core as memory_core
 from ancilla_bot.memory.core import build_core_memory
-from ancilla_bot.plugins.loader import register_plugin_tools
 from ancilla_bot.skills.loader import read_skill
 from ancilla_bot.tools.registry import TOOL_REGISTRY
 from ancilla_bot.tools.workspace_io import read_file, write_file
@@ -12,10 +11,12 @@ BUILTIN_TOOLS = {
     "get_time",
     "web_search",
     "fetch_page",
+    "search_arxiv",
     "list_workspace",
     "edit_file_safe",
     "bash",
     "load_skill",
+    "set_mode",
     "read_file",
     "write_file",
     "trash_file",
@@ -97,10 +98,5 @@ def test_workspace_rejects_outside_and_user_md(tmp_path: Path, monkeypatch):
     assert "projection" in write_file("USER.md", "nope")
 
 
-def test_research_plugin_registers_search_arxiv(monkeypatch):
-    monkeypatch.setenv("ANCILLA_PLUGINS", "research")
-    registry: dict = {}
-    descriptions: dict = {}
-    register_plugin_tools(registry, descriptions)
-    assert "search_arxiv" in registry
-    assert "search_arxiv" in descriptions
+def test_search_arxiv_is_builtin():
+    assert "search_arxiv" in TOOL_REGISTRY
