@@ -234,6 +234,17 @@ def _run_agent_loop_with_tools(
         try:
             parsed_result = tool_caller.call(messages, images=send_images)
         except Exception as e:
+            if is_cancelled():
+                write_event(run_id, "run_cancelled", turn_index=turn)
+                update_agent_run_status(run_id, "cancelled")
+                return "処理をキャンセルしました。", None
+            if is_suspended():
+                write_event(run_id, "run_suspended", turn_index=turn)
+                update_agent_run_status(run_id, "suspended")
+                from ancilla_bot.core.execution import get_runtime
+
+                get_runtime().note_suspended(run_id)
+                return SUSPENDED_REPLY, None
             logger.warning("tool caller failed: {} ", e)
             write_event(run_id, "run_failed", turn_index=turn, payload={"error": str(e)})
             update_agent_run_status(run_id, "failed", last_error=str(e))

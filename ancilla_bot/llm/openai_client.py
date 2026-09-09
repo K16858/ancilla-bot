@@ -240,26 +240,27 @@ def send_chat_message(
 
 
 def _post_chat(url: str, body: dict[str, Any], *, timeout: float) -> dict[str, Any]:
-    with httpx.Client(timeout=timeout) as client:
-        try:
-            resp = client.post(url, json=body)
-            resp.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            detail = (e.response.text or "")[:500]
-            logger.warning(
-                "openai http error status={} url={} body={}",
-                e.response.status_code,
-                url,
-                detail,
-            )
-            raise
-        except httpx.ConnectError as e:
-            logger.warning("openai connect error: {}", e)
-            raise
-        except httpx.TimeoutException as e:
-            logger.warning("openai timeout: {}", e)
-            raise
-        return resp.json()
+    from ancilla_bot.llm.http import post_json
+
+    try:
+        resp = post_json(url, body, timeout=timeout)
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        detail = (e.response.text or "")[:500]
+        logger.warning(
+            "openai http error status={} url={} body={}",
+            e.response.status_code,
+            url,
+            detail,
+        )
+        raise
+    except httpx.ConnectError as e:
+        logger.warning("openai connect error: {}", e)
+        raise
+    except httpx.TimeoutException as e:
+        logger.warning("openai timeout: {}", e)
+        raise
+    return resp.json()
 
 
 def embed_text(
@@ -281,10 +282,11 @@ def embed_text(
     body: dict[str, Any] = {"model": model, "input": text}
     logger.debug("openai embed url={} model={} text_len={}", url, model, len(text))
 
-    with httpx.Client(timeout=timeout) as client:
-        resp = client.post(url, json=body)
-        resp.raise_for_status()
-        data = resp.json()
+    from ancilla_bot.llm.http import post_json
+
+    resp = post_json(url, body, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
 
     items = data.get("data")
     if not items:
