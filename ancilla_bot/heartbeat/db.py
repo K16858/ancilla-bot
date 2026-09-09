@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -465,6 +465,29 @@ def _normalize_scheduled_at(value: str) -> str:
     return s  # パース不能な場合はそのまま返す
 
 
+_PAST_SLACK = timedelta(minutes=2)
+
+
+def _past_scheduled_at_error(scheduled_at: str) -> str | None:
+    s = (scheduled_at or "").strip()
+    dt: datetime | None = None
+    try:
+        parsed = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        dt = parsed.replace(tzinfo=None)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                dt = datetime.strptime(s, fmt)
+                break
+            except ValueError:
+                continue
+    if dt is None:
+        return None
+    if dt < datetime.now() - _PAST_SLACK:
+        return f"Error: scheduled_at is in the past ({scheduled_at}). Use a future datetime."
+    return None
+
+
 _OWNERS = frozenset({"user", "agent", "shared"})
 _SOURCES = frozenset({"user", "idle", "scheduler", "external", "derived"})
 _REMINDER_KINDS = frozenset({"user_reminder", "agent_wakeup"})
@@ -681,6 +704,9 @@ def manage_state(
                     return err
                 if table in ("user_tasks", "agent_tasks", "reminders"):
                     scheduled_at = _normalize_scheduled_at(str(payload.get("scheduled_at", "")))
+                    past_err = _past_scheduled_at_error(scheduled_at)
+                    if past_err:
+                        return past_err
                     content = str(payload.get("content", "")).strip()
                     if not content:
                         return "Error: content is required."
@@ -948,7 +974,11 @@ def manage_state(
                         if k == "completed" and isinstance(v, bool):
                             params.append(1 if v else 0)
                         elif k == "scheduled_at":
-                            params.append(_normalize_scheduled_at(str(v)))
+                            scheduled_at = _normalize_scheduled_at(str(v))
+                            past_err = _past_scheduled_at_error(scheduled_at)
+                            if past_err:
+                                return past_err
+                            params.append(scheduled_at)
                         else:
                             if k == "kind" and table == "memories" and str(v).strip().lower() not in _MEMORY_KINDS:
                                 return "Error: memories kind must be profile, fact, goal, or note."
