@@ -92,17 +92,17 @@ class McpManager:
             )
         self._started = True
 
-    def shutdown(self) -> None:
+    def shutdown(self, timeout: float = 3.0) -> None:
         if self._loop is None:
             self._started = False
             return
         fut = asyncio.run_coroutine_threadsafe(self._shutdown_async(), self._loop)
         try:
-            fut.result(timeout=DEFAULT_READ_TIMEOUT + 30)
+            fut.result(timeout=timeout)
         except Exception as exc:
             logger.warning("mcp shutdown error: {}", exc)
         if self._thread is not None:
-            self._thread.join(timeout=DEFAULT_READ_TIMEOUT + 5)
+            self._thread.join(timeout=timeout)
         self._thread = None
         self._loop = None
         self._started = False

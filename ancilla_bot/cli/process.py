@@ -191,6 +191,10 @@ def stop_process(name: str, *, timeout_sec: float = 15.0) -> bool:
         proc.kill()
     except psutil.Error:
         pass
+    try:
+        proc.wait(timeout=2)
+    except (psutil.Error, psutil.TimeoutExpired):
+        pass
     clear_pid(name)
     return True
 
