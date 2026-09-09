@@ -574,13 +574,20 @@ def user_commitment_exists(commitment_id: int) -> bool:
     return False
 
 
-def _evidence_exists(evidence_id: int) -> bool:
+def _evidence_is_valid(evidence_id: int) -> bool:
     with _conn() as conn:
         row = conn.execute(
-            "SELECT id FROM agent_run_steps WHERE id = ?",
+            "SELECT status, action, observation FROM agent_run_steps WHERE id = ?",
             (evidence_id,),
         ).fetchone()
-        return row is not None
+    if not row:
+        return False
+    status, action, observation = row
+    return (
+        str(status) == "tool_succeeded"
+        and bool(str(action or "").strip())
+        and bool(str(observation or "").strip())
+    )
 
 
 def _memory_meta_for_insert(
@@ -596,7 +603,7 @@ def _memory_meta_for_insert(
             evidence_id = int(raw_eid)
         except (TypeError, ValueError):
             return "Error: evidence_id must be an integer (agent_run_steps id)."
-        if evidence_id <= 0 or not _evidence_exists(evidence_id):
+        if evidence_id <= 0 or not _evidence_is_valid(evidence_id):
             return "Error: evidence_id does not match a tool observation."
         return "observed", "tool", evidence_id
     if trusted_user:
@@ -625,7 +632,7 @@ def _memory_meta_for_update(
             new_eid = int(raw_eid)
         except (TypeError, ValueError):
             return "Error: evidence_id must be an integer (agent_run_steps id)."
-        if new_eid <= 0 or not _evidence_exists(new_eid):
+        if new_eid <= 0 or not _evidence_is_valid(new_eid):
             return "Error: evidence_id does not match a tool observation."
         return "observed", "tool", new_eid
 
