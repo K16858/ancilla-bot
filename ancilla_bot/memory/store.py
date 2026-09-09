@@ -94,4 +94,5 @@ def maybe_import_user_md() -> None:
         "memories",
         "insert",
         {"kind": "profile", "subject": "imported", "content": text},
+        trusted_user=True,
     )

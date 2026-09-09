@@ -84,6 +84,7 @@ def test_memories_insert_projects_user_md(tmp_path: Path, monkeypatch):
         "memories",
         "insert",
         {"kind": "fact", "subject": "pet", "content": "cat"},
+        trusted_user=True,
     )
     assert result.startswith("Inserted into memories")
     text = (ws / "USER.md").read_text(encoding="utf-8")
