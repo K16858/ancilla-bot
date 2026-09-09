@@ -27,9 +27,7 @@ from ancilla_bot.skills.loader import read_skill as load_skill_impl
 from ancilla_bot.runtime.mode import set_mode as set_mode_impl
 from ancilla_bot.tools.use_edgedevice import use_edgedevice
 
-# NOTE: When data/prompts/TOOLS.md exists it takes priority over this dict
-# (see build_core_memory). Edit TOOLS.md for the live system prompt;
-# keep this dict in sync as a fallback for environments without TOOLS.md.
+# TOOL_DESCRIPTIONS は catalog 生成の説明文。TOOLS.md は prompt に使わない。
 TOOL_DESCRIPTIONS: dict[str, str] = {
     # ── Information retrieval ─────────────────────────────────────────────
     "get_time": "Return current date/time. action_input: {}.",
@@ -328,14 +326,6 @@ def build_tools_system_prompt() -> str:
     ツール呼び出し用の System メッセージを組み立てる。
     """
     from ancilla_bot.llm.tool_adapter import is_native_tool_mode
+    from ancilla_bot.runtime.capability import format_tools_block
 
-    if is_native_tool_mode():
-        tools_block = "\n".join(
-            f"- {name}: {_short_tool_description(desc)}"
-            for name, desc in TOOL_DESCRIPTIONS.items()
-        )
-    else:
-        tools_block = "\n".join(
-            f"- {name}: {desc}" for name, desc in TOOL_DESCRIPTIONS.items()
-        )
-    return build_core_memory(tools_block)
+    return build_core_memory(format_tools_block(native=is_native_tool_mode()))
