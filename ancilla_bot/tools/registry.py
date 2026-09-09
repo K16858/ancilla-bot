@@ -91,10 +91,9 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     # ── Memory / state ────────────────────────────────────────────────────
     "search_memory": (
-        "Search past conversation summaries (long-term memory). "
-        "Uses keyword search, and also vector search when RAG is enabled. "
-        "action_input: {\"query\": \"search terms\", \"max_results\": 3}. "
-        "Use when you need to recall previously discussed topics. max_results optional (default 3)."
+        "Search user facts and past conversation summaries. "
+        "Scope follows the active mode. Ranking uses relevance, recency, importance, confidence. "
+        "action_input: {\"query\": \"search terms\", \"max_results\": 3}."
     ),
     "get_user_context": (
         "Return structured user profile from MemoryStore. action_input: {}."
@@ -254,20 +253,57 @@ def set_mode(name: str, **kwargs: Any) -> str:
 
 def search_memory(query: str, max_results: int = 3, **kwargs: Any) -> str:
     """
-    長期記憶（要約）をキーワード＋（任意で）ベクトル検索する
-    action_input: {"query": "検索クエリ", "max_results": 3}
+    ユーザー事実と会話要約を Mode の memory_scope に従って検索する。
     """
     _ = kwargs
-    results = search_summaries_hybrid(query, n_results=max_results)
-    if not results:
-        return "No matching past summaries found."
+    from ancilla_bot.heartbeat.db import search_memories
+    from ancilla_bot.runtime.mode import get_active_mode
+
+    spec = get_active_mode()
+    n = max(1, int(max_results or 3))
+    hits: list[dict[str, Any]] = []
+    if "user_model" in spec.memory_scope:
+        hits.extend(search_memories(query, n_results=n * 2))
+    if "episodic" in spec.memory_scope:
+        for item in search_summaries_hybrid(query, n_results=n * 2):
+            meta = item.get("metadata") or {}
+            relevance = float(meta.get("score") or 1.0)
+            date = str(meta.get("date") or "")
+            recency = 1.0
+            if len(date) >= 10:
+                try:
+                    age = max((datetime.now() - datetime.strptime(date[:10], "%Y-%m-%d")).days, 0)
+                    recency = 1.0 / (1.0 + age)
+                except ValueError:
+                    recency = 0.5
+            hits.append(
+                {
+                    "document": item.get("document") or "",
+                    "source": item.get("source") or "fts",
+                    "rank": relevance * 10.0 + recency * 5.0,
+                    "metadata": meta,
+                }
+            )
+    hits.sort(key=lambda h: float(h.get("rank") or 0.0), reverse=True)
+    seen: set[str] = set()
+    picked: list[dict[str, Any]] = []
+    for item in hits:
+        doc = str(item.get("document") or "").strip()
+        if not doc or doc in seen:
+            continue
+        seen.add(doc)
+        picked.append(item)
+        if len(picked) >= n:
+            break
+    if not picked:
+        return "No matching memories found."
     max_chars_per = 400
     parts = []
-    for i, item in enumerate(results, 1):
+    for i, item in enumerate(picked, 1):
         doc = (item.get("document") or "")[:max_chars_per]
         if len(item.get("document") or "") > max_chars_per:
             doc += "..."
-        source = item.get("source") or "fts"
+        source = item.get("source") or "memory"
         parts.append(f"[{i}][{source}] {doc}")
     return "\n\n".join(parts)
 
