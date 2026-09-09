@@ -186,10 +186,28 @@ CREATE TABLE IF NOT EXISTS memories (
     status TEXT NOT NULL,
     source_type TEXT NOT NULL,
     evidence_id INTEGER,
+    confidence REAL,
+    importance REAL,
+    lifecycle TEXT NOT NULL DEFAULT 'active',
+    supersedes INTEGER,
+    expires_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
 """
+
+_MEMORY_COL_MIGRATIONS = (
+    ("confidence", "REAL"),
+    ("importance", "REAL"),
+    ("lifecycle", "TEXT NOT NULL DEFAULT 'active'"),
+    ("supersedes", "INTEGER"),
+    ("expires_at", "TEXT"),
+)
+
+_MEMORY_COLS = (
+    "id, kind, subject, content, status, source_type, evidence_id, "
+    "confidence, importance, lifecycle, supersedes, expires_at, created_at, updated_at"
+)
 
 
 def ensure_schema() -> None:
@@ -214,6 +232,11 @@ def ensure_schema() -> None:
         for table, column, spec in _OWNERSHIP_MIGRATIONS:
             try:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {spec}")
+            except sqlite3.OperationalError:
+                pass
+        for column, spec in _MEMORY_COL_MIGRATIONS:
+            try:
+                c.execute(f"ALTER TABLE memories ADD COLUMN {column} {spec}")
             except sqlite3.OperationalError:
                 pass
 
@@ -610,20 +633,27 @@ def _memory_meta_for_update(
     return status, source_type, evidence_id
 
 
+def _opt_float(value: Any) -> float | None:
+    if value is None or str(value).strip() == "":
+        return None
+    return float(value)
+
+
 def list_memories(*, durable_only: bool = False) -> list[dict[str, Any]]:
     ensure_schema()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with _conn() as conn:
+        where = ["(expires_at IS NULL OR expires_at = '' OR expires_at > ?)"]
+        params: list[Any] = [now]
         if durable_only:
-            cur = conn.execute(
-                "SELECT id, kind, subject, content, status, source_type, evidence_id, "
-                "created_at, updated_at FROM memories "
-                "WHERE status IN ('user', 'observed') ORDER BY id ASC"
-            )
-        else:
-            cur = conn.execute(
-                "SELECT id, kind, subject, content, status, source_type, evidence_id, "
-                "created_at, updated_at FROM memories ORDER BY id ASC"
-            )
+            where.append("status IN ('user', 'observed')")
+            where.append("lifecycle = 'active'")
+        sql = (
+            f"SELECT {_MEMORY_COLS} FROM memories WHERE "
+            + " AND ".join(where)
+            + " ORDER BY id ASC"
+        )
+        cur = conn.execute(sql, params)
         return [_row_to_dict(cur, row) for row in cur.fetchall()]
 
 
@@ -782,12 +812,52 @@ def manage_state(
                     if isinstance(meta, str):
                         return meta
                     status, source_type, evidence_id = meta
+                    confidence = _opt_float(payload.get("confidence"))
+                    importance = _opt_float(payload.get("importance"))
+                    expires_at = str(payload.get("expires_at") or "").strip() or None
+                    raw_sup = payload.get("supersedes")
+                    supersedes: int | None = None
+                    if raw_sup is not None and str(raw_sup).strip() != "":
+                        supersedes = int(raw_sup)
                     c.execute(
                         "INSERT INTO memories "
-                        "(kind, subject, content, status, source_type, evidence_id, created_at, updated_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        (kind, subject, mem_content, status, source_type, evidence_id, now, now),
+                        "(kind, subject, content, status, source_type, evidence_id, "
+                        "confidence, importance, lifecycle, supersedes, expires_at, created_at, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)",
+                        (
+                            kind,
+                            subject,
+                            mem_content,
+                            status,
+                            source_type,
+                            evidence_id,
+                            confidence,
+                            importance,
+                            supersedes,
+                            expires_at,
+                            now,
+                            now,
+                        ),
                     )
+                    new_id = c.lastrowid
+                    old = c.execute(
+                        "SELECT id FROM memories WHERE kind = ? AND subject = ? "
+                        "AND lifecycle = 'active' AND id != ? ORDER BY id DESC",
+                        (kind, subject, new_id),
+                    ).fetchall()
+                    if old:
+                        old_ids = [int(r[0]) for r in old]
+                        placeholders = ",".join("?" * len(old_ids))
+                        c.execute(
+                            f"UPDATE memories SET lifecycle = 'superseded', updated_at = ? "
+                            f"WHERE id IN ({placeholders})",
+                            [now, *old_ids],
+                        )
+                        if supersedes is None:
+                            c.execute(
+                                "UPDATE memories SET supersedes = ? WHERE id = ?",
+                                (old_ids[0], new_id),
+                            )
                 else:  # audit_log
                     tool_name = str(payload.get("tool_name", "")).strip() or "unknown"
                     args_summary = str(payload.get("args_summary", "")).strip()[:500]
@@ -884,11 +954,16 @@ def manage_state(
                     if payload.get("subject"):
                         where.append("subject = ?")
                         params_mem.append(str(payload["subject"]).strip())
+                    lifecycle = str(payload.get("lifecycle") or "active").strip().lower()
+                    if lifecycle:
+                        where.append("lifecycle = ?")
+                        params_mem.append(lifecycle)
+                    where.append("(expires_at IS NULL OR expires_at = '' OR expires_at > ?)")
+                    params_mem.append(now)
                     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
                     params_mem.append(limit)
                     c.execute(
-                        "SELECT id, kind, subject, content, status, source_type, evidence_id, "
-                        f"created_at, updated_at FROM memories{where_sql} ORDER BY id DESC LIMIT ?",
+                        f"SELECT {_MEMORY_COLS} FROM memories{where_sql} ORDER BY id DESC LIMIT ?",
                         params_mem,
                     )
                 else:  # audit_log
@@ -959,7 +1034,16 @@ def manage_state(
                     else {"amount", "category", "memo", "date"} if table == "finances"
                     else {"name", "description", "status", "url"} if table == "interests"
                     else {"kind", "subject", "content", "status"} if table == "idle_memory"
-                    else {"kind", "subject", "content"} if table == "memories"
+                    else {
+                        "kind",
+                        "subject",
+                        "content",
+                        "confidence",
+                        "importance",
+                        "lifecycle",
+                        "supersedes",
+                        "expires_at",
+                    } if table == "memories"
                     else set()
                 )
                 if not allowed_cols:
