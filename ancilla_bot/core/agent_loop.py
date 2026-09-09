@@ -28,6 +28,7 @@ from ancilla_bot.llm.tool_adapter import (
     is_native_tool_mode,
 )
 from ancilla_bot.memory.conversation_store import is_system_event_content
+from ancilla_bot.runtime.policy import check as policy_check
 from ancilla_bot.tools import TOOL_REGISTRY, build_tools_system_prompt
 from ancilla_bot.tracing import new_run_id, write_event
 
@@ -367,7 +368,8 @@ def _run_agent_loop_with_tools(
             )
             append_audit_log(parsed_result.action, str(args))
             try:
-                result = func(**args)
+                denied = policy_check(parsed_result.action)
+                result = denied if denied else func(**args)
                 tool_content = result
                 observation = f"Observation: {result}"
                 summary = result[:SUMMARY_MAX_LEN] + "..." if len(result) > SUMMARY_MAX_LEN else result
