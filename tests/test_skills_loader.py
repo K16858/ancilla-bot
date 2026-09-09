@@ -36,3 +36,22 @@ def test_workspace_overrides_bundled(tmp_path: Path, monkeypatch):
     catalog = format_skills_catalog()
     assert "alpha: Bundled alpha." in catalog
     assert "Workspace shared." in catalog
+
+
+def test_skill_spec_frontmatter(tmp_path: Path, monkeypatch):
+    bundled = tmp_path / "bundled"
+    (bundled / "lit").mkdir(parents=True)
+    (bundled / "lit" / "SKILL.md").write_text(
+        "---\nname: lit\nversion: 2\ndescription: Lit.\n"
+        "requires:\n  capabilities:\n    - web_search\n"
+        "recommended_modes:\n  - research\nrisk: read_only\n---\nBody.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ANCILLA_SKILLS_DIR", str(bundled))
+    monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(tmp_path / "ws"))
+    skill = list_skills()[0]
+    assert skill.version == 2
+    assert skill.requires_capabilities == ("web_search",)
+    assert skill.recommended_modes == ("research",)
+    assert skill.risk == "read_only"
+    assert "Recommended modes: research" in read_skill("lit")
