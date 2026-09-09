@@ -1,0 +1,38 @@
+from pathlib import Path
+
+from ancilla_bot.skills.loader import format_skills_catalog, list_skills, read_skill
+
+
+def test_workspace_overrides_bundled(tmp_path: Path, monkeypatch):
+    bundled = tmp_path / "bundled"
+    ws = tmp_path / "ws"
+    (bundled / "alpha").mkdir(parents=True)
+    (bundled / "shared").mkdir(parents=True)
+    (ws / "skills" / "shared").mkdir(parents=True)
+    (ws / "skills" / "beta").mkdir(parents=True)
+    (bundled / "alpha" / "SKILL.md").write_text(
+        "---\nname: alpha\ndescription: Bundled alpha.\n---\nAlpha body.\n",
+        encoding="utf-8",
+    )
+    (bundled / "shared" / "SKILL.md").write_text(
+        "---\nname: shared\ndescription: Bundled shared.\n---\nBundled body.\n",
+        encoding="utf-8",
+    )
+    (ws / "skills" / "shared" / "SKILL.md").write_text(
+        "---\nname: shared\ndescription: Workspace shared.\n---\nWorkspace body.\n",
+        encoding="utf-8",
+    )
+    (ws / "skills" / "beta" / "SKILL.md").write_text(
+        "---\ndescription: Workspace beta.\n---\nBeta body.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ANCILLA_SKILLS_DIR", str(bundled))
+    monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(ws))
+
+    names = [s.name for s in list_skills()]
+    assert names == ["alpha", "beta", "shared"]
+    assert read_skill("shared") == "Workspace body."
+    assert read_skill("missing").startswith("Error:")
+    catalog = format_skills_catalog()
+    assert "alpha: Bundled alpha." in catalog
+    assert "Workspace shared." in catalog
