@@ -22,6 +22,10 @@ class SkillMeta:
     description: str
     path: Path
     body: str
+    version: int = 1
+    requires_capabilities: tuple[str, ...] = ()
+    recommended_modes: tuple[str, ...] = ()
+    risk: str = "read_only"
 
 
 def _split_frontmatter(text: str) -> tuple[dict, str]:
@@ -49,7 +53,28 @@ def _load_skill_file(path: Path, dir_name: str) -> SkillMeta | None:
     description = str(meta.get("description") or "").strip()
     if not name:
         return None
-    return SkillMeta(name=name, description=description, path=path, body=body.strip())
+    requires = meta.get("requires") if isinstance(meta.get("requires"), dict) else {}
+    caps = requires.get("capabilities") if isinstance(requires, dict) else []
+    if not isinstance(caps, list):
+        caps = []
+    modes = meta.get("recommended_modes")
+    if not isinstance(modes, list):
+        modes = []
+    try:
+        version = int(meta.get("version") or 1)
+    except (TypeError, ValueError):
+        version = 1
+    risk = str(meta.get("risk") or "read_only").strip() or "read_only"
+    return SkillMeta(
+        name=name,
+        description=description,
+        path=path,
+        body=body.strip(),
+        version=version,
+        requires_capabilities=tuple(str(c) for c in caps),
+        recommended_modes=tuple(str(m) for m in modes),
+        risk=risk,
+    )
 
 
 def _scan_dir(root: Path) -> dict[str, SkillMeta]:
@@ -81,7 +106,10 @@ def read_skill(name: str, **kwargs: object) -> str:
         return "Error: name is required."
     for skill in list_skills():
         if skill.name == key:
-            return skill.body or skill.description
+            text = skill.body or skill.description
+            if skill.recommended_modes:
+                text += "\n\nRecommended modes: " + ", ".join(skill.recommended_modes)
+            return text
     return f"Error: unknown skill: {key}"
 
 
