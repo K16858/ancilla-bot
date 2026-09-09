@@ -111,7 +111,8 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "action_input: {\"table\": \"reminders\", \"operation\": \"select|insert|update|delete\", "
         "\"payload\": {}}. select: optional completed/limit. update/delete: payload.id required. "
         "insert: reminders/tasks need scheduled_at+content; finances need amount+category; interests need name; "
-        "memories need kind (profile|fact|goal|note) and content; optional subject, evidence_id (tool step id). "
+        "memories need kind (profile|fact|goal|note) and content; optional subject, memory_key, evidence_id. "
+        "Same memory_key supersedes; without memory_key rows append. "
         "status/source_type are set by the write path. Durable facts need evidence_id. "
         "Reminders: owner=user|agent, kind=user_reminder|agent_wakeup. Idle cannot create user-owned rows."
     ),

@@ -11,19 +11,57 @@ def _db(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("ancilla_bot.memory.store.PERSONAL_MODEL_PATH", tmp_path / "model.yaml")
 
 
-def test_insert_supersedes_same_kind_subject(tmp_path: Path, monkeypatch):
+def test_same_memory_key_supersedes(tmp_path: Path, monkeypatch):
     _db(tmp_path, monkeypatch)
-    db.manage_state("memories", "insert", {"kind": "fact", "subject": "pet", "content": "cat"})
-    db.manage_state("memories", "insert", {"kind": "fact", "subject": "pet", "content": "dog"})
+    db.manage_state(
+        "memories",
+        "insert",
+        {"kind": "profile", "subject": "language", "content": "en", "memory_key": "user.language"},
+    )
+    db.manage_state(
+        "memories",
+        "insert",
+        {"kind": "profile", "subject": "language", "content": "ja", "memory_key": "user.language"},
+    )
+    rows = {r["id"]: r for r in db.list_memories()}
+    old, new = min(rows), max(rows)
+    assert rows[old]["lifecycle"] == "superseded"
+    assert rows[new]["lifecycle"] == "active"
+    assert rows[new]["content"] == "ja"
+    assert rows[new]["supersedes"] == old
+
+
+def test_short_goals_all_stay_active(tmp_path: Path, monkeypatch):
+    _db(tmp_path, monkeypatch)
+    for text in ("OSを作る", "論文を書く", "PCBを設計する"):
+        db.manage_state("memories", "insert", {"kind": "goal", "subject": "short", "content": text})
     rows = db.list_memories()
-    by_id = {r["id"]: r for r in rows}
-    old = min(by_id)
-    new = max(by_id)
-    assert by_id[old]["lifecycle"] == "superseded"
-    assert by_id[new]["lifecycle"] == "active"
-    assert by_id[new]["supersedes"] == old
-    durable = db.list_memories(durable_only=True)
-    assert [r["content"] for r in durable] == ["dog"]
+    assert [r["lifecycle"] for r in rows] == ["active", "active", "active"]
+    assert {r["content"] for r in rows} == {"OSを作る", "論文を書く", "PCBを設計する"}
+
+
+def test_empty_subject_notes_all_stay_active(tmp_path: Path, monkeypatch):
+    _db(tmp_path, monkeypatch)
+    for text in ("A", "B", "C"):
+        db.manage_state("memories", "insert", {"kind": "note", "subject": "", "content": text})
+    rows = db.list_memories()
+    assert len(rows) == 3
+    assert all(r["lifecycle"] == "active" for r in rows)
+
+
+def test_explicit_supersedes_one_row(tmp_path: Path, monkeypatch):
+    _db(tmp_path, monkeypatch)
+    db.manage_state("memories", "insert", {"kind": "note", "content": "old"})
+    db.manage_state("memories", "insert", {"kind": "note", "content": "keep"})
+    old_id = min(r["id"] for r in db.list_memories())
+    db.manage_state(
+        "memories",
+        "insert",
+        {"kind": "note", "content": "new", "supersedes": old_id},
+    )
+    rows = {r["id"]: r for r in db.list_memories()}
+    assert rows[old_id]["lifecycle"] == "superseded"
+    assert sum(1 for r in rows.values() if r["lifecycle"] == "active") == 2
 
 
 def test_expired_memory_not_durable(tmp_path: Path, monkeypatch):
