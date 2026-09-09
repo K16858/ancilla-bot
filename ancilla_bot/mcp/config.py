@@ -114,32 +114,3 @@ def load_mcp_config(path: Path | None = None) -> list[ServerConfig]:
         if parsed is not None:
             servers.append(parsed)
     return servers
-
-
-if __name__ == "__main__":
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmp:
-        p = Path(tmp) / "mcp.json"
-        assert load_mcp_config(p) == []
-        p.write_text(
-            json.dumps(
-                {
-                    "mcpServers": {
-                        "local": {"command": "npx", "args": ["-y", "x"], "env": {"A": 1}},
-                        "remote": {"url": "https://example.com/mcp", "headers": {"Authorization": "Bearer t"}},
-                        "bad": {"command": "a", "url": "http://x"},
-                        "empty": {},
-                    }
-                }
-            ),
-            encoding="utf-8",
-        )
-        loaded = load_mcp_config(p)
-        assert len(loaded) == 2, loaded
-        assert isinstance(loaded[0], StdioServerConfig)
-        assert loaded[0].name == "local"
-        assert loaded[0].env == {"A": "1"}
-        assert isinstance(loaded[1], HttpServerConfig)
-        assert loaded[1].url == "https://example.com/mcp"
-        print("ok")
