@@ -238,36 +238,11 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
             "timeout_sec": {"type": "integer", "description": "Timeout in seconds (default 60)"},
         },
     ),
-    # Plugin tools (when ANCILLA_PLUGINS enables them)
     "search_arxiv": _schema(
         {
             "query": {"type": "string", "description": "arXiv search query"},
             "max_results": {"type": "integer", "description": "Max papers (default 5)"},
         },
-        required=["query"],
-    ),
-    "add_learning_item": _schema(
-        {
-            "concept": {"type": "string", "description": "Concept to learn"},
-            "domain": {"type": "string", "description": "Subject domain"},
-            "notes": {"type": "string", "description": "Optional notes"},
-        },
-        required=["concept", "domain"],
-    ),
-    "review_due": _EMPTY_OBJECT,
-    "record_review": _schema(
-        {
-            "item_id": {"type": "integer", "description": "Learning item id"},
-            "quality": {"type": "integer", "description": "Review quality score"},
-        },
-        required=["item_id", "quality"],
-    ),
-    "start_meeting": _schema(
-        {"title": {"type": "string", "description": "Meeting title"}},
-    ),
-    "end_meeting": _EMPTY_OBJECT,
-    "search_meetings": _schema(
-        {"query": {"type": "string", "description": "Search query"}},
         required=["query"],
     ),
 }
