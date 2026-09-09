@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS memories (
     lifecycle TEXT NOT NULL DEFAULT 'active',
     supersedes INTEGER,
     expires_at TEXT,
+    memory_key TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -202,11 +203,13 @@ _MEMORY_COL_MIGRATIONS = (
     ("lifecycle", "TEXT NOT NULL DEFAULT 'active'"),
     ("supersedes", "INTEGER"),
     ("expires_at", "TEXT"),
+    ("memory_key", "TEXT NOT NULL DEFAULT ''"),
 )
 
 _MEMORY_COLS = (
     "id, kind, subject, content, status, source_type, evidence_id, "
-    "confidence, importance, lifecycle, supersedes, expires_at, created_at, updated_at"
+    "confidence, importance, lifecycle, supersedes, expires_at, memory_key, "
+    "created_at, updated_at"
 )
 
 
@@ -868,11 +871,13 @@ def manage_state(
                     supersedes: int | None = None
                     if raw_sup is not None and str(raw_sup).strip() != "":
                         supersedes = int(raw_sup)
+                    memory_key = str(payload.get("memory_key") or "").strip()[:200]
                     c.execute(
                         "INSERT INTO memories "
                         "(kind, subject, content, status, source_type, evidence_id, "
-                        "confidence, importance, lifecycle, supersedes, expires_at, created_at, updated_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)",
+                        "confidence, importance, lifecycle, supersedes, expires_at, memory_key, "
+                        "created_at, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)",
                         (
                             kind,
                             subject,
@@ -884,18 +889,28 @@ def manage_state(
                             importance,
                             supersedes,
                             expires_at,
+                            memory_key,
                             now,
                             now,
                         ),
                     )
                     new_id = c.lastrowid
-                    old = c.execute(
-                        "SELECT id FROM memories WHERE kind = ? AND subject = ? "
-                        "AND lifecycle = 'active' AND id != ? ORDER BY id DESC",
-                        (kind, subject, new_id),
-                    ).fetchall()
-                    if old:
+                    old_ids: list[int] = []
+                    if memory_key:
+                        old = c.execute(
+                            "SELECT id FROM memories WHERE memory_key = ? "
+                            "AND lifecycle = 'active' AND id != ? ORDER BY id DESC",
+                            (memory_key, new_id),
+                        ).fetchall()
                         old_ids = [int(r[0]) for r in old]
+                    elif supersedes is not None:
+                        found = c.execute(
+                            "SELECT id FROM memories WHERE id = ? AND lifecycle = 'active'",
+                            (supersedes,),
+                        ).fetchone()
+                        if found:
+                            old_ids = [int(found[0])]
+                    if old_ids:
                         placeholders = ",".join("?" * len(old_ids))
                         c.execute(
                             f"UPDATE memories SET lifecycle = 'superseded', updated_at = ? "
@@ -1092,6 +1107,7 @@ def manage_state(
                         "lifecycle",
                         "supersedes",
                         "expires_at",
+                        "memory_key",
                     } if table == "memories"
                     else set()
                 )
