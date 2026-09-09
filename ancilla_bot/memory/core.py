@@ -12,6 +12,7 @@ from ancilla_bot.skills.loader import format_skills_catalog
 from ancilla_bot.mcp.catalog import format_mcp_catalog
 
 from ancilla_bot.cli.paths import get_workspace
+from ancilla_bot.runtime.mode import format_mode_overlay
 
 DEFAULT_PROMPTS_DIR = Path(os.getenv("ANCILLA_PROMPTS_DIR", "data/prompts"))
 
@@ -84,6 +85,9 @@ def build_core_memory(tools_block: str) -> str:
         parts.append(_section(user, None))
     if agent:
         parts.append(_section(agent, None))
+    overlay = format_mode_overlay()
+    if overlay:
+        parts.append(_section(overlay, None))
     parts.append(_section(tools_content, None))
 
     catalog = format_skills_catalog()

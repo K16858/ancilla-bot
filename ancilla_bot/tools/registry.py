@@ -24,6 +24,7 @@ from ancilla_bot.tools.workspace_io import workspace_inventory as workspace_inve
 from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
 from ancilla_bot.personal_model import get_user_context, update_user_goal
 from ancilla_bot.skills.loader import read_skill as load_skill_impl
+from ancilla_bot.runtime.mode import set_mode as set_mode_impl
 from ancilla_bot.tools.use_edgedevice import use_edgedevice
 
 # NOTE: When data/prompts/TOOLS.md exists it takes priority over this dict
@@ -85,6 +86,10 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "Load a skill's instructions by name. "
         "action_input: {\"name\": \"skill-name\"}. "
         "Call when a listed skill matches the current task."
+    ),
+    "set_mode": (
+        "Switch the temporary runtime mode overlay (does not change persona). "
+        "action_input: {\"name\": \"general|research|coding\"}."
     ),
     # ── Memory / state ────────────────────────────────────────────────────
     "search_memory": (
@@ -244,6 +249,10 @@ def load_skill(name: str, **kwargs: Any) -> str:
     return load_skill_impl(name=name, **kwargs)
 
 
+def set_mode(name: str, **kwargs: Any) -> str:
+    return set_mode_impl(name=name, **kwargs)
+
+
 
 def search_memory(query: str, max_results: int = 3, **kwargs: Any) -> str:
     """
@@ -284,6 +293,7 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "edit_file_safe": edit_file_safe,
     "bash": bash,
     "load_skill": load_skill,
+    "set_mode": set_mode,
     "read_file": read_file,
     "write_file": write_file,
     "trash_file": trash_file,

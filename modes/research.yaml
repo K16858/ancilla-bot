@@ -1,0 +1,11 @@
+name: research
+reasoning_policy: thorough
+planning_depth: high
+skill_priority:
+  - literature-research
+memory_scope:
+  - user_model
+  - episodic
+  - knowledge
+output_policy: cite_sources
+proactive: low

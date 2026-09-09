@@ -1,0 +1,11 @@
+name: coding
+reasoning_policy: precise
+planning_depth: high
+skill_priority:
+  - code-review
+memory_scope:
+  - user_model
+  - episodic
+  - knowledge
+output_policy: default
+proactive: low

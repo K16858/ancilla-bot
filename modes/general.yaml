@@ -1,0 +1,9 @@
+name: general
+reasoning_policy: standard
+planning_depth: medium
+skill_priority: []
+memory_scope:
+  - user_model
+  - episodic
+output_policy: default
+proactive: medium
