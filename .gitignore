@@ -1,6 +1,4 @@
 .env
-tests/
-*test*
 __pycache__/
 notes/
 .vscode/
