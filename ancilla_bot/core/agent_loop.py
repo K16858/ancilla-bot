@@ -28,7 +28,7 @@ from ancilla_bot.llm.tool_adapter import (
     is_native_tool_mode,
 )
 from ancilla_bot.memory.conversation_store import is_system_event_content
-from ancilla_bot.runtime.policy import check as policy_check
+from ancilla_bot.runtime.policy import gated_call
 from ancilla_bot.tools import TOOL_REGISTRY, build_tools_system_prompt
 from ancilla_bot.tracing import new_run_id, write_event
 
@@ -368,20 +368,24 @@ def _run_agent_loop_with_tools(
             )
             append_audit_log(parsed_result.action, str(args))
             try:
-                denied = policy_check(parsed_result.action)
-                result = denied if denied else func(**args)
+                step_status, result = gated_call(parsed_result.action, func, args)
                 tool_content = result
                 observation = f"Observation: {result}"
                 summary = result[:SUMMARY_MAX_LEN] + "..." if len(result) > SUMMARY_MAX_LEN else result
-                logger.info("tool_result summary={!r}", summary)
+                logger.info("tool_result status={} summary={!r}", step_status, summary)
                 logger.debug("tool_result full observation={!r}", observation[:500])
                 write_event(
                     run_id,
-                    "tool_succeeded",
+                    step_status,
                     turn_index=turn,
                     payload={"action": parsed_result.action, "result": result},
                 )
-                complete_agent_run_step(step_id, "tool_succeeded", observation=result)
+                if step_status == "tool_succeeded":
+                    complete_agent_run_step(step_id, step_status, observation=result)
+                else:
+                    complete_agent_run_step(
+                        step_id, step_status, observation=result, error=result
+                    )
             except Exception as e:
                 tool_content = f"Error: {e!s}"
                 observation = f"Observation: {tool_content}"
