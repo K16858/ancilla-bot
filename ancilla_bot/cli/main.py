@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from ancilla_bot.core.agent_loop import SUSPENDED_REPLY, is_exit_command, run_agent_loop_with_tools
-from ancilla_bot.core.cancel import reset_cancel, request_cancel
+from ancilla_bot.core.cancel import is_cancelled, reset_cancel, request_cancel
 from ancilla_bot.core.execution import FIRST_REPLY_SEC, AgentRuntime, get_runtime
 from ancilla_bot.llm import send_chat
 from ancilla_bot.llm.context_window import resolve_max_history_chars
@@ -322,7 +322,7 @@ def _fast_heartbeat_loop(runtime: AgentRuntime, stop: threading.Event) -> None:
     """該当タスク・リマインダーがあれば擬似メッセージを ReAct に投入"""
     while not stop.is_set():
         try:
-            if is_edge_session():
+            if is_edge_session() or is_cancelled():
                 stop.wait(HEARTBEAT_INTERVAL_SEC)
                 continue
             now = datetime.now()

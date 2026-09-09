@@ -103,10 +103,11 @@ def send_chat(
         body["format"] = format
     logger.debug("ollama request url={} model={} messages_count={}", url, use_model, len(messages))
 
+    from ancilla_bot.llm.http import post_json
+
     try:
-        with httpx.Client(timeout=timeout) as client:
-            resp = client.post(url, json=body)
-            resp.raise_for_status()
+        resp = post_json(url, body, timeout=timeout)
+        resp.raise_for_status()
     except httpx.ConnectError as e:
         logger.warning("ollama connect error: {}", e)
         raise
@@ -190,10 +191,11 @@ def send_chat_message(
         len(tools or []),
     )
 
-    with httpx.Client(timeout=timeout) as client:
-        resp = client.post(url, json=body)
-        resp.raise_for_status()
-        data = resp.json()
+    from ancilla_bot.llm.http import post_json
+
+    resp = post_json(url, body, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
 
     message = data.get("message")
     if not message:
@@ -226,9 +228,10 @@ def embed_text(
     body: dict[str, Any] = {"model": model, "input": text}
     logger.debug("ollama embed url={} model={} text_len={}", url, model, len(text))
 
-    with httpx.Client(timeout=timeout) as client:
-        resp = client.post(url, json=body)
-        resp.raise_for_status()
+    from ancilla_bot.llm.http import post_json
+
+    resp = post_json(url, body, timeout=timeout)
+    resp.raise_for_status()
 
     data = resp.json()
     embeddings = data.get("embeddings")
