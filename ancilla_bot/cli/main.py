@@ -1116,6 +1116,7 @@ def _run_resident(args: argparse.Namespace) -> None:
     def _request_resident_stop(signum: int, frame: Any) -> None:
         _ = signum, frame
         stop.set()
+        request_cancel()
 
     signal.signal(signal.SIGTERM, _request_resident_stop)
     try:
@@ -1129,13 +1130,18 @@ def _run_resident(args: argparse.Namespace) -> None:
         signal.signal(signal.SIGTERM, previous_sigterm)
         save_active_history(conversation_history)
         stop.set()
+        request_cancel()
         from ancilla_bot.mcp.manager import get_manager
 
         get_manager().shutdown()
         if preflight_error is None:
-            slow_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
-            fast_thread.join(timeout=HEARTBEAT_INTERVAL_SEC + 5)
-            idle_thread.join(timeout=IDLE_POLL_SEC + 5)
+            slow_thread.join(timeout=3)
+            fast_thread.join(timeout=3)
+            idle_thread.join(timeout=3)
+        from ancilla_bot.cli import process as cli_process
+
+        if cli_process.read_pid("core") == os.getpid():
+            cli_process.clear_pid("core")
 
 
 def main() -> int:
