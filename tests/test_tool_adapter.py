@@ -46,3 +46,17 @@ def test_native_message_bad_arguments_becomes_empty_dict():
     )
     assert result.action == "get_time"
     assert result.action_input == {}
+    assert result.final_answer is None
+
+
+def test_native_plain_content_is_final_answer():
+    result = _native_message_to_result({"content": "登録完了しました！"})
+    assert result.action is None
+    assert result.final_answer == "登録完了しました！"
+
+
+def test_native_thinking_only_is_not_final_answer():
+    result = _native_message_to_result({"content": "", "thinking": "need a tool"})
+    assert result.action is None
+    assert result.final_answer is None
+    assert result.thought == "need a tool"

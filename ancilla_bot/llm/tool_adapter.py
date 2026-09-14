@@ -127,7 +127,7 @@ def _native_message_to_result(message: dict[str, Any]) -> ToolCallResult:
         except (json.JSONDecodeError, TypeError):
             args = {}
         return ToolCallResult(name, args, thought, None, None, content, assistant_message)
-    return ToolCallResult(None, None, thought, None, None, content, assistant_message)
+    return ToolCallResult(None, None, thought, content or None, None, content, assistant_message)
 
 
 def _parse_gbnf_response(raw: str) -> ToolCallResult:
