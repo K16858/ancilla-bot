@@ -41,7 +41,7 @@ NATIVE_RETRY_USER_MESSAGE: Final[str] = (
     "Self-verification found the answer insufficient. Use a tool once more or revise your reply."
 )
 NATIVE_MISSING_ACTION_MESSAGE: Final[str] = (
-    "Call a tool, or call finish with your user-facing message."
+    "Call a tool, or reply with your user-facing message."
 )
 SUSPENDED_REPLY: Final[str] = "処理を中断し、後で再開します。"
 
