@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from ancilla_bot.ambient.base import AmbientSignal, SignalCollector
 from ancilla_bot.ambient.collectors import (
-    CameraSignalCollector,
     ConversationGapCollector,
     FilesystemCollector,
     TimeSignalCollector,
@@ -20,7 +19,6 @@ def collect_context_snapshot(last_user_input_time: float | None = None) -> dict[
         TimeSignalCollector(),
         ConversationGapCollector(gap_time),
         FilesystemCollector(),
-        CameraSignalCollector(),
     ]
     snapshot: dict[str, AmbientSignal] = {}
     for collector in collectors:

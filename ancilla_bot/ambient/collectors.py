@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import os
 from datetime import datetime
 
 from ancilla_bot.ambient.base import AmbientSignal, SignalCollector
@@ -76,13 +75,3 @@ class FilesystemCollector(SignalCollector):
             },
             "timestamp": datetime.now().isoformat(),
         }
-
-
-class CameraSignalCollector(SignalCollector):
-    enabled: bool = False
-    interval_minutes: int = int(os.getenv("ANCILLA_CAMERA_INTERVAL", "0") or "0")
-
-    def collect(self) -> AmbientSignal | None:
-        if self.interval_minutes <= 0:
-            return None
-        return None
