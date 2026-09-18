@@ -15,5 +15,11 @@ def format_hits(
         content = (hit.content or "").strip()
         if content_max_chars is not None and len(content) > content_max_chars:
             content = content[:content_max_chars] + "..."
-        parts.append(f"[{i}] {hit.title}\n  {content}")
+        url = (hit.url or "").strip()
+        line = f"[{i}] {hit.title}"
+        if url:
+            line += f"\n  {url}"
+        if content:
+            line += f"\n  {content}"
+        parts.append(line)
     return "\n\n".join(parts)

@@ -9,9 +9,14 @@ def test_empty_hits():
 def test_truncates_long_content():
     hit = SearchHit(title="T", url="http://x", content="a" * 301)
     out = format_hits([hit])
-    assert out.startswith("[1] T\n")
+    assert out.startswith("[1] T\n  http://x\n")
     assert out.endswith("...")
     assert "a" * 300 in out
+
+
+def test_includes_url():
+    hit = SearchHit(title="T", url="http://x/page", content="body")
+    assert format_hits([hit]) == "[1] T\n  http://x/page\n  body"
 
 
 def test_no_truncation_when_unlimited():
