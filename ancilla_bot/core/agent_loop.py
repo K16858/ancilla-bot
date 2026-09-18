@@ -9,7 +9,7 @@ from typing import Any, Callable, Final
 from loguru import logger
 
 from ancilla_bot.api.ws_server import take_staged_vlm_images
-from ancilla_bot.core.cancel import is_cancelled, is_suspended, reset_cancel
+from ancilla_bot.core.cancel import is_cancelled, is_suspended
 from ancilla_bot.core.reflection import verify_answer
 from ancilla_bot.core.run_context import run_source
 from ancilla_bot.heartbeat.db import (
@@ -19,8 +19,7 @@ from ancilla_bot.heartbeat.db import (
     create_agent_run_step,
     update_agent_run_status,
 )
-from ancilla_bot.llm import AgentResponse, send_chat
-from ancilla_bot.llm.schemas import AgentResponseWithTools
+from ancilla_bot.llm import send_chat
 from ancilla_bot.llm.tool_adapter import (
     _build_native_tool_message,
     _coerce_user_answer,
@@ -56,11 +55,6 @@ _FORCE_SUMMARY_PROMPT: Final[str] = (
 
 EXIT_COMMANDS: Final[set[str]] = {"exit", "quit", ":q", "/bye"}
 
-SYSTEM_PROMPT: Final[str] = """あなたは思考過程（thought）と最終回答（final_answer）を、次の JSON 形式だけで出力するアシスタントです。
-- thought: ユーザーの質問の意図を整理し、どう答えるか考える（内部用。短くてよい）。
-- final_answer: ユーザーに表示する日本語の回答本文。
-JSON 以外の説明や前後の文章は一切出力しないでください。"""
-
 
 def _inject_time_note(messages: list[dict[str, str]]) -> None:
     """
@@ -94,43 +88,6 @@ def is_exit_command(text: str) -> bool:
     """
     normalized = text.strip().lower()
     return normalized in EXIT_COMMANDS
-
-
-def _is_system_event_prompt(user_input: str) -> bool:
-    """
-    擬似ユーザーメッセージ（Fast Heartbeat / Idle Reflection 等）かどうか
-    "[SYSTEM_EVENT" で始まるものをすべて対象にする（": IDLE_REFLECTION]" 等も含む）
-    """
-    return is_system_event_content(user_input)
-
-
-def run_minimal_agent_loop(
-    user_input: str,
-    conversation_history: list[dict[str, str]] | None = None,
-) -> str:
-    """
-    AgentLoop
-
-    Args:
-        user_input: ユーザーが入力したテキスト。
-        conversation_history: 会話履歴 [{"role":"user"|"assistant","content":"..."}, ...]。省略時は空。
-
-    Returns:
-        final_answer の文字列。パースに失敗した場合は生の応答テキストを返す。
-    """
-    history = conversation_history or []
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        *history,
-        {"role": "user", "content": user_input},
-    ]
-    raw = send_chat(messages, format=AgentResponse.model_json_schema())
-    try:
-        parsed = AgentResponse.model_validate_json(raw)
-        return parsed.final_answer
-    except Exception as e:
-        logger.warning("run_minimal_agent_loop parse failed: {} raw_head={!r}", e, (raw or "")[:200])
-        return "応答の解析に失敗しました。もう一度試してください。"
 
 
 def run_agent_loop_with_tools(
@@ -305,7 +262,7 @@ def _run_agent_loop_with_tools(
                 return user_answer, parsed_result.emotion
             do_verify = (
                 VERIFY_ANSWER
-                and not _is_system_event_prompt(user_input)
+                and not is_system_event_content(user_input)
                 and (not VERIFY_ONLY_AFTER_TOOL or turn >= 1)
             )
             if do_verify and not verify_answer(user_input, user_answer):
