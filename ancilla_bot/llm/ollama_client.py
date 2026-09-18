@@ -28,6 +28,19 @@ def _require_model(model: str | None) -> str:
     return use_model
 
 
+def _attach_images(messages: list[dict[str, Any]], images: list[str] | None) -> list[dict[str, Any]]:
+    if not images:
+        return messages
+    if not VISION_ENABLED:
+        raise ValueError("画像付きリクエストには OLLAMA_VISION_ENABLED=true が必要です")
+    if not messages or messages[-1].get("role") != "user":
+        raise ValueError("画像付きリクエストには末尾の user メッセージが必要です")
+    messages = list(messages)
+    last = dict(messages[-1])
+    last["images"] = images
+    return messages[:-1] + [last]
+
+
 def _model_base_name(model: str) -> str:
     return model.split(":", 1)[0].lower()
 
@@ -84,14 +97,7 @@ def send_chat(
         LLM が返したテキスト。format 指定時は JSON 文字列。エラー時は例外を投げる。
     """
     use_model = _require_model(model)
-    if images and not VISION_ENABLED:
-        raise ValueError("画像付きリクエストには OLLAMA_VISION_ENABLED=true が必要です")
-    if images and VISION_ENABLED:
-        messages = list(messages)
-        if messages and messages[-1].get("role") == "user":
-            last = dict(messages[-1])
-            last["images"] = images
-            messages = messages[:-1] + [last]
+    messages = _attach_images(messages, images)
     url = f"{base_url.rstrip('/')}/api/chat"
     body: dict[str, Any] = {
         "model": use_model,
@@ -164,14 +170,7 @@ def send_chat_message(
     Ollama /api/chat を呼び出し、message オブジェクト全体を返す。native tool calling 用。
     """
     use_model = _require_model(model)
-    if images and not VISION_ENABLED:
-        raise ValueError("画像付きリクエストには OLLAMA_VISION_ENABLED=true が必要です")
-    if images and VISION_ENABLED:
-        messages = list(messages)
-        if messages and messages[-1].get("role") == "user":
-            last = dict(messages[-1])
-            last["images"] = images
-            messages = messages[:-1] + [last]
+    messages = _attach_images(messages, images)
     url = f"{base_url.rstrip('/')}/api/chat"
     body: dict[str, Any] = {
         "model": use_model,
