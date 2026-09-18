@@ -85,11 +85,6 @@ def is_device_connected() -> bool:
     return _current_connection is not None and _current_connection.open
 
 
-def get_latest_vision_image() -> str | None:
-    """自発 vision_input の最新画像（base64）。エージェント pull とは別。"""
-    return _latest_vision_image
-
-
 def register_camera_waiter(request_id: str) -> queue.Queue[str]:
     q: queue.Queue[str] = queue.Queue(maxsize=1)
     with _media_lock:
