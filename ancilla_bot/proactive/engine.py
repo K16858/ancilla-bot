@@ -22,7 +22,6 @@ def _eval_condition(condition: str, ctx: dict[str, Any]) -> bool:
     is_active = bool(ctx.get("is_active_hours"))
     new_files = ctx.get("filesystem_new_files")
     goal_days = ctx.get("goal_deadline_within_days")
-    camera = bool(ctx.get("camera_person_detected"))
 
     if condition == "conversation_gap_seconds > 14400 AND is_active_hours":
         return gap > 14400 and is_active
@@ -30,8 +29,6 @@ def _eval_condition(condition: str, ctx: dict[str, Any]) -> bool:
         return bool(new_files)
     if condition == "goal_deadline_within_days <= 3":
         return goal_days is not None and int(goal_days) <= 3
-    if condition == "camera_person_detected AND conversation_gap_seconds > 3600":
-        return camera and gap > 3600
     return False
 
 
@@ -40,12 +37,10 @@ def _build_context(snapshot: dict[str, Any], personal_model: dict[str, Any]) -> 
     time_sig = snapshot.get("time", {}).get("value", {})
     gap_sig = snapshot.get("conversation_gap", {}).get("value", {})
     fs_sig = snapshot.get("filesystem", {}).get("value", {})
-    cam_sig = snapshot.get("camera", {}).get("value", {})
 
     ctx["is_active_hours"] = time_sig.get("is_active_hours", False)
     ctx["conversation_gap_seconds"] = gap_sig.get("conversation_gap_seconds", 0)
     ctx["filesystem_new_files"] = fs_sig.get("filesystem_new_files")
-    ctx["camera_person_detected"] = cam_sig.get("camera_person_detected", False)
 
     short_goals = personal_model.get("goals", {}).get("short_term") or []
     for goal in short_goals:
