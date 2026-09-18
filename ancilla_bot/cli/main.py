@@ -933,7 +933,7 @@ def _run_resident(args: argparse.Namespace) -> None:
     from ancilla_bot.memory.store import maybe_import_user_md
 
     maybe_import_user_md()
-    from ancilla_bot.cli.health import api_bind_port
+    from ancilla_bot.cli.health import api_bind_host, api_bind_port
     from ancilla_bot.cli.preflight import run_preflight
     from ancilla_bot.cli.process import reclaim_listen_port
 
@@ -965,9 +965,8 @@ def _run_resident(args: argparse.Namespace) -> None:
             runtime.end()
 
     runtime.set_resume_handler(_resume_suspended)
-    api_host = os.getenv("ANCILLA_API_BIND_HOST") or os.getenv("ANCILLA_API_HOST", "127.0.0.1")
-    api_host = api_host.strip() or "127.0.0.1"
-    api_port = int(os.getenv("ANCILLA_API_PORT", "8765"))
+    api_host = api_bind_host()
+    api_port = api_bind_port()
 
     def chat_handler(msg: str, imgs: list[str] | None = None) -> str:
         return _handle_message(
