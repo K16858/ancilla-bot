@@ -437,6 +437,7 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                 # --- 自発のマイク入力: STT → ReAct → TTS ---
                                 switch_to_edge_session_if_needed()
                                 response_text = ""
+                                emotion = None
                                 if b64:
                                     try:
                                         audio_bytes = base64.b64decode(b64)
@@ -475,7 +476,7 @@ async def _handle_connection(websocket: ServerConnection) -> None:
                                 else:
                                     response_text = "音声データがありません。"
                                 if response_text:
-                                    payload = {"emotion": (locals().get("emotion") or "Neutral"), "text": response_text}
+                                    payload = {"emotion": (emotion or "Neutral"), "text": response_text}
                                     wav_bytes = await loop.run_in_executor(
                                         None,
                                         lambda: tts_client.synthesize(response_text),
