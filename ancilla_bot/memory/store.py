@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -60,9 +61,15 @@ def memories_to_personal_model(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 identity["role"] = content
         elif kind == "goal":
             term = "long_term" if subject == "long" else "short_term"
-            model.setdefault("goals", {}).setdefault(term, []).append(
-                {"goal": content, "status": "active"}
-            )
+            item: dict[str, Any] = {"goal": content, "status": "active"}
+            expires = str(row.get("expires_at") or "").strip()
+            if expires:
+                try:
+                    exp = datetime.fromisoformat(expires.replace("Z", "+00:00")).replace(tzinfo=None)
+                    item["deadline_within_days"] = (exp.date() - datetime.now().date()).days
+                except ValueError:
+                    pass
+            model.setdefault("goals", {}).setdefault(term, []).append(item)
     return model
 
 
