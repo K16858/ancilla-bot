@@ -36,6 +36,15 @@ def can_interrupt(action: ProactiveAction, last_proactive_dt: datetime | None) -
         return False
 
     _ = action
+    return True
+
+
+def note_interrupt() -> None:
+    global _last_proactive_dt, _proactive_count_hour, _proactive_hour_key
+    now = datetime.now()
+    hour_key = now.strftime("%Y-%m-%d-%H")
+    if hour_key != _proactive_hour_key:
+        _proactive_hour_key = hour_key
+        _proactive_count_hour = 0
     _last_proactive_dt = now
     _proactive_count_hour += 1
-    return True

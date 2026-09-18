@@ -281,7 +281,7 @@ def _load_proactive_rules() -> list[dict[str, Any]]:
 def _maybe_run_proactive(snapshot: dict[str, Any], runtime: AgentRuntime) -> None:
     global _last_proactive_dt
     from ancilla_bot.personal_model import load as load_personal_model
-    from ancilla_bot.proactive import can_interrupt, evaluate
+    from ancilla_bot.proactive import can_interrupt, evaluate, note_interrupt
 
     rules = _load_proactive_rules()
     if not rules or not _user_has_interacted:
@@ -296,6 +296,7 @@ def _maybe_run_proactive(snapshot: dict[str, Any], runtime: AgentRuntime) -> Non
         return
     if not runtime.try_begin("autonomous"):
         return
+    note_interrupt()
     try:
         pseudo = f"[SYSTEM_EVENT:PROACTIVE:{action.trigger}] {action.content}"
         history = _shared_history if _shared_history is not None else load_active_history()
