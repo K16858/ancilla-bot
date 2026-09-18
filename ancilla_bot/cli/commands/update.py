@@ -16,10 +16,14 @@ def _run(cmd: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def _git_ok(root: Path) -> str | None:
-    """問題があれば理由文字列、なければ None。"""
+    """問題があれば理由文字列、なければ None。
+
+    未追跡ファイルは pull --ff-only を阻害しないため無視する
+    （workspace/ のユーザーメモ等が典型）。
+    """
     if not (root / ".git").exists():
         return "Not a git checkout. Update requires a git-managed install."
-    st = _run(["git", "status", "--porcelain"], cwd=root)
+    st = _run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=root)
     if st.returncode != 0:
         return st.stderr.strip() or "git status failed"
     if st.stdout.strip():
