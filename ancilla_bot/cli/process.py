@@ -121,7 +121,7 @@ def reclaim_listen_port(port: int) -> bool:
     return pid_listening_on_port(port) is None
 
 
-def spawn_worker(name: str, *, extra_args: list[str] | None = None) -> int:
+def spawn_worker(name: str) -> int:
     """`ancilla _worker <name>` をデタッチ起動し PID を返す。"""
     if name not in MANAGED_NAMES:
         raise ValueError(f"unknown worker: {name}")
@@ -129,8 +129,6 @@ def spawn_worker(name: str, *, extra_args: list[str] | None = None) -> int:
     root = get_root()
     log_file = log_path(name)
     cmd = [sys.executable, "-m", "ancilla_bot.cli", "--log-file", str(log_file), "_worker", name]
-    if extra_args:
-        cmd.extend(extra_args)
 
     env = os.environ.copy()
     env.setdefault("ANCILLA_ROOT", str(root))
@@ -197,8 +195,3 @@ def stop_process(name: str, *, timeout_sec: float = 15.0) -> bool:
         pass
     clear_pid(name)
     return True
-
-
-def ancilla_argv() -> list[str]:
-    """現在のインタプリタで ancilla 相当を起動する argv 先頭。"""
-    return [sys.executable, "-m", "ancilla_bot.cli.main"]

@@ -18,8 +18,3 @@ def fail(message: str, *, cause: str | None = None, next_cmds: list[str] | None 
         for cmd in next_cmds:
             print(f"  {cmd}", flush=True)
     return 1
-
-
-def ok(message: str) -> int:
-    print(message, flush=True)
-    return 0
