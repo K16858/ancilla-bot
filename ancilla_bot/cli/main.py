@@ -24,7 +24,7 @@ from ancilla_bot.core.execution import FIRST_REPLY_SEC, AgentRuntime, get_runtim
 from ancilla_bot.llm import send_chat
 from ancilla_bot.llm.context_window import resolve_max_history_chars
 from ancilla_bot.llm.ollama_client import VISION_ENABLED
-from ancilla_bot.memory.core import build_character_prompt, build_core_memory
+from ancilla_bot.memory.core import build_character_prompt
 from ancilla_bot.heartbeat import retry as heartbeat_retry
 from ancilla_bot.heartbeat.db import (
     get_due_reminders,

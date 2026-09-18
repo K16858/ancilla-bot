@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import time
-from urllib.parse import urlparse
 
 import httpx
 
@@ -63,13 +62,6 @@ def wait_healthy(
 
 def display_endpoint(base: str | None = None) -> str:
     return (base or core_url()).rstrip("/")
-
-
-def host_port_from_url(url: str) -> tuple[str, int]:
-    parsed = urlparse(url)
-    host = parsed.hostname or "127.0.0.1"
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    return host, port
 
 
 def ollama_models(base_url: str | None = None, *, timeout: float = 3.0) -> list[str] | None:
