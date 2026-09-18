@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime
 from typing import List
 
@@ -63,7 +64,7 @@ def compress_once(history: List[Message], max_chars: int) -> bool:
     date_str = datetime.now().strftime("%Y-%m-%d")
     record = {
         "date": date_str,
-        "start_index": 0,
+        "start_index": time.time_ns(),
         "end_index": len(block) - 1,
         "summary": summary,
         "message_count": len(block),
