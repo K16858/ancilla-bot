@@ -10,7 +10,7 @@ import httpx
 def search_arxiv(query: str, max_results: int = 5, **kwargs: Any) -> str:
     _ = kwargs
     url = (
-        "http://export.arxiv.org/api/query?"
+        "https://export.arxiv.org/api/query?"
         f"search_query=all:{quote(query)}&start=0&max_results={max_results}"
     )
     try:
