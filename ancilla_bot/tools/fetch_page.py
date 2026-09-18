@@ -5,8 +5,10 @@ fetch_page: 指定 URL の Web ページを取得し、HTML を除去した本�
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
+import socket
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
@@ -24,33 +26,47 @@ DEFAULT_MAX_CHARS = int(os.getenv("FETCH_PAGE_MAX_CHARS", "8000"))
 USER_AGENT = "AncillaBot/1.0 fetch_page"
 
 
+class _ForbiddenTarget(Exception):
+    pass
+
+
+def _ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return bool(
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
 def _is_forbidden_host(host: str) -> bool:
-    """localhost / 127.0.0.1 / プライベートアドレス / ::1 を拒否。"""
+    """localhost / ループバック / プライベート / リンクローカルを拒否。"""
     if not host:
         return True
-    host_lower = host.lower().strip()
-    if host_lower in ("localhost", "localhost.", "0.0.0.0"):
+    host = host.strip().lower()
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    if host in {"localhost", "localhost."}:
         return True
-    if host_lower.startswith("127.") or host_lower == "::1" or host_lower.startswith("[::1]"):
+    try:
+        return _ip_blocked(ipaddress.ip_address(host))
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
         return True
-    # IPv6 [::1] など
-    if host_lower.startswith("["):
-        inner = host_lower[1:].split("]")[0]
-        if inner == "::1" or inner == "::":
-            return True
-    # プライベート IPv4: 10.x, 172.16-31.x, 192.168.x
-    parts = host.split(".")
-    if len(parts) == 4:
+    if not infos:
+        return True
+    for info in infos:
+        addr = info[4][0]
         try:
-            a, b, c, d = (int(x) for x in parts)
-            if a == 10:
-                return True
-            if a == 172 and 16 <= b <= 31:
-                return True
-            if a == 192 and b == 168:
+            if _ip_blocked(ipaddress.ip_address(addr)):
                 return True
         except ValueError:
-            pass
+            return True
     return False
 
 
@@ -89,11 +105,17 @@ def _fetch_bytes(
         "User-Agent": USER_AGENT,
         "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
     }
+
+    def _reject_private(request: httpx.Request) -> None:
+        if _is_forbidden_host(request.url.host or ""):
+            raise _ForbiddenTarget(request.url.host)
+
     try:
         with httpx.Client(
             timeout=timeout,
             follow_redirects=True,
             max_redirects=3,
+            event_hooks={"request": [_reject_private]},
         ) as client:
             with client.stream("GET", url, headers=headers) as resp:
                 resp.raise_for_status()
@@ -107,6 +129,8 @@ def _fetch_bytes(
                     chunks.append(chunk)
                 body = b"".join(chunks)
                 return (body, None, content_type)
+    except _ForbiddenTarget:
+        return (b"", "Error: その URL は許可されていません。", None)
     except httpx.ConnectError as e:
         logger.debug("fetch_page connect error: {}", e)
         return (b"", "Error: 接続できませんでした（タイムアウトまたはネットワークエラー）。", None)
