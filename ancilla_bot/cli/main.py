@@ -936,7 +936,7 @@ def _run_resident(args: argparse.Namespace) -> None:
     maybe_import_user_md()
     from ancilla_bot.cli.health import api_bind_host, api_bind_port
     from ancilla_bot.cli.preflight import run_preflight
-    from ancilla_bot.cli.process import reclaim_listen_port
+    from ancilla_bot.cli.process import reclaim_listen_port, write_pid
 
     if not reclaim_listen_port(api_bind_port()):
         logger.error("API port {} is in use by another process", api_bind_port())
@@ -966,6 +966,7 @@ def _run_resident(args: argparse.Namespace) -> None:
             runtime.end()
 
     runtime.set_resume_handler(_resume_suspended)
+    write_pid("core", os.getpid())
     api_host = api_bind_host()
     api_port = api_bind_port()
 
