@@ -519,7 +519,6 @@ _SOURCES = frozenset({"user", "idle", "scheduler", "external", "derived"})
 _REMINDER_KINDS = frozenset({"user_reminder", "agent_wakeup"})
 _MEMORY_KINDS = frozenset({"profile", "fact", "goal", "note"})
 _MEMORY_STATUSES = frozenset({"user", "observed", "hypothesis"})
-_MEMORY_SOURCE_TYPES = frozenset({"user", "tool", "model"})
 
 
 def _norm_choice(value: object, allowed: frozenset[str], default: str) -> str:

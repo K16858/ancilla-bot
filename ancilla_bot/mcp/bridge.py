@@ -25,15 +25,6 @@ def namespaced_tool_name(server: str, tool_name: str) -> str:
     return f"{server}__{tool_name}"
 
 
-def parse_namespaced_tool_name(full: str) -> tuple[str, str] | None:
-    if "__" not in full:
-        return None
-    server, _, name = full.partition("__")
-    if not server or not name:
-        return None
-    return server, name
-
-
 def _empty_object_schema() -> dict[str, Any]:
     return {"type": "object", "additionalProperties": False}
 
