@@ -99,6 +99,7 @@ class AgentRuntime:
             if run_id and run_id not in self._resume_ids:
                 self._resume_ids.append(run_id)
             self.current.state = "suspended"
+            self._cv.notify_all()
 
     def note_tool(self) -> None:
         self._tool_count += 1
