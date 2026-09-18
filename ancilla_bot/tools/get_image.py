@@ -40,19 +40,20 @@ def get_image(reason: str = "", timeout_sec: int = 60, **kwargs: Any) -> str:
     rid = str(uuid.uuid4())
     q = register_camera_waiter(rid)
     b64: str | None = None
+    wait_sec = max(5, int(timeout_sec))
     try:
         send_downlink(
             "media_request",
             {"kind": "camera", "request_id": rid, "reason": reason or ""},
         )
-        b64 = q.get(timeout=max(5, int(timeout_sec)))
+        b64 = q.get(timeout=wait_sec)
     except queue.Empty:
         pass
     finally:
         unregister_camera_waiter(rid)
 
     if not b64:
-        return f"カメラ映像の取得がタイムアウトしました（{timeout_sec} 秒）。"
+        return f"カメラ映像の取得がタイムアウトしました（{wait_sec} 秒）。"
 
     stage_vlm_images([b64])
     return f"カメラ画像を取得しました。次のターンでビジョンモデルに渡します（base64 長 {len(b64)}）。"
