@@ -24,7 +24,6 @@ class AgentExecution:
     def __init__(self) -> None:
         self.kind: Kind | None = None
         self.state: State = "ready"
-        self.run_id: str | None = None
 
 
 class AgentRuntime:
@@ -43,10 +42,6 @@ class AgentRuntime:
 
     def set_resume_handler(self, handler: Callable[[str], None] | None) -> None:
         self._resume_handler = handler
-
-    def busy(self) -> bool:
-        with self._cv:
-            return self.current.state == "running"
 
     def current_kind(self) -> Kind | None:
         with self._cv:
@@ -138,13 +133,9 @@ class AgentRuntime:
         self.offer_first_reply(text)
         return text
 
-    def mark_returned_early(self) -> None:
-        self._returned_early = True
-
     def _start_locked(self, kind: Kind) -> None:
         self.current.kind = kind
         self.current.state = "running"
-        self.current.run_id = None
         self._tool_count = 0
         now = time.time()
         self._started_at = now
