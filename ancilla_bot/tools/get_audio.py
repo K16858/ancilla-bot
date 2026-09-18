@@ -24,12 +24,13 @@ def get_audio(reason: str = "", timeout_sec: int = 60, **kwargs: Any) -> str:
     rid = str(uuid.uuid4())
     q = register_mic_waiter(rid)
     text: str | None = None
+    wait_sec = max(5, int(timeout_sec))
     try:
         send_downlink(
             "media_request",
             {"kind": "microphone", "request_id": rid, "reason": reason or ""},
         )
-        text = q.get(timeout=max(5, int(timeout_sec)))
+        text = q.get(timeout=wait_sec)
     except queue.Empty:
         pass
     finally:
@@ -37,7 +38,7 @@ def get_audio(reason: str = "", timeout_sec: int = 60, **kwargs: Any) -> str:
 
     if text is None:
         return (
-            f"マイク取得がタイムアウトしました（{timeout_sec} 秒）。"
+            f"マイク取得がタイムアウトしました（{wait_sec} 秒）。"
         )
 
     return f"[マイク取得·STT] {text}"
