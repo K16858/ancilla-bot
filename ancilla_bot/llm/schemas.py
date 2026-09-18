@@ -7,15 +7,6 @@ from typing import Any
 from pydantic import BaseModel
 
 
-class AgentResponse(BaseModel):
-    """
-    AgentLoop 用の応答形式
-    """
-
-    thought: str
-    final_answer: str
-
-
 class AgentResponseWithTools(BaseModel):
     """
     ツール呼び出しありの AgentLoop 用応答形式
