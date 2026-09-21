@@ -57,6 +57,11 @@ def _call_daemon(message: str, images: list[str] | None = None) -> str:
         return "デーモンに接続できません。ancilla run が起動しているか確認してください。"
     except httpx.TimeoutException:
         return "エラー: 応答がタイムアウトしました。処理に時間がかかっている可能性があります。"
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 409:
+            return ""
+        err_msg = str(e).strip() if e else ""
+        return f"エラー: {err_msg}" if err_msg else "エラー: 応答の取得に失敗しました。"
     except Exception as e:
         err_msg = str(e).strip() if e else ""
         return f"エラー: {err_msg}" if err_msg else "エラー: 応答の取得に失敗しました。"
@@ -154,6 +159,8 @@ def run_bot() -> None:
         if not text and not images:
             return
         response = _call_daemon(text, images if images else None)
+        if not (response or "").strip():
+            return
         if len(response) > MAX_RESPONSE_CHARS:
             response = response[:MAX_RESPONSE_CHARS] + "..."
         thread_ts = event.get("thread_ts") or event.get("ts")

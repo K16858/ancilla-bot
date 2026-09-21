@@ -6,6 +6,8 @@ from typing import Callable
 
 from loguru import logger
 
+from ancilla_bot.core.execution import ConversationBusy
+
 
 def run_server(
     host: str,
@@ -49,12 +51,17 @@ def run_server(
             except (ValueError, json.JSONDecodeError, KeyError):
                 self.send_error(400, "Bad Request")
                 return
-            response_text = handler(message, images)
             try:
-                self.send_response(200)
+                response_text = handler(message, images)
+            except ConversationBusy:
+                status, payload = 409, {"ok": False}
+            else:
+                status, payload = 200, {"response": response_text}
+            try:
+                self.send_response(status)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.end_headers()
-                self.wfile.write(json.dumps({"response": response_text}, ensure_ascii=False).encode("utf-8"))
+                self.wfile.write(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
             except (BrokenPipeError, ConnectionResetError) as e:
                 logger.debug("client closed connection before response was sent: {}", e)
 
