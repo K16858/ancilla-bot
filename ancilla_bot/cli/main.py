@@ -623,7 +623,7 @@ def _handle_message(
         t = threading.Thread(target=work, daemon=True, name="interactive")
         t.start()
         text = runtime.wait_first_reply(FIRST_REPLY_SEC)
-        return text or (result_holder[0] if result_holder else "作業を開始しました。")
+        return text or (result_holder[0] if result_holder else "")
 
     work()
     return result_holder[0] if result_holder else ""

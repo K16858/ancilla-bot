@@ -368,9 +368,6 @@ def _run_agent_loop_with_tools(
                 _turns_since_manage_state = 0
             if on_turn is not None:
                 on_turn(parsed_result.thought, parsed_result.action, args, observation)
-            from ancilla_bot.core.execution import get_runtime
-
-            get_runtime().note_tool()
             if is_native_tool_mode() and parsed_result.assistant_message:
                 messages.append(parsed_result.assistant_message)
                 messages.append(_build_native_tool_message(parsed_result.assistant_message, tool_content))
