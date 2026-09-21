@@ -4,19 +4,14 @@ from __future__ import annotations
 
 import os
 import threading
-import time
 from collections.abc import Callable
 from typing import Literal
-
-from loguru import logger
 
 from ancilla_bot.core.cancel import clear_suspend, request_suspend
 
 Kind = Literal["interactive", "autonomous", "maintenance"]
 State = Literal["ready", "running", "suspended", "waiting", "completed", "failed"]
 
-PROGRESS_EVERY_TOOLS = max(1, int(os.getenv("ANCILLA_PROGRESS_TOOLS", "8")))
-PROGRESS_EVERY_SEC = max(5.0, float(os.getenv("ANCILLA_PROGRESS_SEC", "45")))
 FIRST_REPLY_SEC = max(5.0, float(os.getenv("ANCILLA_FIRST_REPLY_SEC", "50")))
 
 
@@ -32,10 +27,6 @@ class AgentRuntime:
         self.current = AgentExecution()
         self._resume_ids: list[str] = []
         self._resume_handler: Callable[[str], None] | None = None
-        self._tool_count = 0
-        self._started_at = 0.0
-        self._last_progress_at = 0.0
-        self._last_progress_tools = 0
         self._first_event = threading.Event()
         self._first_text: str | None = None
         self._returned_early = False
@@ -96,28 +87,6 @@ class AgentRuntime:
             self.current.state = "suspended"
             self._cv.notify_all()
 
-    def note_tool(self) -> None:
-        self._tool_count += 1
-        if self.current.kind != "interactive":
-            return
-        now = time.time()
-        if (
-            self._tool_count - self._last_progress_tools >= PROGRESS_EVERY_TOOLS
-            or (self._started_at and now - self._last_progress_at >= PROGRESS_EVERY_SEC)
-        ):
-            self._last_progress_tools = self._tool_count
-            self._last_progress_at = now
-            elapsed = now - self._started_at if self._started_at else 0.0
-            text = phrase_progress(self._tool_count, elapsed)
-            first = not self._first_event.is_set()
-            self.offer_first_reply(text)
-            if first:
-                self._returned_early = True
-            else:
-                from ancilla_bot.notifications import append_notification
-
-                append_notification(text, source="system", level="info", detail="progress")
-
     def offer_first_reply(self, text: str) -> None:
         if self._first_event.is_set():
             return
@@ -128,19 +97,11 @@ class AgentRuntime:
         if self._first_event.wait(timeout=timeout_sec):
             return self._first_text
         self._returned_early = True
-        elapsed = time.time() - self._started_at if self._started_at else 0.0
-        text = phrase_progress(self._tool_count, elapsed)
-        self.offer_first_reply(text)
-        return text
+        return None
 
     def _start_locked(self, kind: Kind) -> None:
         self.current.kind = kind
         self.current.state = "running"
-        self._tool_count = 0
-        now = time.time()
-        self._started_at = now
-        self._last_progress_at = now
-        self._last_progress_tools = 0
         self._first_event.clear()
         self._first_text = None
         self._returned_early = False
@@ -156,27 +117,3 @@ def get_runtime() -> AgentRuntime:
         if _runtime is None:
             _runtime = AgentRuntime()
         return _runtime
-
-
-def phrase_progress(tool_count: int, elapsed_sec: float) -> str:
-    from ancilla_bot.llm import send_chat
-
-    try:
-        raw = send_chat(
-            [
-                {
-                    "role": "user",
-                    "content": (
-                        "Write one short Japanese sentence telling the user work is still in progress. "
-                        f"tools={tool_count} elapsed_sec={int(elapsed_sec)}. No quotes."
-                    ),
-                }
-            ],
-            think=False,
-        )
-        text = (raw or "").strip().splitlines()[0].strip()
-        if text:
-            return text[:200]
-    except Exception as e:
-        logger.debug("progress phrasing failed: {}", e)
-    return f"作業を継続中です（tools={tool_count}）。"
