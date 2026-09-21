@@ -15,6 +15,10 @@ State = Literal["ready", "running", "suspended", "waiting", "completed", "failed
 FIRST_REPLY_SEC = max(5.0, float(os.getenv("ANCILLA_FIRST_REPLY_SEC", "50")))
 
 
+class ConversationBusy(Exception):
+    pass
+
+
 class AgentExecution:
     def __init__(self) -> None:
         self.kind: Kind | None = None

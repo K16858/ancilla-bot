@@ -20,7 +20,7 @@ from loguru import logger
 
 from ancilla_bot.core.agent_loop import SUSPENDED_REPLY, is_exit_command, run_agent_loop_with_tools
 from ancilla_bot.core.cancel import is_cancelled, reset_cancel, request_cancel
-from ancilla_bot.core.execution import FIRST_REPLY_SEC, AgentRuntime, get_runtime
+from ancilla_bot.core.execution import ConversationBusy, FIRST_REPLY_SEC, AgentRuntime, get_runtime
 from ancilla_bot.llm import send_chat
 from ancilla_bot.llm.context_window import resolve_max_history_chars
 from ancilla_bot.llm.ollama_client import VISION_ENABLED
@@ -578,7 +578,7 @@ def _handle_message(
         PENDING_MESSAGES.append(
             {"input": user_input, "images": images, "source": source or "unknown"}
         )
-        return "いま別の会話を処理しています。しばらくお待ちください。"
+        raise ConversationBusy
 
     runtime.preempt_for_interactive()
     detach = (source or "") in ("api", "mcp")
@@ -714,21 +714,28 @@ def _run_repl(
     try:
         while True:
             while PENDING_MESSAGES:
+                runtime = agent_runtime or get_runtime()
+                if runtime.current_kind() == "interactive":
+                    break
                 pending = PENDING_MESSAGES.pop(0)
                 pending_input = (pending.get("input") or "").strip()
                 pending_images = pending.get("images")
                 if not pending_input and not pending_images:
                     continue
-                response = _handle_message(
-                    pending_input,
-                    history,
-                    agent_runtime,
-                    MAX_HISTORY_CHARS,
-                    on_turn,
-                    pending_images,
-                    source=str(pending.get("source") or "queued"),
-                )
-                print(f"Ancilla (queued): {response}")
+                try:
+                    response = _handle_message(
+                        pending_input,
+                        history,
+                        agent_runtime,
+                        MAX_HISTORY_CHARS,
+                        on_turn,
+                        pending_images,
+                        source=str(pending.get("source") or "queued"),
+                    )
+                except ConversationBusy:
+                    break
+                if response:
+                    print(f"Ancilla (queued): {response}")
 
             try:
                 user_input = input("Ancilla CLI > ")
@@ -740,15 +747,19 @@ def _run_repl(
                 print("終了コマンドが入力されたため、REPL を終了します。")
                 break
 
-            response = _handle_message(
-                user_input,
-                history,
-                agent_runtime,
-                MAX_HISTORY_CHARS,
-                on_turn,
-                source="repl",
-            )
-            print(f"Ancilla: {response}")
+            try:
+                response = _handle_message(
+                    user_input,
+                    history,
+                    agent_runtime,
+                    MAX_HISTORY_CHARS,
+                    on_turn,
+                    source="repl",
+                )
+            except ConversationBusy:
+                continue
+            if response:
+                print(f"Ancilla: {response}")
     finally:
         if conversation_history is None:
             save_active_history(history)
@@ -789,9 +800,13 @@ def _run_client(args: argparse.Namespace) -> int:
             break
         try:
             resp = httpx.post(url, json={"message": user_input}, timeout=60.0)
+            if resp.status_code == 409:
+                continue
             resp.raise_for_status()
             data = resp.json()
-            print(f"Ancilla: {data.get('response', '')}")
+            text = (data.get("response") or "").strip()
+            if text:
+                print(f"Ancilla: {text}")
         except httpx.ConnectError:
             return fail(
                 f"Could not connect to Ancilla Core at {endpoint}.",
