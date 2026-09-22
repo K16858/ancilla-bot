@@ -134,6 +134,10 @@ def format_skills_catalog() -> str:
     skills = list_skills()
     if not skills:
         return ""
+    from ancilla_bot.runtime.mode import get_active_mode
+
+    priority = {name: i for i, name in enumerate(get_active_mode().skill_priority)}
+    skills = sorted(skills, key=lambda s: (priority.get(s.name, len(priority)), s.name))
     lines = ["## Available skills", ""]
     for skill in skills:
         desc = skill.description or "(no description)"
