@@ -965,7 +965,8 @@ def manage_state(
 ) -> str:
     """
     SQLite の CRUD。テーブルはホワイトリストのみ。
-    table: user_tasks | agent_tasks | reminders | finances | interests | audit_log
+    table: user_tasks | agent_tasks | reminders | finances | interests | audit_log |
+           idle_memory | memories | working_memory | procedures | artifacts
     operation: insert | select | update | delete
     payload: 操作ごとの引数。insert は行データ、select は limit/条件、update は id+更新項目、delete は id。
     """
