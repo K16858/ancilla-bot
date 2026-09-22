@@ -657,9 +657,6 @@ def _process_message_core(
     """
     if images and not VISION_ENABLED:
         return "画像処理は無効です。.env で OLLAMA_VISION_ENABLED=true にしてください（メインモデルが視覚対応の場合）。"
-    from ancilla_bot.runtime.persona import maybe_route_persona
-
-    maybe_route_persona(user_input)
     response, _emotion = run_agent_loop_with_tools(
         user_input,
         conversation_history,

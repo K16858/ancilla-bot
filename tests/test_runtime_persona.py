@@ -7,7 +7,6 @@ from ancilla_bot.runtime.persona import (
     get_active_persona,
     load_persona,
     memory_kind_allowed,
-    maybe_route_persona,
     set_persona,
     tool_denied_by_persona,
 )
@@ -66,18 +65,4 @@ def test_researcher_blocks_profile_memory(tmp_path: Path, monkeypatch):
     assert set_persona("researcher").startswith("Persona set to researcher")
     assert not memory_kind_allowed("profile")
     assert memory_kind_allowed("note")
-    set_persona("general")
-
-
-def test_maybe_route_persona_only_from_general(tmp_path: Path, monkeypatch):
-    root = Path(__file__).resolve().parents[1]
-    monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
-    monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(tmp_path / "active_persona.txt"))
-    persona_mod.end_temporary_persona()
-    set_persona("general")
-    assert maybe_route_persona("この論文を調査して") == "researcher"
-    assert get_active_persona().name == "researcher"
-    assert maybe_route_persona("実装して") is None
-    set_persona("general")
-    assert maybe_route_persona("docker を再起動") == "operator"
     set_persona("general")
