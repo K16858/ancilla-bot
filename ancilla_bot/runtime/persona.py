@@ -19,16 +19,16 @@ class PersonaSpec:
     role: str = ""
     goals: tuple[str, ...] = ()
     preferred_skills: tuple[str, ...] = ()
-    memory_read: tuple[str, ...] = ("user_model", "episodic")
-    memory_write: tuple[str, ...] = ("user_model", "episodic")
+    memory_read: tuple[str, ...] = ("semantic", "working", "procedural", "artifact")
+    memory_write: tuple[str, ...] = ("semantic", "working", "procedural", "artifact")
     tools_deny: tuple[str, ...] = ()
     tools_require_approval: tuple[str, ...] = ()
     resources_notes: str = ""
     output: str = ""
 
 
-_USER_MODEL_KINDS = frozenset({"profile", "fact", "goal"})
-_EPISODIC_KINDS = frozenset({"note"})
+_MEMORY_CLASSES = frozenset({"semantic", "working", "procedural", "artifact"})
+_DEFAULT_MEMORY_CLASSES = ("semantic", "working", "procedural", "artifact")
 
 
 def _personas_dir() -> Path:
@@ -82,10 +82,10 @@ def _from_data(name: str, data: dict[str, Any]) -> PersonaSpec:
         preferred_skills=tuple(str(x) for x in preferred) if isinstance(preferred, list) else (),
         memory_read=tuple(str(x) for x in read)
         if isinstance(read, list)
-        else ("user_model", "episodic"),
+        else _DEFAULT_MEMORY_CLASSES,
         memory_write=tuple(str(x) for x in write)
         if isinstance(write, list)
-        else ("user_model", "episodic"),
+        else _DEFAULT_MEMORY_CLASSES,
         tools_deny=tuple(str(x) for x in deny) if isinstance(deny, list) else (),
         tools_require_approval=tuple(str(x) for x in require) if isinstance(require, list) else (),
         resources_notes=notes,
@@ -192,11 +192,9 @@ def tool_requires_approval_by_persona(tool_name: str) -> bool:
     return tool_name in get_active_persona().tools_require_approval
 
 
-def memory_kind_allowed(kind: str) -> bool:
-    key = (kind or "").strip().lower()
-    scopes = get_active_persona().memory_write
-    if key in _USER_MODEL_KINDS:
-        return "user_model" in scopes
-    if key in _EPISODIC_KINDS:
-        return "episodic" in scopes
-    return False
+def memory_class_allowed(memory_class: str, *, write: bool = True) -> bool:
+    key = (memory_class or "").strip().lower()
+    if key not in _MEMORY_CLASSES:
+        return False
+    scopes = get_active_persona().memory_write if write else get_active_persona().memory_read
+    return key in scopes

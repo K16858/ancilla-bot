@@ -6,7 +6,7 @@ from ancilla_bot.runtime.persona import (
     format_persona_overlay,
     get_active_persona,
     load_persona,
-    memory_kind_allowed,
+    memory_class_allowed,
     set_persona,
     tool_denied_by_persona,
 )
@@ -57,12 +57,14 @@ def test_persisted_persona_survives_reread(tmp_path: Path, monkeypatch):
     set_persona("general")
 
 
-def test_researcher_blocks_profile_memory(tmp_path: Path, monkeypatch):
+def test_researcher_blocks_semantic_memory_write(tmp_path: Path, monkeypatch):
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
     monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(tmp_path / "active_persona.txt"))
     persona_mod.end_temporary_persona()
     assert set_persona("researcher").startswith("Persona set to researcher")
-    assert not memory_kind_allowed("profile")
-    assert memory_kind_allowed("note")
+    assert memory_class_allowed("semantic", write=False)
+    assert not memory_class_allowed("semantic", write=True)
+    assert not memory_class_allowed("working", write=True)
     set_persona("general")
+    assert memory_class_allowed("semantic", write=True)
