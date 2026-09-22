@@ -7,6 +7,7 @@ from ancilla_bot.runtime.persona import (
     get_active_persona,
     load_persona,
     memory_kind_allowed,
+    maybe_route_persona,
     set_persona,
     tool_denied_by_persona,
 )
@@ -43,6 +44,20 @@ def test_load_researcher(tmp_path: Path, monkeypatch):
         persona_mod.end_temporary_persona()
 
 
+def test_persisted_persona_survives_reread(tmp_path: Path, monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
+    path = tmp_path / "active_persona.txt"
+    monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(path))
+    persona_mod.end_temporary_persona()
+    assert set_persona("developer").startswith("Persona set to developer")
+    persona_mod.end_temporary_persona()
+    assert get_active_persona().name == "developer"
+    path.write_text("researcher\n", encoding="utf-8")
+    assert get_active_persona().name == "researcher"
+    set_persona("general")
+
+
 def test_researcher_blocks_profile_memory(tmp_path: Path, monkeypatch):
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
@@ -55,8 +70,6 @@ def test_researcher_blocks_profile_memory(tmp_path: Path, monkeypatch):
 
 
 def test_maybe_route_persona_only_from_general(tmp_path: Path, monkeypatch):
-    from ancilla_bot.runtime.persona import maybe_route_persona
-
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
     monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(tmp_path / "active_persona.txt"))
@@ -67,16 +80,4 @@ def test_maybe_route_persona_only_from_general(tmp_path: Path, monkeypatch):
     assert maybe_route_persona("実装して") is None
     set_persona("general")
     assert maybe_route_persona("docker を再起動") == "operator"
-    set_persona("general")
-
-    root = Path(__file__).resolve().parents[1]
-    monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
-    path = tmp_path / "active_persona.txt"
-    monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(path))
-    persona_mod.end_temporary_persona()
-    assert set_persona("developer").startswith("Persona set to developer")
-    persona_mod.end_temporary_persona()
-    assert get_active_persona().name == "developer"
-    path.write_text("researcher\n", encoding="utf-8")
-    assert get_active_persona().name == "researcher"
     set_persona("general")
