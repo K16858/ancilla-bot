@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -9,7 +8,8 @@ from typing import Any
 import yaml
 
 DEFAULT_MODES_DIR = Path(os.getenv("ANCILLA_MODES_DIR", "modes"))
-active_mode: ContextVar[str] = ContextVar("active_mode", default="general")
+# ponytail: one mode for the process. Per-conversation mode if overlapping runs must differ.
+_mode_name = "general"
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ def load_mode(name: str) -> ModeSpec:
 
 
 def get_active_mode() -> ModeSpec:
-    return load_mode(active_mode.get())
+    return load_mode(_mode_name)
 
 
 def format_mode_overlay() -> str:
@@ -85,6 +85,7 @@ def format_mode_overlay() -> str:
 
 
 def set_mode(name: str, **kwargs: object) -> str:
+    global _mode_name
     _ = kwargs
     key = (name or "").strip()
     if not key:
@@ -92,5 +93,5 @@ def set_mode(name: str, **kwargs: object) -> str:
     names = list_mode_names()
     if key not in names:
         return f"Error: unknown mode: {key}. Available: {', '.join(names)}"
-    active_mode.set(key)
+    _mode_name = key
     return f"Mode set to {key}."
