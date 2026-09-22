@@ -8,11 +8,15 @@ skills:
     - bash
 memory:
   read:
-    - user_model
-    - episodic
+    - semantic
+    - working
+    - procedural
+    - artifact
   write:
-    - user_model
-    - episodic
+    - semantic
+    - working
+    - procedural
+    - artifact
 tools:
   deny: []
   require_approval: []

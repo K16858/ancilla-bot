@@ -8,10 +8,11 @@ skills:
     - literature-research
 memory:
   read:
-    - user_model
-    - episodic
-  write:
-    - episodic
+    - semantic
+    - working
+    - procedural
+    - artifact
+  write: []
 tools:
   deny:
     - bash

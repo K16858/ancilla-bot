@@ -269,34 +269,34 @@ def search_memory(query: str, max_results: int = 3, **kwargs: Any) -> str:
     ユーザー事実と会話要約を Persona の memory.read に従って検索する。
     """
     _ = kwargs
+    from ancilla_bot.batch.summary_search import search_summaries_hybrid
     from ancilla_bot.heartbeat.db import search_memories
     from ancilla_bot.runtime.persona import get_active_persona
 
     spec = get_active_persona()
     n = max(1, int(max_results or 3))
     hits: list[dict[str, Any]] = []
-    if "user_model" in spec.memory_read:
+    if "semantic" in spec.memory_read:
         hits.extend(search_memories(query, n_results=n * 2))
-    if "episodic" in spec.memory_read:
-        for item in search_summaries_hybrid(query, n_results=n * 2):
-            meta = item.get("metadata") or {}
-            relevance = float(meta.get("score") or 1.0)
-            date = str(meta.get("date") or "")
-            recency = 1.0
-            if len(date) >= 10:
-                try:
-                    age = max((datetime.now() - datetime.strptime(date[:10], "%Y-%m-%d")).days, 0)
-                    recency = 1.0 / (1.0 + age)
-                except ValueError:
-                    recency = 0.5
-            hits.append(
-                {
-                    "document": item.get("document") or "",
-                    "source": item.get("source") or "fts",
-                    "rank": relevance * 10.0 + recency * 5.0,
-                    "metadata": meta,
-                }
-            )
+    for item in search_summaries_hybrid(query, n_results=n * 2):
+        meta = item.get("metadata") or {}
+        relevance = float(meta.get("score") or 1.0)
+        date = str(meta.get("date") or "")
+        recency = 1.0
+        if len(date) >= 10:
+            try:
+                age = max((datetime.now() - datetime.strptime(date[:10], "%Y-%m-%d")).days, 0)
+                recency = 1.0 / (1.0 + age)
+            except ValueError:
+                recency = 0.5
+        hits.append(
+            {
+                "document": item.get("document") or "",
+                "source": item.get("source") or "fts",
+                "rank": relevance * 10.0 + recency * 5.0,
+                "metadata": meta,
+            }
+        )
     hits.sort(key=lambda h: float(h.get("rank") or 0.0), reverse=True)
     seen: set[str] = set()
     picked: list[dict[str, Any]] = []
