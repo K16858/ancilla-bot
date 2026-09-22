@@ -50,21 +50,23 @@ def test_gated_call_deny_does_not_run_tool():
     assert called["n"] == 0
 
 
-def test_bash_denied_by_researcher_persona(monkeypatch):
+def test_bash_denied_by_researcher_persona(monkeypatch, tmp_path):
     from ancilla_bot.runtime import persona as persona_mod
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
-    prev = persona_mod._persona_name
+    monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(tmp_path / "active_persona.txt"))
+    persona_mod.end_temporary_persona()
     token = run_source.set("user")
     try:
-        persona_mod._persona_name = "researcher"
+        assert persona_mod.set_persona("researcher").startswith("Persona set to researcher")
         assert decide("bash").verdict == DENY
         assert decide("web_search").verdict == ALLOW
         assert decide("set_persona").verdict == ALLOW
     finally:
-        persona_mod._persona_name = prev
+        persona_mod.set_persona("general")
+        persona_mod.end_temporary_persona()
         run_source.reset(token)
 
 

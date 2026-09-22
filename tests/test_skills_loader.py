@@ -120,24 +120,28 @@ def test_preferred_skills_lead_catalog(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("ANCILLA_SKILLS_DIR", str(bundled))
     monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(tmp_path / "ws"))
     monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(personas))
-    prev = persona_mod._persona_name
+    monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(tmp_path / "active_persona.txt"))
+    persona_mod.end_temporary_persona()
     try:
         assert set_persona("focus").startswith("Persona set to focus")
         catalog = format_skills_catalog()
         assert catalog.index("- zeta:") < catalog.index("- alpha:")
     finally:
-        persona_mod._persona_name = prev
+        set_persona("general")
+        persona_mod.end_temporary_persona()
 
 
-def test_composer_includes_persona_overlay(monkeypatch):
+def test_composer_includes_persona_overlay(tmp_path: Path, monkeypatch):
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
     monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(root / "workspace"))
-    prev = get_active_persona().name
+    monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(tmp_path / "active_persona.txt"))
+    persona_mod.end_temporary_persona()
     try:
         assert set_persona("developer").startswith("Persona set to developer")
         prompt = build_core_memory("- get_time: now")
         assert "Active persona: developer" in prompt
         assert "Ancilla" in prompt
     finally:
-        persona_mod._persona_name = prev
+        set_persona("general")
+        persona_mod.end_temporary_persona()
