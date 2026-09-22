@@ -111,13 +111,15 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "Add a user goal. action_input: {\"goal\": \"...\", \"term\": \"short|long\"}. term defaults to short."
     ),
     "manage_state": (
-        "CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log, idle_memory, memories. "
+        "CRUD on user_tasks, agent_tasks, reminders, finances, interests, audit_log, idle_memory, "
+        "memories, working_memory. "
         "action_input: {\"table\": \"reminders\", \"operation\": \"select|insert|update|delete\", "
         "\"payload\": {}}. select: optional completed/limit. update/delete: payload.id required. "
         "insert: reminders/tasks need scheduled_at+content; finances need amount+category; interests need name; "
         "memories need kind (profile|fact|goal|note), content, scope_type, and scope_id; "
         "optional subject, predicate, memory_key, evidence_id, valid_from. "
         "Same memory_key supersedes; without memory_key rows append. "
+        "working_memory needs scope_type, scope_id, task_key; optional goal, state, next_actions, resources, status. "
         "status/source_type are set by the write path. Durable facts need evidence_id. "
         "Reminders: owner=user|agent, kind=user_reminder|agent_wakeup. Idle cannot create user-owned rows."
     ),
