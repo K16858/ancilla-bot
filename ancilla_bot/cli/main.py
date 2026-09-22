@@ -1255,6 +1255,14 @@ def main() -> int:
     batch_sub = batch_parser.add_subparsers(dest="batch_command", required=True)
     batch_sub.add_parser("summarize", help="会話を結合し summaries に出力")
 
+    persona_parser = subparsers.add_parser("persona", help="実行 Persona を一覧・表示・切替")
+    persona_sub = persona_parser.add_subparsers(dest="persona_command")
+    persona_sub.add_parser("list", help="Persona 一覧（活性に *）")
+    show_p = persona_sub.add_parser("show", help="Persona 詳細")
+    show_p.add_argument("name", nargs="?", default="", help="省略時は活性 Persona")
+    use_p = persona_sub.add_parser("use", help="活性 Persona を切替")
+    use_p.add_argument("name", help="Persona 名")
+
     subparsers.choices["run"].add_argument(
         "--no-repl",
         action="store_true",
@@ -1298,6 +1306,12 @@ def main() -> int:
         from ancilla_bot.cli.commands import update as update_cmd
 
         return update_cmd.cmd_update(args)
+    if args.command == "persona":
+        from ancilla_bot.cli.commands import persona as persona_cmd
+
+        if not getattr(args, "persona_command", None):
+            args.persona_command = "list"
+        return persona_cmd.cmd_persona(args)
     if args.command == "version":
         from ancilla_bot.cli.commands import update as update_cmd
 
