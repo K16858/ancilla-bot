@@ -6,6 +6,5 @@ skill_priority:
 memory_scope:
   - user_model
   - episodic
-  - knowledge
 output_policy: default
 proactive: low
