@@ -14,7 +14,14 @@ def test_search_memory_ranks_user_facts(tmp_path: Path, monkeypatch):
     db.manage_state(
         "memories",
         "insert",
-        {"kind": "fact", "subject": "pet", "content": "likes cats", "importance": 0.9},
+        {
+            "kind": "fact",
+            "subject": "pet",
+            "content": "likes cats",
+            "importance": 0.9,
+            "scope_type": "user",
+            "scope_id": "default",
+        },
     )
     out = search_memory("cats")
     assert "likes cats" in out

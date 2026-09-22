@@ -83,7 +83,13 @@ def test_memories_insert_projects_user_md(tmp_path: Path, monkeypatch):
     result = db.manage_state(
         "memories",
         "insert",
-        {"kind": "fact", "subject": "pet", "content": "cat"},
+        {
+            "kind": "fact",
+            "subject": "pet",
+            "content": "cat",
+            "scope_type": "user",
+            "scope_id": "default",
+        },
         trusted_user=True,
     )
     assert result.startswith("Inserted into memories")

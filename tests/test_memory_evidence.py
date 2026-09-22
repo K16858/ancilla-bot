@@ -38,7 +38,13 @@ def test_denied_step_is_not_valid_evidence(tmp_path: Path, monkeypatch):
     out = db.manage_state(
         "memories",
         "insert",
-        {"kind": "fact", "content": "from deny", "evidence_id": step_id},
+        {
+            "kind": "fact",
+            "content": "from deny",
+            "evidence_id": step_id,
+            "scope_type": "user",
+            "scope_id": "default",
+        },
     )
     assert out.startswith("Error: evidence_id")
 
@@ -49,7 +55,13 @@ def test_succeeded_step_is_valid_evidence(tmp_path: Path, monkeypatch):
     out = db.manage_state(
         "memories",
         "insert",
-        {"kind": "fact", "content": "from tool", "evidence_id": step_id},
+        {
+            "kind": "fact",
+            "content": "from tool",
+            "evidence_id": step_id,
+            "scope_type": "user",
+            "scope_id": "default",
+        },
     )
     assert out.startswith("Inserted")
     row = db.list_memories()[0]

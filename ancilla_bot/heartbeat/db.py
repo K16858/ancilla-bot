@@ -186,6 +186,7 @@ CREATE TABLE IF NOT EXISTS memories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT NOT NULL,
     subject TEXT NOT NULL DEFAULT '',
+    predicate TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL,
     status TEXT NOT NULL,
     source_type TEXT NOT NULL,
@@ -196,6 +197,9 @@ CREATE TABLE IF NOT EXISTS memories (
     supersedes INTEGER,
     expires_at TEXT,
     memory_key TEXT NOT NULL DEFAULT '',
+    scope_type TEXT NOT NULL DEFAULT '',
+    scope_id TEXT NOT NULL DEFAULT '',
+    valid_from TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -208,13 +212,33 @@ _MEMORY_COL_MIGRATIONS = (
     ("supersedes", "INTEGER"),
     ("expires_at", "TEXT"),
     ("memory_key", "TEXT NOT NULL DEFAULT ''"),
+    ("predicate", "TEXT NOT NULL DEFAULT ''"),
+    ("scope_type", "TEXT NOT NULL DEFAULT ''"),
+    ("scope_id", "TEXT NOT NULL DEFAULT ''"),
+    ("valid_from", "TEXT"),
 )
 
 _MEMORY_COLS = (
-    "id, kind, subject, content, status, source_type, evidence_id, "
+    "id, kind, subject, predicate, content, status, source_type, evidence_id, "
     "confidence, importance, lifecycle, supersedes, expires_at, memory_key, "
-    "created_at, updated_at"
+    "scope_type, scope_id, valid_from, created_at, updated_at"
 )
+
+_SCOPE_TYPES = frozenset({"global", "user", "project", "workspace", "task", "agent"})
+
+
+def _parse_scope(payload: dict[str, Any], *, required: bool) -> tuple[str, str] | str:
+    raw_type = str(payload.get("scope_type") or "").strip().lower()
+    raw_id = str(payload.get("scope_id") or "").strip()
+    if not raw_type and not raw_id:
+        if required:
+            return "Error: scope_type and scope_id are required."
+        return "", ""
+    if not raw_type or not raw_id:
+        return "Error: scope_type and scope_id must both be set."
+    if raw_type not in _SCOPE_TYPES:
+        return f"Error: scope_type must be one of {sorted(_SCOPE_TYPES)}."
+    return raw_type, raw_id[:200]
 
 
 def ensure_schema() -> None:
@@ -759,6 +783,9 @@ def _validate_insert_payload(table: str, payload: dict[str, Any]) -> str | None:
     if table == "memories":
         if not payload.get("kind") or not payload.get("content"):
             return "Error: memories require kind and content."
+        scope = _parse_scope(payload, required=True)
+        if isinstance(scope, str):
+            return scope
         return None
     return "Error: unknown table."
 
@@ -879,7 +906,12 @@ def manage_state(
 
                     if not memory_kind_allowed(kind):
                         return f"Error: memories kind '{kind}' is denied for the active persona."
+                    scope = _parse_scope(payload, required=True)
+                    if isinstance(scope, str):
+                        return scope
+                    scope_type, scope_id = scope
                     subject = str(payload.get("subject", "")).strip()[:200]
+                    predicate = str(payload.get("predicate", "")).strip()[:200]
                     mem_content = str(payload.get("content", "")).strip()
                     if not mem_content:
                         return "Error: content is required."
@@ -895,15 +927,17 @@ def manage_state(
                     if raw_sup is not None and str(raw_sup).strip() != "":
                         supersedes = int(raw_sup)
                     memory_key = str(payload.get("memory_key") or "").strip()[:200]
+                    valid_from = str(payload.get("valid_from") or "").strip() or now
                     c.execute(
                         "INSERT INTO memories "
-                        "(kind, subject, content, status, source_type, evidence_id, "
+                        "(kind, subject, predicate, content, status, source_type, evidence_id, "
                         "confidence, importance, lifecycle, supersedes, expires_at, memory_key, "
-                        "created_at, updated_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)",
+                        "scope_type, scope_id, valid_from, created_at, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             kind,
                             subject,
+                            predicate,
                             mem_content,
                             status,
                             source_type,
@@ -913,6 +947,9 @@ def manage_state(
                             supersedes,
                             expires_at,
                             memory_key,
+                            scope_type,
+                            scope_id,
+                            valid_from,
                             now,
                             now,
                         ),
@@ -1041,6 +1078,19 @@ def manage_state(
                     if payload.get("subject"):
                         where.append("subject = ?")
                         params_mem.append(str(payload["subject"]).strip())
+                    has_scope_type = "scope_type" in payload and str(payload.get("scope_type") or "").strip() != ""
+                    has_scope_id = "scope_id" in payload and str(payload.get("scope_id") or "").strip() != ""
+                    if has_scope_type or has_scope_id:
+                        scope = _parse_scope(payload, required=True)
+                        if isinstance(scope, str):
+                            return scope
+                        scope_type, scope_id = scope
+                        where.append("scope_type = ?")
+                        where.append("scope_id = ?")
+                        params_mem.extend([scope_type, scope_id])
+                    else:
+                        where.append("(scope_type = '' OR scope_type IS NULL)")
+                        where.append("(scope_id = '' OR scope_id IS NULL)")
                     lifecycle = str(payload.get("lifecycle") or "active").strip().lower()
                     if lifecycle:
                         where.append("lifecycle = ?")
@@ -1124,6 +1174,7 @@ def manage_state(
                     else {
                         "kind",
                         "subject",
+                        "predicate",
                         "content",
                         "confidence",
                         "importance",
@@ -1131,6 +1182,9 @@ def manage_state(
                         "supersedes",
                         "expires_at",
                         "memory_key",
+                        "scope_type",
+                        "scope_id",
+                        "valid_from",
                     } if table == "memories"
                     else set()
                 )
