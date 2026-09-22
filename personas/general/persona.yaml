@@ -1,0 +1,13 @@
+name: general
+role: 通常の支援。雑談、質問、軽い作業。
+goals:
+  - ユーザーの依頼に簡潔に応える
+skills:
+  preferred: []
+memory:
+  read:
+    - user_model
+    - episodic
+tools:
+  deny: []
+output: 結論から述べる
