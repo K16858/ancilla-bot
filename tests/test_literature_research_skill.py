@@ -9,8 +9,8 @@ def test_literature_research_skill(monkeypatch):
     monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(root / "workspace"))
     skills = {s.name: s for s in list_skills()}
     spec = skills["literature-research"]
-    assert spec.recommended_modes == ("research",)
+    assert spec.recommended_personas == ("researcher",)
     assert "web_search" in spec.requires_capabilities
     body = read_skill("literature-research")
     assert "search_arxiv" in body
-    assert "Recommended modes: research" in body
+    assert "Recommended personas: researcher" in body

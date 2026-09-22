@@ -1,1 +1,1 @@
-"""Runtime contracts: Capability / Mode / Policy."""
+"""Runtime contracts: Capability / Persona / Policy."""

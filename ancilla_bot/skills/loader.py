@@ -25,7 +25,7 @@ class SkillMeta:
     body: str
     version: int = 1
     requires_capabilities: tuple[str, ...] = ()
-    recommended_modes: tuple[str, ...] = ()
+    recommended_personas: tuple[str, ...] = ()
     risk: str = "read_only"
     status: str = "active"
 
@@ -59,9 +59,9 @@ def _load_skill_file(path: Path, dir_name: str) -> SkillMeta | None:
     caps = requires.get("capabilities") if isinstance(requires, dict) else []
     if not isinstance(caps, list):
         caps = []
-    modes = meta.get("recommended_modes")
-    if not isinstance(modes, list):
-        modes = []
+    personas = meta.get("recommended_personas")
+    if not isinstance(personas, list):
+        personas = []
     try:
         version = int(meta.get("version") or 1)
     except (TypeError, ValueError):
@@ -77,7 +77,7 @@ def _load_skill_file(path: Path, dir_name: str) -> SkillMeta | None:
         body=body.strip(),
         version=version,
         requires_capabilities=tuple(str(c) for c in caps),
-        recommended_modes=tuple(str(m) for m in modes),
+        recommended_personas=tuple(str(m) for m in personas),
         risk=risk,
         status=status,
     )
@@ -124,8 +124,8 @@ def read_skill(name: str, **kwargs: object) -> str:
     for skill in list_skills():
         if skill.name == key:
             text = skill.body or skill.description
-            if skill.recommended_modes:
-                text += "\n\nRecommended modes: " + ", ".join(skill.recommended_modes)
+            if skill.recommended_personas:
+                text += "\n\nRecommended personas: " + ", ".join(skill.recommended_personas)
             return text
     return f"Error: unknown skill: {key}"
 
@@ -134,9 +134,9 @@ def format_skills_catalog() -> str:
     skills = list_skills()
     if not skills:
         return ""
-    from ancilla_bot.runtime.mode import get_active_mode
+    from ancilla_bot.runtime.persona import get_active_persona
 
-    priority = {name: i for i, name in enumerate(get_active_mode().skill_priority)}
+    priority = {name: i for i, name in enumerate(get_active_persona().preferred_skills)}
     skills = sorted(skills, key=lambda s: (priority.get(s.name, len(priority)), s.name))
     lines = ["## Available skills", ""]
     for skill in skills:

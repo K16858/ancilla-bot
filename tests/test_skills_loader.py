@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from ancilla_bot.runtime import mode as mode_mod
-from ancilla_bot.runtime.mode import set_mode
+from ancilla_bot.memory.core import build_core_memory
+from ancilla_bot.runtime import persona as persona_mod
+from ancilla_bot.runtime.persona import get_active_persona, set_persona
 from ancilla_bot.skills.loader import format_skills_catalog, list_skills, read_skill
 
 
@@ -46,7 +47,7 @@ def test_skill_spec_frontmatter(tmp_path: Path, monkeypatch):
     (bundled / "lit" / "SKILL.md").write_text(
         "---\nname: lit\nversion: 2\ndescription: Lit.\n"
         "requires:\n  capabilities:\n    - web_search\n"
-        "recommended_modes:\n  - research\nrisk: read_only\n---\nBody.\n",
+        "recommended_personas:\n  - researcher\nrisk: read_only\n---\nBody.\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("ANCILLA_SKILLS_DIR", str(bundled))
@@ -54,9 +55,9 @@ def test_skill_spec_frontmatter(tmp_path: Path, monkeypatch):
     skill = list_skills()[0]
     assert skill.version == 2
     assert skill.requires_capabilities == ("web_search",)
-    assert skill.recommended_modes == ("research",)
+    assert skill.recommended_personas == ("researcher",)
     assert skill.risk == "read_only"
-    assert "Recommended modes: research" in read_skill("lit")
+    assert "Recommended personas: researcher" in read_skill("lit")
 
 
 def test_workspace_unknown_capability_rejected(tmp_path: Path, monkeypatch):
@@ -96,7 +97,7 @@ def test_trial_workspace_skill_catalogued(tmp_path: Path, monkeypatch):
     assert read_skill("draft") == "Draft body."
 
 
-def test_skill_priority_leads_catalog(tmp_path: Path, monkeypatch):
+def test_preferred_skills_lead_catalog(tmp_path: Path, monkeypatch):
     bundled = tmp_path / "bundled"
     (bundled / "alpha").mkdir(parents=True)
     (bundled / "zeta").mkdir(parents=True)
@@ -108,20 +109,35 @@ def test_skill_priority_leads_catalog(tmp_path: Path, monkeypatch):
         "---\nname: zeta\ndescription: Z.\n---\nZ.\n",
         encoding="utf-8",
     )
-    modes = tmp_path / "modes"
-    modes.mkdir()
-    (modes / "general.yaml").write_text("name: general\n", encoding="utf-8")
-    (modes / "focus.yaml").write_text(
-        "name: focus\nskill_priority:\n  - zeta\n",
+    personas = tmp_path / "personas"
+    (personas / "general").mkdir(parents=True)
+    (personas / "focus").mkdir(parents=True)
+    (personas / "general" / "persona.yaml").write_text("name: general\n", encoding="utf-8")
+    (personas / "focus" / "persona.yaml").write_text(
+        "name: focus\nskills:\n  preferred:\n    - zeta\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("ANCILLA_SKILLS_DIR", str(bundled))
     monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(tmp_path / "ws"))
-    monkeypatch.setenv("ANCILLA_MODES_DIR", str(modes))
-    prev = mode_mod._mode_name
+    monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(personas))
+    prev = persona_mod._persona_name
     try:
-        assert set_mode("focus").startswith("Mode set to focus")
+        assert set_persona("focus").startswith("Persona set to focus")
         catalog = format_skills_catalog()
         assert catalog.index("- zeta:") < catalog.index("- alpha:")
     finally:
-        mode_mod._mode_name = prev
+        persona_mod._persona_name = prev
+
+
+def test_composer_includes_persona_overlay(monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
+    monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(root / "workspace"))
+    prev = get_active_persona().name
+    try:
+        assert set_persona("developer").startswith("Persona set to developer")
+        prompt = build_core_memory("- get_time: now")
+        assert "Active persona: developer" in prompt
+        assert "Ancilla" in prompt
+    finally:
+        persona_mod._persona_name = prev
