@@ -6,10 +6,16 @@ from ancilla_bot.runtime.persona import set_persona
 from ancilla_bot.runtime.self_model import format_runtime_self_model
 
 
-def test_self_model_has_persona_not_gpu():
+def test_self_model_has_persona_not_gpu(tmp_path, monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
+    monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(tmp_path / "active_persona.txt"))
+    persona_mod.end_temporary_persona()
+    set_persona("general")
     text = format_runtime_self_model()
     assert "active_persona:" in text
     assert "capabilities:" in text
+    assert "resources: local only" in text
     assert "gpu" not in text.lower()
 
 

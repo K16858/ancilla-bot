@@ -14,9 +14,10 @@ def format_runtime_self_model() -> str:
     mcp_n = sum(1 for c in caps if "__" in c.name)
     sandbox = os.getenv("ANCILLA_SANDBOX", "none").strip() or "none"
     allow = os.getenv("ANCILLA_BASH_ALLOWLIST", "").strip() or "(none)"
+    persona = get_active_persona()
     lines = [
         "## Runtime self model",
-        f"active_persona: {get_active_persona().name}",
+        f"active_persona: {persona.name}",
         f"run_source: {run_source.get()}",
         f"sandbox: {sandbox}",
         f"bash_allowlist: {allow}",
@@ -25,6 +26,8 @@ def format_runtime_self_model() -> str:
         "  external_write: deny_autonomous",
         "capabilities: " + ", ".join(names),
     ]
+    if persona.resources_notes:
+        lines.append(f"resources: {persona.resources_notes}")
     if mcp_n:
         lines.append(f"mcp_tools: {mcp_n}")
     return "\n".join(lines)
