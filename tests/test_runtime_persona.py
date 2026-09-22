@@ -11,16 +11,18 @@ from ancilla_bot.runtime.persona import (
 )
 
 
-def test_load_researcher(monkeypatch):
+def test_load_researcher(tmp_path: Path, monkeypatch):
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
-    prev = persona_mod._persona_name
+    monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(tmp_path / "active_persona.txt"))
+    persona_mod.end_temporary_persona()
     try:
         spec = load_persona("researcher")
         assert spec.name == "researcher"
         assert "literature-research" in spec.preferred_skills
         assert "bash" in spec.tools_deny
         assert set_persona("researcher").startswith("Persona set to researcher")
+        assert (tmp_path / "active_persona.txt").read_text(encoding="utf-8").strip() == "researcher"
         overlay = format_persona_overlay()
         assert "Active persona: researcher" in overlay
         assert tool_denied_by_persona("bash")
@@ -36,4 +38,19 @@ def test_load_researcher(monkeypatch):
         assert seen == ["researcher"]
         assert set_persona("nope").startswith("Error:")
     finally:
-        persona_mod._persona_name = prev
+        set_persona("general")
+        persona_mod.end_temporary_persona()
+
+
+def test_persisted_persona_survives_reread(tmp_path: Path, monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
+    path = tmp_path / "active_persona.txt"
+    monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(path))
+    persona_mod.end_temporary_persona()
+    assert set_persona("developer").startswith("Persona set to developer")
+    persona_mod.end_temporary_persona()
+    assert get_active_persona().name == "developer"
+    path.write_text("researcher\n", encoding="utf-8")
+    assert get_active_persona().name == "researcher"
+    set_persona("general")
