@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from ancilla_bot.memory.core import build_core_memory
-from ancilla_bot.runtime.mode import active_mode
+from ancilla_bot.runtime.mode import get_active_mode, set_mode
 from ancilla_bot.runtime.self_model import format_runtime_self_model
 
 
@@ -16,16 +16,14 @@ def test_persona_stable_across_modes(monkeypatch):
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(root / "workspace"))
     monkeypatch.setenv("ANCILLA_MODES_DIR", str(root / "modes"))
-    token_a = active_mode.set("general")
+    prev = get_active_mode().name
     try:
+        assert set_mode("general").startswith("Mode set to general")
         general = build_core_memory("- get_time: now")
-    finally:
-        active_mode.reset(token_a)
-    token_b = active_mode.set("research")
-    try:
+        assert set_mode("research").startswith("Mode set to research")
         research = build_core_memory("- get_time: now")
     finally:
-        active_mode.reset(token_b)
+        set_mode(prev)
     assert "Precision Support AI Maid" in general
     assert "Precision Support AI Maid" in research
     assert "ご主人様" in general and "ご主人様" in research
