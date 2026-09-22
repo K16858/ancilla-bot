@@ -10,6 +10,12 @@ memory:
   read:
     - user_model
     - episodic
+  write:
+    - user_model
+    - episodic
 tools:
   deny: []
+  require_approval: []
+resources:
+  notes: local only
 output: State before and after
