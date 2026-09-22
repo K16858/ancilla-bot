@@ -25,7 +25,7 @@ from ancilla_bot.tools.workspace_io import workspace_inventory as workspace_inve
 from ancilla_bot.tools.workspace_io import write_file as workspace_write_file
 from ancilla_bot.personal_model import get_user_context, update_user_goal
 from ancilla_bot.skills.loader import read_skill as load_skill_impl
-from ancilla_bot.runtime.mode import set_mode as set_mode_impl
+from ancilla_bot.runtime.persona import set_persona as set_persona_impl
 from ancilla_bot.tools.use_edgedevice import use_edgedevice
 
 # TOOL_DESCRIPTIONS は catalog 生成の説明文。TOOLS.md は prompt に使わない。
@@ -90,14 +90,14 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "action_input: {\"name\": \"skill-name\"}. "
         "Call when a listed skill matches the current task."
     ),
-    "set_mode": (
-        "Switch the temporary runtime mode overlay (does not change persona). "
-        "action_input: {\"name\": \"general|research|coding\"}."
+    "set_persona": (
+        "Switch the active runtime persona (does not change character voice). "
+        "action_input: {\"name\": \"general|researcher|developer|operator\"}."
     ),
     # ── Memory / state ────────────────────────────────────────────────────
     "search_memory": (
         "Search user facts and past conversation summaries. "
-        "Scope follows the active mode. Ranking uses relevance, recency, importance, confidence. "
+        "Scope follows the active persona. Ranking uses relevance, recency, importance, confidence. "
         "action_input: {\"query\": \"search terms\", \"max_results\": 3}."
     ),
     "get_user_context": (
@@ -256,25 +256,25 @@ def load_skill(name: str, **kwargs: Any) -> str:
     return load_skill_impl(name=name, **kwargs)
 
 
-def set_mode(name: str, **kwargs: Any) -> str:
-    return set_mode_impl(name=name, **kwargs)
+def set_persona(name: str, **kwargs: Any) -> str:
+    return set_persona_impl(name=name, **kwargs)
 
 
 
 def search_memory(query: str, max_results: int = 3, **kwargs: Any) -> str:
     """
-    ユーザー事実と会話要約を Mode の memory_scope に従って検索する。
+    ユーザー事実と会話要約を Persona の memory.read に従って検索する。
     """
     _ = kwargs
     from ancilla_bot.heartbeat.db import search_memories
-    from ancilla_bot.runtime.mode import get_active_mode
+    from ancilla_bot.runtime.persona import get_active_persona
 
-    spec = get_active_mode()
+    spec = get_active_persona()
     n = max(1, int(max_results or 3))
     hits: list[dict[str, Any]] = []
-    if "user_model" in spec.memory_scope:
+    if "user_model" in spec.memory_read:
         hits.extend(search_memories(query, n_results=n * 2))
-    if "episodic" in spec.memory_scope:
+    if "episodic" in spec.memory_read:
         for item in search_summaries_hybrid(query, n_results=n * 2):
             meta = item.get("metadata") or {}
             relevance = float(meta.get("score") or 1.0)
@@ -338,7 +338,7 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "edit_file_safe": edit_file_safe,
     "bash": bash,
     "load_skill": load_skill,
-    "set_mode": set_mode,
+    "set_persona": set_persona,
     "read_file": read_file,
     "write_file": write_file,
     "trash_file": trash_file,

@@ -22,6 +22,8 @@ class Decision:
 
 
 def decide(tool_name: str) -> Decision:
+    from ancilla_bot.runtime.persona import tool_denied_by_persona
+
     cap = get_capability(tool_name)
     if cap is None:
         return Decision(ALLOW)
@@ -29,6 +31,11 @@ def decide(tool_name: str) -> Decision:
         return Decision(
             DENY,
             f"Error: capability '{tool_name}' ({cap.risk}) is denied for {run_source.get()}.",
+        )
+    if tool_denied_by_persona(tool_name):
+        return Decision(
+            DENY,
+            f"Error: capability '{tool_name}' is denied for the active persona.",
         )
     if cap.risk in _REQUIRE_APPROVAL:
         return Decision(

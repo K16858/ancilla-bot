@@ -6,7 +6,7 @@ requires:
   capabilities:
     - manage_state
     - load_skill
-recommended_modes:
+recommended_personas:
   - general
 risk: read_only
 ---

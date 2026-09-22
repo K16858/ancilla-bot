@@ -16,7 +16,7 @@ BUILTIN_TOOLS = {
     "edit_file_safe",
     "bash",
     "load_skill",
-    "set_mode",
+    "set_persona",
     "read_file",
     "write_file",
     "trash_file",
@@ -56,14 +56,14 @@ def test_core_memory_includes_character_agent_skills(monkeypatch):
     assert "## Available skills" in prompt
 
 
-def test_tools_catalog_includes_set_mode(monkeypatch):
+def test_tools_catalog_includes_set_persona(monkeypatch):
     monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(ROOT / "workspace"))
     monkeypatch.setenv("ANCILLA_SKILLS_DIR", str(ROOT / "skills"))
     monkeypatch.setattr(memory_core, "DEFAULT_PROMPTS_DIR", ROOT / "data" / "prompts")
     from ancilla_bot.tools.registry import build_tools_system_prompt
 
     prompt = build_tools_system_prompt()
-    assert "set_mode" in prompt
+    assert "set_persona" in prompt
 
 
 def test_load_skill_bash(monkeypatch):

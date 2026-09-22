@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 from ancilla_bot.core.run_context import run_source
-from ancilla_bot.runtime.mode import get_active_mode
+from ancilla_bot.runtime.persona import get_active_persona
 
 
 def format_runtime_self_model() -> str:
@@ -16,7 +16,7 @@ def format_runtime_self_model() -> str:
     allow = os.getenv("ANCILLA_BASH_ALLOWLIST", "").strip() or "(none)"
     lines = [
         "## Runtime self model",
-        f"active_mode: {get_active_mode().name}",
+        f"active_persona: {get_active_persona().name}",
         f"run_source: {run_source.get()}",
         f"sandbox: {sandbox}",
         f"bash_allowlist: {allow}",

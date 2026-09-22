@@ -114,8 +114,8 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         {"name": {"type": "string", "description": "Skill name from the catalog"}},
         required=["name"],
     ),
-    "set_mode": _schema(
-        {"name": {"type": "string", "description": "Mode name (general, research, coding)"}},
+    "set_persona": _schema(
+        {"name": {"type": "string", "description": "Persona name (general, researcher, developer, operator)"}},
         required=["name"],
     ),
     "search_memory": _schema(
