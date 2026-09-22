@@ -27,12 +27,75 @@ def test_same_memory_key_supersedes(tmp_path: Path, monkeypatch):
         "insert",
         _scope(kind="profile", subject="language", content="ja", memory_key="user.language"),
     )
-    rows = {r["id"]: r for r in db.list_memories()}
-    old, new = min(rows), max(rows)
-    assert rows[old]["lifecycle"] == "superseded"
-    assert rows[new]["lifecycle"] == "active"
-    assert rows[new]["content"] == "ja"
-    assert rows[new]["supersedes"] == old
+    active = db.list_memories(durable_only=False)
+    # durable_only=False still drops expired; superseded rows get expires_at closed.
+    assert len([r for r in active if r["lifecycle"] == "active"]) == 1
+    assert active[0]["content"] == "ja"
+    import json
+
+    raw = db.manage_state(
+        "memories",
+        "select",
+        {"lifecycle": "superseded", "scope_type": "user", "scope_id": "default", "limit": 10},
+    )
+    closed = json.loads(raw)
+    assert len(closed) == 1
+    assert closed[0]["content"] == "en"
+    assert closed[0]["expires_at"]
+    assert active[0]["supersedes"] == closed[0]["id"]
+
+
+def test_memory_key_does_not_cross_scope(tmp_path: Path, monkeypatch):
+    _db(tmp_path, monkeypatch)
+    db.manage_state(
+        "memories",
+        "insert",
+        _scope(kind="fact", content="a", memory_key="host.ram"),
+    )
+    db.manage_state(
+        "memories",
+        "insert",
+        {
+            "scope_type": "project",
+            "scope_id": "ancilla",
+            "kind": "fact",
+            "content": "b",
+            "memory_key": "host.ram",
+        },
+    )
+    rows = db.list_memories()
+    assert len(rows) == 2
+    assert all(r["lifecycle"] == "active" for r in rows)
+
+
+def test_supersedes_rejects_other_scope(tmp_path: Path, monkeypatch):
+    _db(tmp_path, monkeypatch)
+    db.manage_state("memories", "insert", _scope(kind="note", content="old"))
+    old_id = db.list_memories()[0]["id"]
+    out = db.manage_state(
+        "memories",
+        "insert",
+        {
+            "scope_type": "project",
+            "scope_id": "ancilla",
+            "kind": "note",
+            "content": "new",
+            "supersedes": old_id,
+        },
+    )
+    assert out.startswith("Error: supersedes must refer")
+
+
+def test_lifecycle_update_allows_archived_only(tmp_path: Path, monkeypatch):
+    _db(tmp_path, monkeypatch)
+    db.manage_state("memories", "insert", _scope(kind="note", content="x"))
+    row_id = db.list_memories()[0]["id"]
+    assert db.manage_state("memories", "update", {"id": row_id, "lifecycle": "archived"}).startswith(
+        "Updated"
+    )
+    assert db.manage_state("memories", "update", {"id": row_id, "lifecycle": "superseded"}).startswith(
+        "Error: lifecycle"
+    )
 
 
 def test_short_goals_all_stay_active(tmp_path: Path, monkeypatch):
@@ -63,9 +126,20 @@ def test_explicit_supersedes_one_row(tmp_path: Path, monkeypatch):
         "insert",
         _scope(kind="note", content="new", supersedes=old_id),
     )
-    rows = {r["id"]: r for r in db.list_memories()}
-    assert rows[old_id]["lifecycle"] == "superseded"
-    assert sum(1 for r in rows.values() if r["lifecycle"] == "active") == 2
+    import json
+
+    active = [r for r in db.list_memories() if r["lifecycle"] == "active"]
+    assert {r["content"] for r in active} == {"keep", "new"}
+    closed = json.loads(
+        db.manage_state(
+            "memories",
+            "select",
+            {"lifecycle": "superseded", "scope_type": "user", "scope_id": "default", "limit": 10},
+        )
+    )
+    assert len(closed) == 1
+    assert closed[0]["id"] == old_id
+    assert closed[0]["content"] == "old"
 
 
 def test_expired_memory_not_durable(tmp_path: Path, monkeypatch):
