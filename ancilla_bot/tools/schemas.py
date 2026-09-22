@@ -115,7 +115,7 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         required=["name"],
     ),
     "set_persona": _schema(
-        {"name": {"type": "string", "description": "Persona name (general, researcher, developer, operator)"}},
+        {"name": {"type": "string", "description": "Persona name. Switch yourself when the task fits; return to general when done."}},
         required=["name"],
     ),
     "search_memory": _schema(

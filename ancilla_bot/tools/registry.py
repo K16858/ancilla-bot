@@ -92,7 +92,9 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "set_persona": (
         "Switch the active runtime persona (does not change character voice). "
-        "action_input: {\"name\": \"general|researcher|developer|operator\"}."
+        "action_input: {\"name\": \"general|researcher|developer|operator\"}. "
+        "Call this yourself when the task fits another persona. "
+        "Return to general when that role is finished. Do not switch for small talk."
     ),
     # ── Memory / state ────────────────────────────────────────────────────
     "search_memory": (

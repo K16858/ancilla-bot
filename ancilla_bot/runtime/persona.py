@@ -141,6 +141,9 @@ def format_persona_overlay() -> str:
         lines.append("- preferred_skills: " + ", ".join(spec.preferred_skills))
     if spec.output:
         lines.append(f"- output: {spec.output}")
+    lines.append(
+        "- switch: call set_persona when the task fits another persona; return to general when done"
+    )
     return "\n".join(lines)
 
 
