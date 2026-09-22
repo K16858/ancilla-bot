@@ -27,6 +27,8 @@ ALLOWED_TABLES = (
     "idle_memory",
     "memories",
     "working_memory",
+    "procedures",
+    "artifacts",
 )
 
 
@@ -188,6 +190,30 @@ CREATE TABLE IF NOT EXISTS working_memory (
 )
 """
 
+_SCHEMA_PROCEDURES = """
+CREATE TABLE IF NOT EXISTS procedures (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope_type TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    steps TEXT NOT NULL,
+    evidence_id INTEGER,
+    created_at TEXT NOT NULL
+)
+"""
+
+_SCHEMA_ARTIFACTS = """
+CREATE TABLE IF NOT EXISTS artifacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope_type TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    uri TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+)
+"""
+
 
 _SCHEMA_NOTIFICATION_SENDS = """
 CREATE TABLE IF NOT EXISTS notification_sends (
@@ -272,6 +298,8 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_NOTIFICATION_SENDS)
         c.executescript(_SCHEMA_IDLE_MEMORY)
         c.executescript(_SCHEMA_WORKING_MEMORY)
+        c.executescript(_SCHEMA_PROCEDURES)
+        c.executescript(_SCHEMA_ARTIFACTS)
         c.executescript(_SCHEMA_MEMORIES)
         for sql in (_MIGRATE_AGENT_TASKS_SOURCE, _MIGRATE_AGENT_TASKS_STATUS, _MIGRATE_AGENT_TASKS_PERSONA):
             try:
@@ -772,8 +800,44 @@ def search_procedures(
     scope_id: str,
     n_results: int = 5,
 ) -> list[dict[str, Any]]:
-    _ = query, scope_type, scope_id, n_results
-    return []
+    q = (query or "").strip().casefold()
+    tokens = [t for t in q.split() if t]
+    if not tokens or n_results <= 0:
+        return []
+    scope = _parse_scope({"scope_type": scope_type, "scope_id": scope_id}, required=True)
+    if isinstance(scope, str):
+        return []
+    st, sid = scope
+    ensure_schema()
+    with _conn() as conn:
+        cur = conn.execute(
+            "SELECT id, name, steps, scope_type, scope_id FROM procedures "
+            "WHERE scope_type = ? AND scope_id = ?",
+            (st, sid),
+        )
+        rows = [_row_to_dict(cur, row) for row in cur.fetchall()]
+    hits: list[dict[str, Any]] = []
+    for row in rows:
+        text = f"{row.get('name') or ''} {row.get('steps') or ''}".casefold()
+        relevance = sum(1 for t in tokens if t in text)
+        if relevance <= 0:
+            continue
+        hits.append(
+            {
+                "document": str(row.get("steps") or row.get("name") or ""),
+                "source": "procedure",
+                "relevance": relevance,
+                "id": int(row["id"]),
+                "metadata": {
+                    "id": row.get("id"),
+                    "name": row.get("name"),
+                    "scope_type": row.get("scope_type"),
+                    "scope_id": row.get("scope_id"),
+                },
+            }
+        )
+    hits.sort(key=lambda h: (-int(h["relevance"]), -int(h["id"])))
+    return hits[:n_results]
 
 
 def search_artifacts(
@@ -783,9 +847,46 @@ def search_artifacts(
     scope_id: str,
     n_results: int = 5,
 ) -> list[dict[str, Any]]:
-    _ = query, scope_type, scope_id, n_results
-    return []
-
+    q = (query or "").strip().casefold()
+    tokens = [t for t in q.split() if t]
+    if not tokens or n_results <= 0:
+        return []
+    scope = _parse_scope({"scope_type": scope_type, "scope_id": scope_id}, required=True)
+    if isinstance(scope, str):
+        return []
+    st, sid = scope
+    ensure_schema()
+    with _conn() as conn:
+        cur = conn.execute(
+            "SELECT id, name, uri, summary, scope_type, scope_id FROM artifacts "
+            "WHERE scope_type = ? AND scope_id = ?",
+            (st, sid),
+        )
+        rows = [_row_to_dict(cur, row) for row in cur.fetchall()]
+    hits: list[dict[str, Any]] = []
+    for row in rows:
+        text = f"{row.get('name') or ''} {row.get('uri') or ''} {row.get('summary') or ''}".casefold()
+        relevance = sum(1 for t in tokens if t in text)
+        if relevance <= 0:
+            continue
+        doc = str(row.get("summary") or row.get("name") or "")
+        hits.append(
+            {
+                "document": doc,
+                "source": "artifact",
+                "relevance": relevance,
+                "id": int(row["id"]),
+                "metadata": {
+                    "id": row.get("id"),
+                    "name": row.get("name"),
+                    "uri": row.get("uri"),
+                    "scope_type": row.get("scope_type"),
+                    "scope_id": row.get("scope_id"),
+                },
+            }
+        )
+    hits.sort(key=lambda h: (-int(h["relevance"]), -int(h["id"])))
+    return hits[:n_results]
 
 def try_record_notification_send(intent: str, subject_key: str) -> bool:
     """未送信なら記録して True。同じ (intent, subject_key) なら False。"""
@@ -827,6 +928,20 @@ def _validate_insert_payload(table: str, payload: dict[str, Any]) -> str | None:
     if table == "working_memory":
         if not payload.get("task_key"):
             return "Error: working_memory requires task_key."
+        scope = _parse_scope(payload, required=True)
+        if isinstance(scope, str):
+            return scope
+        return None
+    if table == "procedures":
+        if not payload.get("name") or not payload.get("steps"):
+            return "Error: procedures require name and steps."
+        scope = _parse_scope(payload, required=True)
+        if isinstance(scope, str):
+            return scope
+        return None
+    if table == "artifacts":
+        if not payload.get("name") or not payload.get("uri"):
+            return "Error: artifacts require name and uri."
         scope = _parse_scope(payload, required=True)
         if isinstance(scope, str):
             return scope
@@ -995,6 +1110,54 @@ def manage_state(
                             now,
                             now,
                         ),
+                    )
+                elif table == "procedures":
+                    from ancilla_bot.runtime.persona import memory_class_allowed
+
+                    if not memory_class_allowed("procedural", write=True):
+                        return "Error: procedures write is denied for the active persona."
+                    scope = _parse_scope(payload, required=True)
+                    if isinstance(scope, str):
+                        return scope
+                    scope_type, scope_id = scope
+                    name = str(payload.get("name", "")).strip()[:200]
+                    steps = str(payload.get("steps", "")).strip()
+                    if not name or not steps:
+                        return "Error: procedures require name and steps."
+                    evidence_id: int | None = None
+                    raw_eid = payload.get("evidence_id")
+                    if raw_eid is not None and str(raw_eid).strip() != "":
+                        try:
+                            evidence_id = int(raw_eid)
+                        except (TypeError, ValueError):
+                            return "Error: evidence_id must be an integer (agent_run_steps id)."
+                        if evidence_id <= 0 or not _evidence_is_valid(evidence_id):
+                            return "Error: evidence_id does not match a tool observation."
+                    c.execute(
+                        "INSERT INTO procedures "
+                        "(scope_type, scope_id, name, steps, evidence_id, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (scope_type, scope_id, name, steps, evidence_id, now),
+                    )
+                elif table == "artifacts":
+                    from ancilla_bot.runtime.persona import memory_class_allowed
+
+                    if not memory_class_allowed("artifact", write=True):
+                        return "Error: artifacts write is denied for the active persona."
+                    scope = _parse_scope(payload, required=True)
+                    if isinstance(scope, str):
+                        return scope
+                    scope_type, scope_id = scope
+                    name = str(payload.get("name", "")).strip()[:200]
+                    uri = str(payload.get("uri", "")).strip()
+                    if not name or not uri:
+                        return "Error: artifacts require name and uri."
+                    summary = str(payload.get("summary", "") or "")
+                    c.execute(
+                        "INSERT INTO artifacts "
+                        "(scope_type, scope_id, name, uri, summary, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (scope_type, scope_id, name, uri, summary, now),
                     )
                 elif table == "memories":
                     kind = str(payload.get("kind", "")).strip().lower()
@@ -1197,6 +1360,56 @@ def manage_state(
                         f"resources, status, created_at, updated_at FROM working_memory{where_sql} "
                         "ORDER BY id DESC LIMIT ?",
                         params_w,
+                    )
+                elif table == "procedures":
+                    from ancilla_bot.runtime.persona import memory_class_allowed
+
+                    if not memory_class_allowed("procedural", write=False):
+                        return "Error: procedures read is denied for the active persona."
+                    has_scope_type = "scope_type" in payload and str(payload.get("scope_type") or "").strip() != ""
+                    has_scope_id = "scope_id" in payload and str(payload.get("scope_id") or "").strip() != ""
+                    if not (has_scope_type and has_scope_id):
+                        return "Error: scope_type and scope_id are required."
+                    scope = _parse_scope(payload, required=True)
+                    if isinstance(scope, str):
+                        return scope
+                    scope_type, scope_id = scope
+                    where = ["scope_type = ?", "scope_id = ?"]
+                    params_p: list[Any] = [scope_type, scope_id]
+                    if payload.get("name"):
+                        where.append("name = ?")
+                        params_p.append(str(payload["name"]).strip())
+                    where_sql = " WHERE " + " AND ".join(where)
+                    params_p.append(limit)
+                    c.execute(
+                        "SELECT id, scope_type, scope_id, name, steps, evidence_id, created_at "
+                        f"FROM procedures{where_sql} ORDER BY id DESC LIMIT ?",
+                        params_p,
+                    )
+                elif table == "artifacts":
+                    from ancilla_bot.runtime.persona import memory_class_allowed
+
+                    if not memory_class_allowed("artifact", write=False):
+                        return "Error: artifacts read is denied for the active persona."
+                    has_scope_type = "scope_type" in payload and str(payload.get("scope_type") or "").strip() != ""
+                    has_scope_id = "scope_id" in payload and str(payload.get("scope_id") or "").strip() != ""
+                    if not (has_scope_type and has_scope_id):
+                        return "Error: scope_type and scope_id are required."
+                    scope = _parse_scope(payload, required=True)
+                    if isinstance(scope, str):
+                        return scope
+                    scope_type, scope_id = scope
+                    where = ["scope_type = ?", "scope_id = ?"]
+                    params_a: list[Any] = [scope_type, scope_id]
+                    if payload.get("name"):
+                        where.append("name = ?")
+                        params_a.append(str(payload["name"]).strip())
+                    where_sql = " WHERE " + " AND ".join(where)
+                    params_a.append(limit)
+                    c.execute(
+                        "SELECT id, scope_type, scope_id, name, uri, summary, created_at "
+                        f"FROM artifacts{where_sql} ORDER BY id DESC LIMIT ?",
+                        params_a,
                     )
                 elif table == "memories":
                     where = []
@@ -1412,6 +1625,12 @@ def manage_state(
 
                     if not memory_class_allowed("working", write=True):
                         return "Error: working_memory write is denied for the active persona."
+                if table in ("procedures", "artifacts"):
+                    from ancilla_bot.runtime.persona import memory_class_allowed
+
+                    cls = "procedural" if table == "procedures" else "artifact"
+                    if not memory_class_allowed(cls, write=True):
+                        return f"Error: {table} write is denied for the active persona."
                 if table in ("user_tasks", "reminders"):
                     cols = "owner, kind" if table == "reminders" else "owner"
                     c.execute(f"SELECT {cols} FROM {table} WHERE id = ?", (row_id,))
