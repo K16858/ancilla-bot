@@ -197,3 +197,24 @@ def memory_kind_allowed(kind: str) -> bool:
     if key in _EPISODIC_KINDS:
         return "episodic" in scopes
     return False
+
+
+_ROUTE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("researcher", ("論文", "arxiv", "調査", "research", "cite")),
+    ("developer", ("実装", "pr", "bug", "refactor", "テスト", "code")),
+    ("operator", ("docker", "ssh", "再起動", "deploy", "サーバ")),
+)
+
+
+def maybe_route_persona(user_input: str) -> str | None:
+    """If primary is general, switch once by keyword. Returns new name or None."""
+    if get_active_name() != "general":
+        return None
+    text = (user_input or "").casefold()
+    for name, keys in _ROUTE_KEYWORDS:
+        if any(k.casefold() in text for k in keys):
+            msg = set_persona(name)
+            if msg.startswith("Error:"):
+                return None
+            return name
+    return None
