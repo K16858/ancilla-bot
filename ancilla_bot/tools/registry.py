@@ -98,9 +98,11 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     # ── Memory / state ────────────────────────────────────────────────────
     "search_memory": (
-        "Search user facts and past conversation summaries. "
-        "Scope follows the active persona. Ranking uses relevance, recency, importance, confidence. "
-        "action_input: {\"query\": \"search terms\", \"max_results\": 3}."
+        "Search scoped memory rows. "
+        "Requires memory_class (semantic|procedural|artifact), scope_type, scope_id, and query. "
+        "Matches tokens in the scoped active rows; order is match count then newer id. "
+        "action_input: {\"query\": \"...\", \"memory_class\": \"semantic\", "
+        "\"scope_type\": \"user\", \"scope_id\": \"default\", \"max_results\": 3}."
     ),
     "get_user_context": (
         "Return structured user profile from MemoryStore. action_input: {}."
@@ -264,59 +266,44 @@ def set_persona(name: str, **kwargs: Any) -> str:
 
 
 
-def search_memory(query: str, max_results: int = 3, **kwargs: Any) -> str:
-    """
-    ユーザー事実と会話要約を Persona の memory.read に従って検索する。
-    """
+def search_memory(
+    query: str,
+    memory_class: str = "",
+    scope_type: str = "",
+    scope_id: str = "",
+    max_results: int = 3,
+    **kwargs: Any,
+) -> str:
+    """スコープ付き記憶をクラス指定で検索する。要約検索とは混ぜない。"""
     _ = kwargs
-    from ancilla_bot.batch.summary_search import search_summaries_hybrid
-    from ancilla_bot.heartbeat.db import search_memories
-    from ancilla_bot.runtime.persona import get_active_persona
+    from ancilla_bot.heartbeat.db import search_artifacts, search_memories, search_procedures
+    from ancilla_bot.runtime.persona import memory_class_allowed
 
-    spec = get_active_persona()
+    cls = (memory_class or "").strip().lower()
+    if cls not in ("semantic", "procedural", "artifact"):
+        return "Error: memory_class must be semantic, procedural, or artifact."
+    if not memory_class_allowed(cls, write=False):
+        return f"Error: memory_class '{cls}' is not readable for the active persona."
+    st = (scope_type or "").strip()
+    sid = (scope_id or "").strip()
+    if not st or not sid:
+        return "Error: scope_type and scope_id are required."
     n = max(1, int(max_results or 3))
-    hits: list[dict[str, Any]] = []
-    if "semantic" in spec.memory_read:
-        hits.extend(search_memories(query, n_results=n * 2))
-    for item in search_summaries_hybrid(query, n_results=n * 2):
-        meta = item.get("metadata") or {}
-        relevance = float(meta.get("score") or 1.0)
-        date = str(meta.get("date") or "")
-        recency = 1.0
-        if len(date) >= 10:
-            try:
-                age = max((datetime.now() - datetime.strptime(date[:10], "%Y-%m-%d")).days, 0)
-                recency = 1.0 / (1.0 + age)
-            except ValueError:
-                recency = 0.5
-        hits.append(
-            {
-                "document": item.get("document") or "",
-                "source": item.get("source") or "fts",
-                "rank": relevance * 10.0 + recency * 5.0,
-                "metadata": meta,
-            }
-        )
-    hits.sort(key=lambda h: float(h.get("rank") or 0.0), reverse=True)
-    seen: set[str] = set()
-    picked: list[dict[str, Any]] = []
-    for item in hits:
-        doc = str(item.get("document") or "").strip()
-        if not doc or doc in seen:
-            continue
-        seen.add(doc)
-        picked.append(item)
-        if len(picked) >= n:
-            break
-    if not picked:
+    if cls == "semantic":
+        hits = search_memories(query, scope_type=st, scope_id=sid, n_results=n)
+    elif cls == "procedural":
+        hits = search_procedures(query, scope_type=st, scope_id=sid, n_results=n)
+    else:
+        hits = search_artifacts(query, scope_type=st, scope_id=sid, n_results=n)
+    if not hits:
         return "No matching memories found."
     max_chars_per = 400
     parts = []
-    for i, item in enumerate(picked, 1):
+    for i, item in enumerate(hits, 1):
         doc = (item.get("document") or "")[:max_chars_per]
         if len(item.get("document") or "") > max_chars_per:
             doc += "..."
-        source = item.get("source") or "memory"
+        source = item.get("source") or cls
         parts.append(f"[{i}][{source}] {doc}")
     return "\n\n".join(parts)
 

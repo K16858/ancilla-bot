@@ -120,10 +120,17 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
     ),
     "search_memory": _schema(
         {
-            "query": {"type": "string", "description": "Search query for past summaries"},
-            "max_results": {"type": "integer", "description": "Max results (default 3)"},
+            "query": {"type": "string", "description": "Search query"},
+            "memory_class": {
+                "type": "string",
+                "enum": ["semantic", "procedural", "artifact"],
+                "description": "Memory class to search",
+            },
+            "scope_type": {"type": "string", "description": "Scope type"},
+            "scope_id": {"type": "string", "description": "Scope id"},
+            "max_results": {"type": "integer", "description": "Max results"},
         },
-        required=["query"],
+        required=["query", "memory_class", "scope_type", "scope_id"],
     ),
     "get_user_context": _EMPTY_OBJECT,
     "update_user_goal": _schema(

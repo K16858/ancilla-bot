@@ -694,53 +694,79 @@ def list_memories(*, durable_only: bool = False) -> list[dict[str, Any]]:
         return [_row_to_dict(cur, row) for row in cur.fetchall()]
 
 
-def search_memories(query: str, n_results: int = 5) -> list[dict[str, Any]]:
+def search_memories(
+    query: str,
+    *,
+    scope_type: str,
+    scope_id: str,
+    n_results: int = 5,
+) -> list[dict[str, Any]]:
     q = (query or "").strip().casefold()
     tokens = [t for t in q.split() if t]
     if not tokens or n_results <= 0:
         return []
-    now = datetime.now()
-    now_s = now.strftime("%Y-%m-%d %H:%M:%S")
+    scope = _parse_scope({"scope_type": scope_type, "scope_id": scope_id}, required=True)
+    if isinstance(scope, str):
+        return []
+    st, sid = scope
+    now_s = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ensure_schema()
     with _conn() as conn:
         cur = conn.execute(
             f"SELECT {_MEMORY_COLS} FROM memories WHERE lifecycle = 'active' "
+            "AND scope_type = ? AND scope_id = ? "
             "AND (expires_at IS NULL OR expires_at = '' OR expires_at > ?)",
-            (now_s,),
+            (st, sid, now_s),
         )
         rows = [_row_to_dict(cur, row) for row in cur.fetchall()]
     hits: list[dict[str, Any]] = []
     for row in rows:
-        text = f"{row.get('subject') or ''} {row.get('content') or ''}".casefold()
+        text = (
+            f"{row.get('subject') or ''} {row.get('predicate') or ''} {row.get('content') or ''}"
+        ).casefold()
         relevance = sum(1 for t in tokens if t in text)
         if relevance <= 0:
             continue
-        created = str(row.get("created_at") or "")
-        try:
-            age_days = max((now - datetime.strptime(created, "%Y-%m-%d %H:%M:%S")).days, 0)
-        except ValueError:
-            age_days = 365
-        recency = 1.0 / (1.0 + age_days)
-        importance = float(row.get("importance") or 0.0)
-        confidence = float(row.get("confidence") or 0.0)
-        rank = relevance * 10.0 + recency * 5.0 + importance * 3.0 + confidence * 3.0
         hits.append(
             {
                 "document": str(row.get("content") or ""),
                 "source": "memory",
-                "rank": rank,
+                "relevance": relevance,
+                "id": int(row["id"]),
                 "metadata": {
                     "id": row.get("id"),
                     "kind": row.get("kind"),
                     "subject": row.get("subject"),
-                    "created_at": created,
-                    "importance": importance,
-                    "confidence": confidence,
+                    "predicate": row.get("predicate"),
+                    "scope_type": row.get("scope_type"),
+                    "scope_id": row.get("scope_id"),
                 },
             }
         )
-    hits.sort(key=lambda h: float(h["rank"]), reverse=True)
+    hits.sort(key=lambda h: (-int(h["relevance"]), -int(h["id"])))
     return hits[:n_results]
+
+
+def search_procedures(
+    query: str,
+    *,
+    scope_type: str,
+    scope_id: str,
+    n_results: int = 5,
+) -> list[dict[str, Any]]:
+    _ = query, scope_type, scope_id, n_results
+    return []
+
+
+def search_artifacts(
+    query: str,
+    *,
+    scope_type: str,
+    scope_id: str,
+    n_results: int = 5,
+) -> list[dict[str, Any]]:
+    _ = query, scope_type, scope_id, n_results
+    return []
 
 
 def try_record_notification_send(intent: str, subject_key: str) -> bool:
