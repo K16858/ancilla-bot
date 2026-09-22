@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from ancilla_bot.runtime import mode as mode_mod
+from ancilla_bot.runtime.mode import set_mode
 from ancilla_bot.skills.loader import format_skills_catalog, list_skills, read_skill
 
 
@@ -92,3 +94,34 @@ def test_trial_workspace_skill_catalogued(tmp_path: Path, monkeypatch):
     catalog = format_skills_catalog()
     assert "draft [trial]" in catalog
     assert read_skill("draft") == "Draft body."
+
+
+def test_skill_priority_leads_catalog(tmp_path: Path, monkeypatch):
+    bundled = tmp_path / "bundled"
+    (bundled / "alpha").mkdir(parents=True)
+    (bundled / "zeta").mkdir(parents=True)
+    (bundled / "alpha" / "SKILL.md").write_text(
+        "---\nname: alpha\ndescription: A.\n---\nA.\n",
+        encoding="utf-8",
+    )
+    (bundled / "zeta" / "SKILL.md").write_text(
+        "---\nname: zeta\ndescription: Z.\n---\nZ.\n",
+        encoding="utf-8",
+    )
+    modes = tmp_path / "modes"
+    modes.mkdir()
+    (modes / "general.yaml").write_text("name: general\n", encoding="utf-8")
+    (modes / "focus.yaml").write_text(
+        "name: focus\nskill_priority:\n  - zeta\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ANCILLA_SKILLS_DIR", str(bundled))
+    monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(tmp_path / "ws"))
+    monkeypatch.setenv("ANCILLA_MODES_DIR", str(modes))
+    prev = mode_mod._mode_name
+    try:
+        assert set_mode("focus").startswith("Mode set to focus")
+        catalog = format_skills_catalog()
+        assert catalog.index("- zeta:") < catalog.index("- alpha:")
+    finally:
+        mode_mod._mode_name = prev
