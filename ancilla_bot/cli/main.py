@@ -356,35 +356,48 @@ def _fast_heartbeat_loop(runtime: AgentRuntime, stop: threading.Event) -> None:
             try:
                 history = _shared_history if _shared_history is not None else load_active_history()
                 if date_changed or tasks or reminders:
-                    pseudo = _build_fast_heartbeat_message(
-                        tasks,
-                        reminders,
-                        date_changed=date_changed,
-                        today=today,
-                    )
-                    response, _emotion = run_agent_loop_with_tools(
-                        pseudo, history, on_turn=None, source="heartbeat"
-                    )
-                    due_rows = tasks + reminders
-                    if _is_heartbeat_interrupted(response):
-                        logger.info("fast heartbeat: interrupted")
-                    elif _is_agent_success(response):
-                        _complete_due_rows(due_rows)
-                        heartbeat_retry.record_success(due_rows)
-                        if response.strip():
-                            append_notification(
-                                response.strip(),
-                                source="system",
-                                level="info",
-                                detail=f"tasks={len(tasks)}, reminders={len(reminders)}",
-                            )
-                        logger.info("fast heartbeat: processed {} tasks, {} reminders", len(tasks), len(reminders))
-                    else:
-                        logger.warning(
-                            "fast heartbeat: agent response looks like an error, NOT marking completed. response={!r}",
-                            response[:120],
+                    from ancilla_bot.runtime.persona import begin_temporary_persona, end_temporary_persona
+
+                    personas = {
+                        str(t.get("persona") or "").strip()
+                        for t in tasks
+                        if t.get("_table") == "agent_tasks" and str(t.get("persona") or "").strip()
+                    }
+                    tmp_persona = next(iter(personas)) if len(personas) == 1 else ""
+                    try:
+                        if tmp_persona:
+                            begin_temporary_persona(tmp_persona)
+                        pseudo = _build_fast_heartbeat_message(
+                            tasks,
+                            reminders,
+                            date_changed=date_changed,
+                            today=today,
                         )
-                        _poison_due_rows(heartbeat_retry.record_failure(due_rows, response), response)
+                        response, _emotion = run_agent_loop_with_tools(
+                            pseudo, history, on_turn=None, source="heartbeat"
+                        )
+                        due_rows = tasks + reminders
+                        if _is_heartbeat_interrupted(response):
+                            logger.info("fast heartbeat: interrupted")
+                        elif _is_agent_success(response):
+                            _complete_due_rows(due_rows)
+                            heartbeat_retry.record_success(due_rows)
+                            if response.strip():
+                                append_notification(
+                                    response.strip(),
+                                    source="system",
+                                    level="info",
+                                    detail=f"tasks={len(tasks)}, reminders={len(reminders)}",
+                                )
+                            logger.info("fast heartbeat: processed {} tasks, {} reminders", len(tasks), len(reminders))
+                        else:
+                            logger.warning(
+                                "fast heartbeat: agent response looks like an error, NOT marking completed. response={!r}",
+                                response[:120],
+                            )
+                            _poison_due_rows(heartbeat_retry.record_failure(due_rows, response), response)
+                    finally:
+                        end_temporary_persona()
                 if wakeups:
                     pseudo = _build_agent_wakeup_message(wakeups)
                     response, _emotion = run_agent_loop_with_tools(

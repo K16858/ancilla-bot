@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
     completed INTEGER NOT NULL DEFAULT 0,
     source TEXT NOT NULL DEFAULT 'heartbeat',
     status TEXT NOT NULL DEFAULT 'pending',
+    persona TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 )
 """
@@ -70,6 +71,9 @@ _MIGRATE_AGENT_TASKS_SOURCE = (
 )
 _MIGRATE_AGENT_TASKS_STATUS = (
     "ALTER TABLE agent_tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'"
+)
+_MIGRATE_AGENT_TASKS_PERSONA = (
+    "ALTER TABLE agent_tasks ADD COLUMN persona TEXT NOT NULL DEFAULT ''"
 )
 _OWNERSHIP_MIGRATIONS = (
     ("user_tasks", "owner", "TEXT NOT NULL DEFAULT 'user'"),
@@ -227,7 +231,7 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_NOTIFICATION_SENDS)
         c.executescript(_SCHEMA_IDLE_MEMORY)
         c.executescript(_SCHEMA_MEMORIES)
-        for sql in (_MIGRATE_AGENT_TASKS_SOURCE, _MIGRATE_AGENT_TASKS_STATUS):
+        for sql in (_MIGRATE_AGENT_TASKS_SOURCE, _MIGRATE_AGENT_TASKS_STATUS, _MIGRATE_AGENT_TASKS_PERSONA):
             try:
                 c.execute(sql)
             except sqlite3.OperationalError:
@@ -387,7 +391,7 @@ def _get_due_from_table(table: str, *, at: datetime | None = None) -> list[dict[
     with _conn() as conn:
         if table == "agent_tasks":
             cur = conn.execute(
-                "SELECT id, scheduled_at, content, completed, source, created_at FROM agent_tasks "
+                "SELECT id, scheduled_at, content, completed, source, persona, created_at FROM agent_tasks "
                 "WHERE datetime(scheduled_at) <= datetime(?) AND completed = 0 AND source = 'heartbeat' "
                 "ORDER BY scheduled_at ASC",
                 (ts,),
@@ -805,9 +809,16 @@ def manage_state(
                         source = raw_source if raw_source in ("heartbeat", "self") else "heartbeat"
                         raw_status = str(payload.get("status", "pending")).strip().lower()
                         status = raw_status if raw_status in ("pending", "in_progress", "completed", "cancelled") else "pending"
+                        persona = str(payload.get("persona") or "").strip()
+                        if persona:
+                            from ancilla_bot.runtime.persona import list_persona_names
+
+                            if persona not in list_persona_names():
+                                return f"Error: unknown persona: {persona}."
                         c.execute(
-                            "INSERT INTO agent_tasks (scheduled_at, content, completed, source, status, created_at) VALUES (?, ?, 0, ?, ?, ?)",
-                            (scheduled_at, content, source, status, now),
+                            "INSERT INTO agent_tasks (scheduled_at, content, completed, source, status, persona, created_at) "
+                            "VALUES (?, ?, 0, ?, ?, ?, ?)",
+                            (scheduled_at, content, source, status, persona, now),
                         )
                     else:
                         from ancilla_bot.core.run_context import current_source, is_autonomous
@@ -1104,7 +1115,7 @@ def manage_state(
                         return meta
                     memory_meta = meta
                 allowed_cols = (
-                    {"completed", "scheduled_at", "content", "source", "status"} if table == "agent_tasks"
+                    {"completed", "scheduled_at", "content", "source", "status", "persona"} if table == "agent_tasks"
                     else {"completed", "scheduled_at", "content", "owner", "source", "kind"} if table == "reminders"
                     else {"completed", "scheduled_at", "content", "owner", "source"} if table == "user_tasks"
                     else {"amount", "category", "memo", "date"} if table == "finances"
@@ -1143,6 +1154,15 @@ def manage_state(
                         else:
                             if k == "kind" and table == "memories" and str(v).strip().lower() not in _MEMORY_KINDS:
                                 return "Error: memories kind must be profile, fact, goal, or note."
+                            if k == "persona" and table == "agent_tasks":
+                                persona = str(v or "").strip()
+                                if persona:
+                                    from ancilla_bot.runtime.persona import list_persona_names
+
+                                    if persona not in list_persona_names():
+                                        return f"Error: unknown persona: {persona}."
+                                params.append(persona)
+                                continue
                             params.append(v)
                 if not sets and not (table == "memories" and payload.get("evidence_id") is not None):
                     return "Error: no updatable fields in payload."
