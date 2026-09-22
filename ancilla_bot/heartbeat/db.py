@@ -928,6 +928,17 @@ def manage_state(
                         supersedes = int(raw_sup)
                     memory_key = str(payload.get("memory_key") or "").strip()[:200]
                     valid_from = str(payload.get("valid_from") or "").strip() or now
+                    old_ids: list[int] = []
+                    if not memory_key and supersedes is not None:
+                        found = c.execute(
+                            "SELECT id, scope_type, scope_id FROM memories "
+                            "WHERE id = ? AND lifecycle = 'active'",
+                            (supersedes,),
+                        ).fetchone()
+                        if found:
+                            if str(found[1] or "") != scope_type or str(found[2] or "") != scope_id:
+                                return "Error: supersedes must refer to a row in the same scope."
+                            old_ids = [int(found[0])]
                     c.execute(
                         "INSERT INTO memories "
                         "(kind, subject, predicate, content, status, source_type, evidence_id, "
@@ -955,27 +966,20 @@ def manage_state(
                         ),
                     )
                     new_id = c.lastrowid
-                    old_ids: list[int] = []
                     if memory_key:
                         old = c.execute(
                             "SELECT id FROM memories WHERE memory_key = ? "
+                            "AND scope_type = ? AND scope_id = ? "
                             "AND lifecycle = 'active' AND id != ? ORDER BY id DESC",
-                            (memory_key, new_id),
+                            (memory_key, scope_type, scope_id, new_id),
                         ).fetchall()
                         old_ids = [int(r[0]) for r in old]
-                    elif supersedes is not None:
-                        found = c.execute(
-                            "SELECT id FROM memories WHERE id = ? AND lifecycle = 'active'",
-                            (supersedes,),
-                        ).fetchone()
-                        if found:
-                            old_ids = [int(found[0])]
                     if old_ids:
                         placeholders = ",".join("?" * len(old_ids))
                         c.execute(
-                            f"UPDATE memories SET lifecycle = 'superseded', updated_at = ? "
-                            f"WHERE id IN ({placeholders})",
-                            [now, *old_ids],
+                            f"UPDATE memories SET lifecycle = 'superseded', expires_at = ?, "
+                            f"updated_at = ? WHERE id IN ({placeholders})",
+                            [now, now, *old_ids],
                         )
                         if supersedes is None:
                             c.execute(
@@ -1095,8 +1099,9 @@ def manage_state(
                     if lifecycle:
                         where.append("lifecycle = ?")
                         params_mem.append(lifecycle)
-                    where.append("(expires_at IS NULL OR expires_at = '' OR expires_at > ?)")
-                    params_mem.append(now)
+                    if lifecycle == "active":
+                        where.append("(expires_at IS NULL OR expires_at = '' OR expires_at > ?)")
+                        params_mem.append(now)
                     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
                     params_mem.append(limit)
                     c.execute(
@@ -1208,6 +1213,12 @@ def manage_state(
                         else:
                             if k == "kind" and table == "memories" and str(v).strip().lower() not in _MEMORY_KINDS:
                                 return "Error: memories kind must be profile, fact, goal, or note."
+                            if k == "lifecycle" and table == "memories":
+                                lc = str(v).strip().lower()
+                                if lc not in ("active", "archived"):
+                                    return "Error: lifecycle must be active or archived."
+                                params.append(lc)
+                                continue
                             if k == "persona" and table == "agent_tasks":
                                 persona = str(v or "").strip()
                                 if persona:
