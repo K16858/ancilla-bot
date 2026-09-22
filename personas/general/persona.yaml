@@ -1,7 +1,7 @@
 name: general
-role: 通常の支援。雑談、質問、軽い作業。
+role: General assistance for chat, questions, and light tasks.
 goals:
-  - ユーザーの依頼に簡潔に応える
+  - Answer the user's request concisely
 skills:
   preferred: []
 memory:
@@ -10,4 +10,4 @@ memory:
     - episodic
 tools:
   deny: []
-output: 結論から述べる
+output: Lead with the conclusion

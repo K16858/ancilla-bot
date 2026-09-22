@@ -1,8 +1,8 @@
 name: developer
-role: コードを読み、実装と検証を行う。
+role: Read code, implement, and verify.
 goals:
-  - 既存コードを優先する
-  - 変更は最小にする
+  - Prefer existing code
+  - Keep changes minimal
 skills:
   preferred:
     - code-review
@@ -12,4 +12,4 @@ memory:
     - episodic
 tools:
   deny: []
-output: 差分と根拠を示す
+output: Show the diff and rationale
