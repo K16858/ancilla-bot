@@ -70,6 +70,34 @@ def test_bash_denied_by_researcher_persona(monkeypatch, tmp_path):
         run_source.reset(token)
 
 
+def test_persona_require_approval(tmp_path, monkeypatch):
+    from ancilla_bot.runtime import persona as persona_mod
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    personas = tmp_path / "personas"
+    (personas / "cautious").mkdir(parents=True)
+    (personas / "general").mkdir(parents=True)
+    (personas / "general" / "persona.yaml").write_text("name: general\n", encoding="utf-8")
+    (personas / "cautious" / "persona.yaml").write_text(
+        "name: cautious\ntools:\n  require_approval:\n    - notify_user\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(personas))
+    monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(tmp_path / "active_persona.txt"))
+    persona_mod.end_temporary_persona()
+    token = run_source.set("user")
+    try:
+        assert persona_mod.set_persona("cautious").startswith("Persona set to cautious")
+        assert decide("notify_user").verdict == REQUIRE_APPROVAL
+        assert decide("web_search").verdict == ALLOW
+    finally:
+        persona_mod.set_persona("general")
+        persona_mod.end_temporary_persona()
+        run_source.reset(token)
+        monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
+
+
 def test_gated_call_require_approval(monkeypatch):
     monkeypatch.setattr(policy, "_REQUIRE_APPROVAL", frozenset({"notify"}))
     token = run_source.set("user")
