@@ -20,8 +20,15 @@ class PersonaSpec:
     goals: tuple[str, ...] = ()
     preferred_skills: tuple[str, ...] = ()
     memory_read: tuple[str, ...] = ("user_model", "episodic")
+    memory_write: tuple[str, ...] = ("user_model", "episodic")
     tools_deny: tuple[str, ...] = ()
+    tools_require_approval: tuple[str, ...] = ()
+    resources_notes: str = ""
     output: str = ""
+
+
+_USER_MODEL_KINDS = frozenset({"profile", "fact", "goal"})
+_EPISODIC_KINDS = frozenset({"note"})
 
 
 def _personas_dir() -> Path:
@@ -62,8 +69,12 @@ def _from_data(name: str, data: dict[str, Any]) -> PersonaSpec:
     preferred = skills.get("preferred") if isinstance(skills, dict) else []
     memory = data.get("memory") if isinstance(data.get("memory"), dict) else {}
     read = memory.get("read") if isinstance(memory, dict) else None
+    write = memory.get("write") if isinstance(memory, dict) else None
     tools = data.get("tools") if isinstance(data.get("tools"), dict) else {}
     deny = tools.get("deny") if isinstance(tools, dict) else []
+    require = tools.get("require_approval") if isinstance(tools, dict) else []
+    resources = data.get("resources") if isinstance(data.get("resources"), dict) else {}
+    notes = str(resources.get("notes") or "").strip() if isinstance(resources, dict) else ""
     return PersonaSpec(
         name=str(data.get("name") or name),
         role=str(data.get("role") or "").strip(),
@@ -72,7 +83,12 @@ def _from_data(name: str, data: dict[str, Any]) -> PersonaSpec:
         memory_read=tuple(str(x) for x in read)
         if isinstance(read, list)
         else ("user_model", "episodic"),
+        memory_write=tuple(str(x) for x in write)
+        if isinstance(write, list)
+        else ("user_model", "episodic"),
         tools_deny=tuple(str(x) for x in deny) if isinstance(deny, list) else (),
+        tools_require_approval=tuple(str(x) for x in require) if isinstance(require, list) else (),
+        resources_notes=notes,
         output=str(data.get("output") or "").strip(),
     )
 
@@ -165,3 +181,19 @@ def tool_denied_by_persona(tool_name: str) -> bool:
     if tool_name in _ALWAYS_ALLOW:
         return False
     return tool_name in get_active_persona().tools_deny
+
+
+def tool_requires_approval_by_persona(tool_name: str) -> bool:
+    if tool_name in _ALWAYS_ALLOW:
+        return False
+    return tool_name in get_active_persona().tools_require_approval
+
+
+def memory_kind_allowed(kind: str) -> bool:
+    key = (kind or "").strip().lower()
+    scopes = get_active_persona().memory_write
+    if key in _USER_MODEL_KINDS:
+        return "user_model" in scopes
+    if key in _EPISODIC_KINDS:
+        return "episodic" in scopes
+    return False

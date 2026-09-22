@@ -864,6 +864,10 @@ def manage_state(
                     kind = str(payload.get("kind", "")).strip().lower()
                     if kind not in _MEMORY_KINDS:
                         return "Error: memories kind must be profile, fact, goal, or note."
+                    from ancilla_bot.runtime.persona import memory_kind_allowed
+
+                    if not memory_kind_allowed(kind):
+                        return f"Error: memories kind '{kind}' is denied for the active persona."
                     subject = str(payload.get("subject", "")).strip()[:200]
                     mem_content = str(payload.get("content", "")).strip()
                     if not mem_content:

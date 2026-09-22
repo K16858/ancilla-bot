@@ -10,7 +10,12 @@ memory:
   read:
     - user_model
     - episodic
+  write:
+    - episodic
 tools:
   deny:
     - bash
+  require_approval: []
+resources:
+  notes: local only
 output: Cite sources
