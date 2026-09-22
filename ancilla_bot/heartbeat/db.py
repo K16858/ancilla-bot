@@ -26,6 +26,7 @@ ALLOWED_TABLES = (
     "audit_log",
     "idle_memory",
     "memories",
+    "working_memory",
 )
 
 
@@ -171,6 +172,22 @@ CREATE TABLE IF NOT EXISTS idle_memory (
 )
 """
 
+_SCHEMA_WORKING_MEMORY = """
+CREATE TABLE IF NOT EXISTS working_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope_type TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    task_key TEXT NOT NULL,
+    goal TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL DEFAULT '',
+    next_actions TEXT NOT NULL DEFAULT '',
+    resources TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
 
 _SCHEMA_NOTIFICATION_SENDS = """
 CREATE TABLE IF NOT EXISTS notification_sends (
@@ -254,6 +271,7 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_AGENT_RUN_STEPS)
         c.executescript(_SCHEMA_NOTIFICATION_SENDS)
         c.executescript(_SCHEMA_IDLE_MEMORY)
+        c.executescript(_SCHEMA_WORKING_MEMORY)
         c.executescript(_SCHEMA_MEMORIES)
         for sql in (_MIGRATE_AGENT_TASKS_SOURCE, _MIGRATE_AGENT_TASKS_STATUS, _MIGRATE_AGENT_TASKS_PERSONA):
             try:
@@ -806,6 +824,13 @@ def _validate_insert_payload(table: str, payload: dict[str, Any]) -> str | None:
         if not payload.get("kind") or not payload.get("content"):
             return "Error: idle_memory requires kind and content."
         return None
+    if table == "working_memory":
+        if not payload.get("task_key"):
+            return "Error: working_memory requires task_key."
+        scope = _parse_scope(payload, required=True)
+        if isinstance(scope, str):
+            return scope
+        return None
     if table == "memories":
         if not payload.get("kind") or not payload.get("content"):
             return "Error: memories require kind and content."
@@ -923,6 +948,53 @@ def manage_state(
                     c.execute(
                         "INSERT INTO idle_memory (kind, subject, content, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
                         (kind, subject, mem_content, status, now, now),
+                    )
+                elif table == "working_memory":
+                    from ancilla_bot.runtime.persona import memory_class_allowed
+
+                    if not memory_class_allowed("working", write=True):
+                        return "Error: working_memory write is denied for the active persona."
+                    scope = _parse_scope(payload, required=True)
+                    if isinstance(scope, str):
+                        return scope
+                    scope_type, scope_id = scope
+                    task_key = str(payload.get("task_key", "")).strip()[:200]
+                    if not task_key:
+                        return "Error: working_memory requires task_key."
+                    status = str(payload.get("status", "open")).strip().lower() or "open"
+                    if status not in ("open", "done"):
+                        return "Error: working_memory status must be open or done."
+                    if status == "open":
+                        existing = c.execute(
+                            "SELECT id FROM working_memory WHERE scope_type = ? AND scope_id = ? "
+                            "AND task_key = ? AND status = 'open'",
+                            (scope_type, scope_id, task_key),
+                        ).fetchone()
+                        if existing:
+                            return (
+                                "Error: open working_memory already exists for this "
+                                "scope and task_key; update it instead."
+                            )
+                    goal = str(payload.get("goal", "") or "")
+                    state = str(payload.get("state", "") or "")
+                    next_actions = str(payload.get("next_actions", "") or "")
+                    resources = str(payload.get("resources", "") or "")
+                    c.execute(
+                        "INSERT INTO working_memory "
+                        "(scope_type, scope_id, task_key, goal, state, next_actions, resources, "
+                        "status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            scope_type,
+                            scope_id,
+                            task_key,
+                            goal,
+                            state,
+                            next_actions,
+                            resources,
+                            status,
+                            now,
+                            now,
+                        ),
                     )
                 elif table == "memories":
                     kind = str(payload.get("kind", "")).strip().lower()
@@ -1094,6 +1166,38 @@ def manage_state(
                         f"SELECT id, kind, subject, content, status, created_at, updated_at FROM idle_memory{where_sql} ORDER BY id DESC LIMIT ?",
                         params_m,
                     )
+                elif table == "working_memory":
+                    from ancilla_bot.runtime.persona import memory_class_allowed
+
+                    if not memory_class_allowed("working", write=False):
+                        return "Error: working_memory read is denied for the active persona."
+                    where = []
+                    params_w: list[Any] = []
+                    has_scope_type = "scope_type" in payload and str(payload.get("scope_type") or "").strip() != ""
+                    has_scope_id = "scope_id" in payload and str(payload.get("scope_id") or "").strip() != ""
+                    if not (has_scope_type and has_scope_id):
+                        return "Error: scope_type and scope_id are required."
+                    scope = _parse_scope(payload, required=True)
+                    if isinstance(scope, str):
+                        return scope
+                    scope_type, scope_id = scope
+                    where.append("scope_type = ?")
+                    where.append("scope_id = ?")
+                    params_w.extend([scope_type, scope_id])
+                    if payload.get("task_key"):
+                        where.append("task_key = ?")
+                        params_w.append(str(payload["task_key"]).strip())
+                    if payload.get("status"):
+                        where.append("status = ?")
+                        params_w.append(str(payload["status"]).strip().lower())
+                    where_sql = " WHERE " + " AND ".join(where)
+                    params_w.append(limit)
+                    c.execute(
+                        "SELECT id, scope_type, scope_id, task_key, goal, state, next_actions, "
+                        f"resources, status, created_at, updated_at FROM working_memory{where_sql} "
+                        "ORDER BY id DESC LIMIT ?",
+                        params_w,
+                    )
                 elif table == "memories":
                     where = []
                     params_mem: list[Any] = []
@@ -1203,6 +1307,14 @@ def manage_state(
                     else {"name", "description", "status", "url"} if table == "interests"
                     else {"kind", "subject", "content", "status"} if table == "idle_memory"
                     else {
+                        "task_key",
+                        "goal",
+                        "state",
+                        "next_actions",
+                        "resources",
+                        "status",
+                    } if table == "working_memory"
+                    else {
                         "kind",
                         "subject",
                         "predicate",
@@ -1221,6 +1333,11 @@ def manage_state(
                 )
                 if not allowed_cols:
                     return f"Error: {table} does not support update."
+                if table == "working_memory":
+                    from ancilla_bot.runtime.persona import memory_class_allowed
+
+                    if not memory_class_allowed("working", write=True):
+                        return "Error: working_memory write is denied for the active persona."
                 sets = []
                 params: list[Any] = []
                 for k, v in payload.items():
@@ -1245,6 +1362,12 @@ def manage_state(
                                     return "Error: lifecycle must be active or archived."
                                 params.append(lc)
                                 continue
+                            if k == "status" and table == "working_memory":
+                                st = str(v).strip().lower()
+                                if st not in ("open", "done"):
+                                    return "Error: working_memory status must be open or done."
+                                params.append(st)
+                                continue
                             if k == "persona" and table == "agent_tasks":
                                 persona = str(v or "").strip()
                                 if persona:
@@ -1257,7 +1380,7 @@ def manage_state(
                             params.append(v)
                 if not sets and not (table == "memories" and payload.get("evidence_id") is not None):
                     return "Error: no updatable fields in payload."
-                if table == "idle_memory":
+                if table in ("idle_memory", "working_memory"):
                     sets.append("updated_at = ?")
                     params.append(now)
                 if table == "memories" and memory_meta is not None:
@@ -1284,6 +1407,11 @@ def manage_state(
                 if row_id is None:
                     return "Error: delete requires id in payload."
                 row_id = int(row_id)
+                if table == "working_memory":
+                    from ancilla_bot.runtime.persona import memory_class_allowed
+
+                    if not memory_class_allowed("working", write=True):
+                        return "Error: working_memory write is denied for the active persona."
                 if table in ("user_tasks", "reminders"):
                     cols = "owner, kind" if table == "reminders" else "owner"
                     c.execute(f"SELECT {cols} FROM {table} WHERE id = ?", (row_id,))
