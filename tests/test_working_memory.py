@@ -65,3 +65,31 @@ def test_working_memory_rejects_duplicate_open(tmp_path: Path, monkeypatch):
         "update",
         {"id": row_id, "state": "running", "status": "open"},
     ).startswith("Updated")
+
+
+def test_working_memory_update_rejects_second_open(tmp_path: Path, monkeypatch):
+    _db(tmp_path, monkeypatch)
+    db.manage_state(
+        "working_memory",
+        "insert",
+        {"scope_type": "task", "scope_id": "t", "task_key": "a", "goal": "a"},
+    )
+    db.manage_state(
+        "working_memory",
+        "insert",
+        {"scope_type": "task", "scope_id": "t", "task_key": "b", "goal": "b", "status": "done"},
+    )
+    rows = json.loads(
+        db.manage_state(
+            "working_memory",
+            "select",
+            {"scope_type": "task", "scope_id": "t", "limit": 10},
+        )
+    )
+    done_id = next(r["id"] for r in rows if r["task_key"] == "b")
+    err = db.manage_state(
+        "working_memory",
+        "update",
+        {"id": done_id, "task_key": "a", "status": "open"},
+    )
+    assert err.startswith("Error: open working_memory already exists")

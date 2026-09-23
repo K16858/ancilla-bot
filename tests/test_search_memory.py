@@ -75,3 +75,29 @@ def test_search_memory_orders_by_match_count(tmp_path: Path, monkeypatch):
     )
     first = out.split("\n\n")[0]
     assert "cats and dogs" in first
+
+
+def test_search_memory_returns_full_text(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(db, "DEFAULT_CONVERSATION_DIR", tmp_path)
+    monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(tmp_path / "ws"))
+    (tmp_path / "ws").mkdir()
+    monkeypatch.setattr("ancilla_bot.memory.store.PERSONAL_MODEL_PATH", tmp_path / "model.yaml")
+    body = "needle " + ("x" * 500)
+    db.manage_state(
+        "memories",
+        "insert",
+        {
+            "kind": "fact",
+            "content": body,
+            "scope_type": "user",
+            "scope_id": "default",
+        },
+    )
+    out = search_memory(
+        "needle",
+        memory_class="semantic",
+        scope_type="user",
+        scope_id="default",
+    )
+    assert body in out
+    assert "..." not in out

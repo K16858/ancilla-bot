@@ -5,7 +5,6 @@
 from datetime import datetime
 from typing import Any, Callable
 
-from ancilla_bot.batch.summary_search import search_summaries_hybrid
 from ancilla_bot.heartbeat.db import manage_state as heartbeat_manage_state
 from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.tools.end_edge_session import end_edge_session
@@ -120,8 +119,8 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "optional subject, predicate, memory_key, evidence_id, valid_from. "
         "Same memory_key supersedes; without memory_key rows append. "
         "working_memory needs scope_type, scope_id, task_key; optional goal, state, next_actions, resources, status. "
-        "procedures need scope_type, scope_id, name, steps; optional evidence_id. Append-only. "
-        "artifacts need scope_type, scope_id, name, uri; optional summary. Append-only. "
+        "procedures need scope_type, scope_id, name, steps; optional evidence_id. Append-only; update and delete are rejected. "
+        "artifacts need scope_type, scope_id, name, uri; optional summary. Append-only; update and delete are rejected. "
         "status/source_type are set by the write path. Durable facts need evidence_id. "
         "Reminders: owner=user|agent, kind=user_reminder|agent_wakeup. Idle cannot create user-owned rows."
     ),
@@ -301,12 +300,9 @@ def search_memory(
         hits = search_artifacts(query, scope_type=st, scope_id=sid, n_results=n)
     if not hits:
         return "No matching memories found."
-    max_chars_per = 400
     parts = []
     for i, item in enumerate(hits, 1):
-        doc = (item.get("document") or "")[:max_chars_per]
-        if len(item.get("document") or "") > max_chars_per:
-            doc += "..."
+        doc = item.get("document") or ""
         source = item.get("source") or cls
         parts.append(f"[{i}][{source}] {doc}")
     return "\n\n".join(parts)
