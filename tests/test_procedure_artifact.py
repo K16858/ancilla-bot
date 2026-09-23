@@ -37,6 +37,9 @@ def test_procedures_append_only(tmp_path: Path, monkeypatch):
         "update",
         {"id": row_id, "steps": "changed"},
     ).startswith("Error:")
+    assert db.manage_state("procedures", "delete", {"id": row_id}).startswith(
+        "Error: procedures is append-only."
+    )
     found = search_memory(
         "deploy health",
         memory_class="procedural",
@@ -65,6 +68,9 @@ def test_artifacts_append_only(tmp_path: Path, monkeypatch):
         "update",
         {"id": 1, "summary": "x"},
     ).startswith("Error:")
+    assert db.manage_state("artifacts", "delete", {"id": 1}).startswith(
+        "Error: artifacts is append-only."
+    )
     found = search_memory(
         "UAV 設計",
         memory_class="artifact",

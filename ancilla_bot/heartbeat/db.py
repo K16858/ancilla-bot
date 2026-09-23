@@ -281,7 +281,7 @@ def _parse_scope(payload: dict[str, Any], *, required: bool) -> tuple[str, str] 
         return "Error: scope_type and scope_id must both be set."
     if raw_type not in _SCOPE_TYPES:
         return f"Error: scope_type must be one of {sorted(_SCOPE_TYPES)}."
-    return raw_type, raw_id[:200]
+    return raw_type, raw_id
 
 
 def ensure_schema() -> None:
@@ -1594,6 +1594,29 @@ def manage_state(
                             params.append(v)
                 if not sets and not (table == "memories" and payload.get("evidence_id") is not None):
                     return "Error: no updatable fields in payload."
+                if table == "working_memory":
+                    current = c.execute(
+                        "SELECT scope_type, scope_id, task_key, status FROM working_memory WHERE id = ?",
+                        (row_id,),
+                    ).fetchone()
+                    if current:
+                        next_key = payload["task_key"] if "task_key" in payload else current[2]
+                        next_status = (
+                            str(payload["status"]).strip().lower()
+                            if "status" in payload
+                            else current[3]
+                        )
+                        if next_status == "open":
+                            clash = c.execute(
+                                "SELECT id FROM working_memory WHERE scope_type = ? AND scope_id = ? "
+                                "AND task_key = ? AND status = 'open' AND id != ?",
+                                (current[0], current[1], next_key, row_id),
+                            ).fetchone()
+                            if clash:
+                                return (
+                                    "Error: open working_memory already exists for this "
+                                    "scope and task_key; update it instead."
+                                )
                 if table in ("idle_memory", "working_memory"):
                     sets.append("updated_at = ?")
                     params.append(now)
@@ -1627,11 +1650,7 @@ def manage_state(
                     if not memory_class_allowed("working", write=True):
                         return "Error: working_memory write is denied for the active persona."
                 if table in ("procedures", "artifacts"):
-                    from ancilla_bot.runtime.persona import memory_class_allowed
-
-                    cls = "procedural" if table == "procedures" else "artifact"
-                    if not memory_class_allowed(cls, write=True):
-                        return f"Error: {table} write is denied for the active persona."
+                    return f"Error: {table} is append-only."
                 if table in ("user_tasks", "reminders"):
                     cols = "owner, kind" if table == "reminders" else "owner"
                     c.execute(f"SELECT {cols} FROM {table} WHERE id = ?", (row_id,))

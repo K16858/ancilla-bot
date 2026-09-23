@@ -159,6 +159,17 @@ def test_insert_requires_scope(tmp_path: Path, monkeypatch):
     assert out.startswith("Error: scope_type and scope_id")
 
 
+def test_scope_id_is_stored_whole(tmp_path: Path, monkeypatch):
+    _db(tmp_path, monkeypatch)
+    scope_id = "s" * 240
+    db.manage_state(
+        "memories",
+        "insert",
+        {"scope_type": "project", "scope_id": scope_id, "kind": "fact", "content": "long"},
+    )
+    assert db.list_memories()[0]["scope_id"] == scope_id
+
+
 def test_predicate_and_valid_from_stored(tmp_path: Path, monkeypatch):
     _db(tmp_path, monkeypatch)
     db.manage_state(
