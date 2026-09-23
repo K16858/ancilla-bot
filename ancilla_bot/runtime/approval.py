@@ -39,6 +39,8 @@ def save_pending_approval(
     assistant_message: dict[str, Any] | None = None,
     source: str = "",
 ) -> str:
+    from ancilla_bot.skills.evolution import snapshot_loaded_skills
+
     create_pending_approval(
         run_id=run_id,
         tool_name=tool_name,
@@ -49,6 +51,7 @@ def save_pending_approval(
         assistant_raw=assistant_raw,
         assistant_message=assistant_message,
         source=source,
+        skill_loads=list(snapshot_loaded_skills()),
     )
     update_agent_run_status(run_id, "awaiting_approval")
     return approval_request_message(run_id, tool_name, args)
