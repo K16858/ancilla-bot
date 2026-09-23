@@ -32,6 +32,14 @@ def note_skill_loaded(name: str, version: int) -> None:
     _loaded_skills.set(current + (key,))
 
 
+def snapshot_loaded_skills() -> tuple[tuple[str, int], ...]:
+    return _loaded_skills.get()
+
+
+def restore_loaded_skills(loads: list[tuple[str, int]] | tuple[tuple[str, int], ...]) -> None:
+    _loaded_skills.set(tuple((str(n), int(v)) for n, v in loads))
+
+
 def note_tool_failure() -> None:
     _had_tool_failure.set(True)
 

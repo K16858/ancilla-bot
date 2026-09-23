@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS pending_approvals (
     messages_json TEXT NOT NULL,
     assistant_raw TEXT NOT NULL DEFAULT '',
     assistant_message_json TEXT NOT NULL DEFAULT '',
+    skill_loads_json TEXT NOT NULL DEFAULT '[]',
     source TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     resolved_at TEXT
@@ -382,6 +383,13 @@ def ensure_schema() -> None:
                 c.execute(f"ALTER TABLE artifacts ADD COLUMN {column} {spec}")
             except sqlite3.OperationalError:
                 pass
+        try:
+            c.execute(
+                "ALTER TABLE pending_approvals ADD COLUMN skill_loads_json "
+                "TEXT NOT NULL DEFAULT '[]'"
+            )
+        except sqlite3.OperationalError:
+            pass
 
 
 def append_audit_log(tool_name: str, args_summary: str = "") -> None:
@@ -528,17 +536,19 @@ def create_pending_approval(
     assistant_raw: str = "",
     assistant_message: dict[str, Any] | None = None,
     source: str = "",
+    skill_loads: list[tuple[str, int]] | None = None,
 ) -> int:
     import json
 
     ensure_schema()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    loads = [[n, int(v)] for n, v in (skill_loads or [])]
     with _conn() as c:
         cur = c.execute(
             "INSERT INTO pending_approvals "
             "(run_id, tool_name, args_json, status, turn_index, step_id, messages_json, "
-            "assistant_raw, assistant_message_json, source, created_at) "
-            "VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)",
+            "assistant_raw, assistant_message_json, skill_loads_json, source, created_at) "
+            "VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run_id,
                 tool_name,
@@ -550,6 +560,7 @@ def create_pending_approval(
                 json.dumps(assistant_message, ensure_ascii=False, default=str)
                 if assistant_message
                 else "",
+                json.dumps(loads, ensure_ascii=False),
                 source or "",
                 now,
             ),
@@ -564,8 +575,8 @@ def get_pending_approval(run_id: str) -> dict[str, Any] | None:
     with _conn() as c:
         cur = c.execute(
             "SELECT id, run_id, tool_name, args_json, status, turn_index, step_id, "
-            "messages_json, assistant_raw, assistant_message_json, source, "
-            "created_at, resolved_at "
+            "messages_json, assistant_raw, assistant_message_json, skill_loads_json, "
+            "source, created_at, resolved_at "
             "FROM pending_approvals WHERE run_id = ? AND status = 'pending' "
             "ORDER BY id DESC LIMIT 1",
             (run_id,),
@@ -578,6 +589,9 @@ def get_pending_approval(run_id: str) -> dict[str, Any] | None:
         data["messages"] = json.loads(data.pop("messages_json") or "[]")
         raw_am = data.pop("assistant_message_json") or ""
         data["assistant_message"] = json.loads(raw_am) if raw_am else None
+        raw_loads = data.pop("skill_loads_json") or "[]"
+        parsed = json.loads(raw_loads) if raw_loads else []
+        data["skill_loads"] = [(str(n), int(v)) for n, v in parsed]
         return data
 
 

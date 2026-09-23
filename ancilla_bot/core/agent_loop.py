@@ -218,6 +218,9 @@ def continue_after_approval(
     persona_token = _temporary_persona.set(_temporary_persona.get())
     skill_tokens = reset_skill_run_tracking()
     try:
+        from ancilla_bot.skills.evolution import restore_loaded_skills
+
+        restore_loaded_skills(pending.get("skill_loads") or [])
         func = TOOL_REGISTRY.get(tool_name)
         if func is None:
             resolve_pending_approval(int(pending["id"]), "rejected")
