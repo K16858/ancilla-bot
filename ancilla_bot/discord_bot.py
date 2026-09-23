@@ -227,9 +227,15 @@ def run_bot() -> None:
         images = await _download_images(message.attachments)
         if not text and not images:
             return
-        response = await _call_daemon_with_typing(
-            message.channel, text, images if images else None
-        )
+        from ancilla_bot.runtime.approval import try_handle_approval_command
+
+        handled = try_handle_approval_command(text) if text else None
+        if handled is not None:
+            response = handled
+        else:
+            response = await _call_daemon_with_typing(
+                message.channel, text, images if images else None
+            )
         if not (response or "").strip():
             return
         if len(response) > MAX_RESPONSE_CHARS:
