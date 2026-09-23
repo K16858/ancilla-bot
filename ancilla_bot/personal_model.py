@@ -59,7 +59,13 @@ def update_user_goal(goal: str, term: str = "short", **kwargs: Any) -> str:
     return manage_state(
         "memories",
         "insert",
-        {"kind": "goal", "subject": subject, "content": goal},
+        {
+            "kind": "goal",
+            "subject": subject,
+            "content": goal,
+            "scope_type": "user",
+            "scope_id": "default",
+        },
     )
 
 

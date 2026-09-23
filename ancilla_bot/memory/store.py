@@ -100,6 +100,12 @@ def maybe_import_user_md() -> None:
     manage_state(
         "memories",
         "insert",
-        {"kind": "profile", "subject": "imported", "content": text},
+        {
+            "kind": "profile",
+            "subject": "imported",
+            "content": text,
+            "scope_type": "user",
+            "scope_id": "default",
+        },
         trusted_user=True,
     )
