@@ -11,8 +11,8 @@ ALLOW = "allow"
 DENY = "deny"
 REQUIRE_APPROVAL = "require_approval"
 
-_AUTONOMOUS_DENY = frozenset({"external_write", "shell"})
-_REQUIRE_APPROVAL = frozenset()
+_AUTONOMOUS_DENY = frozenset({"external_write", "destructive", "shell"})
+_REQUIRE_APPROVAL = frozenset({"external_write", "destructive"})
 
 
 @dataclass(frozen=True)

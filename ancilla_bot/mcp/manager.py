@@ -52,6 +52,7 @@ class McpManager:
         self._ready = threading.Event()
         self._settle = threading.Event()
         self._servers: dict[str, ServerRuntime] = {}
+        self._configs: dict[str, ServerConfig] = {}
         self._lock = threading.Lock()
         self._started = False
         self._expected = 0
@@ -65,6 +66,8 @@ class McpManager:
         if self._started:
             return
         servers = configs if configs is not None else load_mcp_config()
+        with self._lock:
+            self._configs = {s.name: s for s in servers}
         if not servers:
             logger.info("mcp: no servers configured")
             self._started = True
@@ -108,6 +111,7 @@ class McpManager:
         self._started = False
         with self._lock:
             self._servers.clear()
+            self._configs.clear()
 
     def list_server_names(self) -> list[str]:
         with self._lock:
@@ -124,6 +128,13 @@ class McpManager:
     def get_tools(self) -> list[tuple[str, types.Tool]]:
         with self._lock:
             return [(name, tool) for name, rt in self._servers.items() for tool in rt.tools]
+
+    def get_tool_risk_override(self, server: str, tool_name: str) -> str | None:
+        with self._lock:
+            cfg = self._configs.get(server)
+        if cfg is None:
+            return None
+        return cfg.tool_risks.get(tool_name)
 
     def get_resources(self) -> list[tuple[str, types.Resource]]:
         with self._lock:

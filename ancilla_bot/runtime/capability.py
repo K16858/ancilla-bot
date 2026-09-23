@@ -13,7 +13,14 @@ _RISK = {
     "manage_state": "state",
     "update_user_goal": "state",
     "notify_user": "notify",
+    "mcp_list_resources": "external_read",
+    "mcp_read_resource": "external_read",
+    "mcp_list_prompts": "external_read",
+    "mcp_get_prompt": "external_read",
 }
+
+# MCP tools registered via bridge; cleared/updated on sync.
+_MCP_RISKS: dict[str, str] = {}
 
 
 @dataclass(frozen=True)
@@ -24,9 +31,19 @@ class Capability:
     available: bool = True
 
 
+def set_mcp_risk(tool_name: str, risk: str) -> None:
+    _MCP_RISKS[tool_name] = risk
+
+
+def clear_mcp_risks() -> None:
+    _MCP_RISKS.clear()
+
+
 def risk_for(tool_name: str) -> str:
     if tool_name in _RISK:
         return _RISK[tool_name]
+    if tool_name in _MCP_RISKS:
+        return _MCP_RISKS[tool_name]
     if "__" in tool_name:
         return "external_write"
     return "read_only"
