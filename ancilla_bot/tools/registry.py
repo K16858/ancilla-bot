@@ -262,7 +262,17 @@ def workspace_inventory(path: str = "", max_entries: int = 200, **kwargs: Any) -
 
 def load_skill(name: str, **kwargs: Any) -> str:
     """SKILL.md の本文を返す。"""
-    return load_skill_impl(name=name, **kwargs)
+    from ancilla_bot.skills.evolution import note_skill_loaded
+    from ancilla_bot.skills.loader import list_skills
+
+    result = load_skill_impl(name=name, **kwargs)
+    if not result.startswith("Error:"):
+        key = (name or "").strip()
+        for skill in list_skills():
+            if skill.name == key:
+                note_skill_loaded(skill.name, skill.version)
+                break
+    return result
 
 
 def set_persona(name: str, **kwargs: Any) -> str:

@@ -179,6 +179,27 @@ CREATE TABLE IF NOT EXISTS pending_approvals (
 )
 """
 
+_SCHEMA_SKILL_RUNS = """
+CREATE TABLE IF NOT EXISTS skill_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    run_id TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    created_at TEXT NOT NULL
+)
+"""
+
+_SCHEMA_SKILL_PROMOTIONS = """
+CREATE TABLE IF NOT EXISTS skill_promotions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    body_before TEXT NOT NULL,
+    created_at TEXT NOT NULL
+)
+"""
+
 
 _SCHEMA_IDLE_MEMORY = """
 CREATE TABLE IF NOT EXISTS idle_memory (
@@ -328,6 +349,8 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_AGENT_RUNS)
         c.executescript(_SCHEMA_AGENT_RUN_STEPS)
         c.executescript(_SCHEMA_PENDING_APPROVALS)
+        c.executescript(_SCHEMA_SKILL_RUNS)
+        c.executescript(_SCHEMA_SKILL_PROMOTIONS)
         c.executescript(_SCHEMA_NOTIFICATION_SENDS)
         c.executescript(_SCHEMA_IDLE_MEMORY)
         c.executescript(_SCHEMA_WORKING_MEMORY)
@@ -566,6 +589,58 @@ def resolve_pending_approval(approval_id: int, status: str) -> None:
             "UPDATE pending_approvals SET status = ?, resolved_at = ? WHERE id = ?",
             (status, now, approval_id),
         )
+
+
+def record_skill_run(*, name: str, version: int, run_id: str, outcome: str) -> None:
+    ensure_schema()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO skill_runs (name, version, run_id, outcome, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (name, int(version), run_id, outcome, now),
+        )
+
+
+def list_skill_runs(name: str, *, version: int | None = None, limit: int = 20) -> list[dict[str, Any]]:
+    ensure_schema()
+    with _conn() as c:
+        if version is None:
+            cur = c.execute(
+                "SELECT id, name, version, run_id, outcome, created_at FROM skill_runs "
+                "WHERE name = ? ORDER BY id DESC LIMIT ?",
+                (name, limit),
+            )
+        else:
+            cur = c.execute(
+                "SELECT id, name, version, run_id, outcome, created_at FROM skill_runs "
+                "WHERE name = ? AND version = ? ORDER BY id DESC LIMIT ?",
+                (name, int(version), limit),
+            )
+        return [_row_to_dict(cur, row) for row in cur.fetchall()]
+
+
+def save_skill_promotion(*, name: str, version: int, body_before: str) -> None:
+    ensure_schema()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO skill_promotions (name, version, body_before, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (name, int(version), body_before, now),
+        )
+
+
+def latest_skill_promotion(name: str) -> dict[str, Any] | None:
+    ensure_schema()
+    with _conn() as c:
+        cur = c.execute(
+            "SELECT id, name, version, body_before, created_at FROM skill_promotions "
+            "WHERE name = ? ORDER BY id DESC LIMIT 1",
+            (name,),
+        )
+        row = cur.fetchone()
+        return _row_to_dict(cur, row) if row else None
 
 
 def _get_due_from_table(table: str, *, at: datetime | None = None) -> list[dict[str, Any]]:
