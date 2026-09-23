@@ -655,6 +655,11 @@ def _process_message_core(
     """
     Lock を取得済みであることを前提に、1 メッセージ分の処理を行う。
     """
+    from ancilla_bot.runtime.approval import try_handle_approval_command
+
+    handled = try_handle_approval_command(user_input)
+    if handled is not None:
+        return handled
     if images and not VISION_ENABLED:
         return "画像処理は無効です。.env で OLLAMA_VISION_ENABLED=true にしてください（メインモデルが視覚対応の場合）。"
     response, _emotion = run_agent_loop_with_tools(
@@ -1263,6 +1268,10 @@ def main() -> int:
     trace_parser.add_argument("run_id")
     resume_parser = subparsers.add_parser("resume", help="agent_run を再開")
     resume_parser.add_argument("run_id")
+    approve_parser = subparsers.add_parser("approve", help="承認待ちの tool call を実行して同一 run を続行")
+    approve_parser.add_argument("run_id")
+    reject_parser = subparsers.add_parser("reject", help="承認待ちの tool call を拒否して run を終了")
+    reject_parser.add_argument("run_id")
 
     batch_parser = subparsers.add_parser("batch", help="バッチ処理")
     batch_sub = batch_parser.add_subparsers(dest="batch_command", required=True)
@@ -1396,6 +1405,16 @@ def main() -> int:
         return 0
     if args.command == "resume":
         _run_resume(args)
+        return 0
+    if args.command == "approve":
+        from ancilla_bot.runtime.approval import approve_run
+
+        print(approve_run(args.run_id))
+        return 0
+    if args.command == "reject":
+        from ancilla_bot.runtime.approval import reject_run
+
+        print(reject_run(args.run_id))
         return 0
     if args.command == "batch":
         if args.batch_command == "summarize":

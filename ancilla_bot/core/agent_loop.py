@@ -17,6 +17,7 @@ from ancilla_bot.heartbeat.db import (
     complete_agent_run_step,
     create_agent_run,
     create_agent_run_step,
+    resolve_pending_approval,
     update_agent_run_status,
 )
 from ancilla_bot.llm import send_chat
@@ -168,13 +169,121 @@ def _run_agent_loop_with_tools(
         {"role": "user", "content": user_input},
     ]
     _inject_time_note(messages)
-    tool_caller = get_tool_caller()
-    retry_after_verify = False
-    effective_max_turns = max_turns if max_turns is not None else MAX_TOOL_TURNS
-    # nag injection: turns since last manage_state call
-    _turns_since_manage_state = 0
+    return _agent_loop_turns(
+        run_id=run_id,
+        messages=messages,
+        on_turn=on_turn,
+        images=images,
+        max_turns=max_turns,
+        nag_interval=nag_interval,
+        nag_message=nag_message,
+        source=source,
+        user_input=user_input,
+        start_turn=0,
+        turns_since_manage_state=0,
+        retry_after_verify=False,
+    )
 
-    for turn in range(effective_max_turns):
+
+def continue_after_approval(
+    run_id: str,
+    pending: dict[str, Any],
+) -> tuple[str, str | None]:
+    """Execute the approved tool and resume the same agent run."""
+    from ancilla_bot.core.run_context import run_source
+
+    tool_name = str(pending["tool_name"])
+    args = dict(pending.get("args") or {})
+    messages: list[dict[str, Any]] = list(pending.get("messages") or [])
+    turn = int(pending["turn_index"])
+    step_id = int(pending["step_id"])
+    source = str(pending.get("source") or "user")
+    assistant_raw = str(pending.get("assistant_raw") or "")
+    assistant_message = pending.get("assistant_message")
+
+    token = run_source.set(source)
+    from ancilla_bot.runtime.persona import _temporary_persona
+
+    persona_token = _temporary_persona.set(_temporary_persona.get())
+    try:
+        func = TOOL_REGISTRY.get(tool_name)
+        if func is None:
+            resolve_pending_approval(int(pending["id"]), "rejected")
+            update_agent_run_status(run_id, "failed", last_error=f"unknown tool: {tool_name}")
+            return f"Error: unknown tool {tool_name}", None
+
+        update_agent_run_status(run_id, "running")
+        try:
+            result = func(**args)
+            step_status = "tool_succeeded"
+        except Exception as e:
+            result = f"Error: {e!s}"
+            step_status = "tool_failed"
+
+        resolve_pending_approval(int(pending["id"]), "approved")
+        complete_agent_run_step(
+            step_id,
+            step_status,
+            observation=result,
+            error=result if step_status != "tool_succeeded" else "",
+        )
+        write_event(
+            run_id,
+            step_status,
+            turn_index=turn,
+            payload={"action": tool_name, "result": result, "approved": True},
+        )
+
+        tool_content = result
+        observation = f"Observation: {result}"
+        if is_native_tool_mode() and isinstance(assistant_message, dict):
+            messages.append(assistant_message)
+            messages.append(_build_native_tool_message(assistant_message, tool_content))
+        else:
+            messages.append({"role": "assistant", "content": assistant_raw})
+            messages.append({"role": "user", "content": observation})
+
+        return _agent_loop_turns(
+            run_id=run_id,
+            messages=messages,
+            on_turn=None,
+            images=None,
+            max_turns=None,
+            nag_interval=None,
+            nag_message=None,
+            source=source,
+            user_input="",
+            start_turn=turn + 1,
+            turns_since_manage_state=0,
+            retry_after_verify=False,
+        )
+    finally:
+        _temporary_persona.reset(persona_token)
+        run_source.reset(token)
+
+
+def _agent_loop_turns(
+    *,
+    run_id: str,
+    messages: list[dict[str, Any]],
+    on_turn: Callable[
+        [str, str | None, dict[str, Any] | None, str | None], None
+    ] | None,
+    images: list[str] | None,
+    max_turns: int | None,
+    nag_interval: int | None,
+    nag_message: str | None,
+    source: str,
+    user_input: str,
+    start_turn: int,
+    turns_since_manage_state: int,
+    retry_after_verify: bool,
+) -> tuple[str, str | None]:
+    tool_caller = get_tool_caller()
+    effective_max_turns = max_turns if max_turns is not None else MAX_TOOL_TURNS
+    _turns_since_manage_state = turns_since_manage_state
+
+    for turn in range(start_turn, effective_max_turns):
         if is_cancelled():
             write_event(run_id, "run_cancelled", turn_index=turn)
             update_agent_run_status(run_id, "cancelled")
@@ -233,7 +342,6 @@ def _run_agent_loop_with_tools(
             },
         )
         logger.debug("LLM raw={}", (raw or "")[:500] + "..." if len(raw or "") > 500 else raw)
-        # native + thinking 時は content が空で tool_calls だけの応答があり得る
         if (
             not (raw or "").strip()
             and not parsed_result.action
@@ -316,10 +424,9 @@ def _run_agent_loop_with_tools(
             update_agent_run_status(run_id, "completed")
             return user_answer, parsed_result.emotion
 
-        # action が有効ならツール実行
         if parsed_result.action and parsed_result.action in TOOL_REGISTRY:
             func = TOOL_REGISTRY[parsed_result.action]
-            args: dict[str, Any] = parsed_result.action_input or {}
+            args = parsed_result.action_input or {}
             logger.info("tool_call action={} args={}", parsed_result.action, args)
             write_event(
                 run_id,
@@ -330,6 +437,35 @@ def _run_agent_loop_with_tools(
             append_audit_log(parsed_result.action, str(args))
             try:
                 step_status, result = gated_call(parsed_result.action, func, args)
+                if step_status == "approval_pending":
+                    from ancilla_bot.runtime.approval import save_pending_approval
+
+                    complete_agent_run_step(
+                        step_id, step_status, observation=result, error=result
+                    )
+                    write_event(
+                        run_id,
+                        step_status,
+                        turn_index=turn,
+                        payload={"action": parsed_result.action, "result": result},
+                    )
+                    msg = save_pending_approval(
+                        run_id=run_id,
+                        tool_name=parsed_result.action,
+                        args=args,
+                        turn_index=turn,
+                        step_id=step_id,
+                        messages=messages,
+                        assistant_raw=raw or "",
+                        assistant_message=parsed_result.assistant_message
+                        if is_native_tool_mode()
+                        else None,
+                        source=source,
+                    )
+                    if on_turn is not None:
+                        on_turn(parsed_result.thought, parsed_result.action, args, msg)
+                    return msg, None
+
                 tool_content = result
                 observation = f"Observation: {result}"
                 summary = result[:SUMMARY_MAX_LEN] + "..." if len(result) > SUMMARY_MAX_LEN else result
@@ -358,7 +494,6 @@ def _run_agent_loop_with_tools(
                     payload={"action": parsed_result.action, "error": str(e)},
                 )
                 complete_agent_run_step(step_id, "tool_failed", error=str(e))
-            # nag injection: track agent_tasks usage specifically
             args_table = (parsed_result.action_input or {}).get("table", "")
             if parsed_result.action == "manage_state" and args_table == "agent_tasks":
                 _turns_since_manage_state = 0
@@ -379,7 +514,6 @@ def _run_agent_loop_with_tools(
                 messages.append({"role": "assistant", "content": raw})
                 messages.append({"role": "user", "content": observation})
         else:
-            # 未知のツール or action なし
             if parsed_result.action:
                 tool_content = f"Unknown tool: {parsed_result.action}"
                 observation = f"Observation: {tool_content}"

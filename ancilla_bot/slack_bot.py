@@ -158,7 +158,10 @@ def run_bot() -> None:
         images = _download_images(files, bot_token) if files else []
         if not text and not images:
             return
-        response = _call_daemon(text, images if images else None)
+        from ancilla_bot.runtime.approval import try_handle_approval_command
+
+        handled = try_handle_approval_command(text) if text else None
+        response = handled if handled is not None else _call_daemon(text, images if images else None)
         if not (response or "").strip():
             return
         if len(response) > MAX_RESPONSE_CHARS:

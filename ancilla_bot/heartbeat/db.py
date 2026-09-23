@@ -161,6 +161,24 @@ CREATE TABLE IF NOT EXISTS agent_run_steps (
 )
 """
 
+_SCHEMA_PENDING_APPROVALS = """
+CREATE TABLE IF NOT EXISTS pending_approvals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    args_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    turn_index INTEGER NOT NULL,
+    step_id INTEGER NOT NULL,
+    messages_json TEXT NOT NULL,
+    assistant_raw TEXT NOT NULL DEFAULT '',
+    assistant_message_json TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+)
+"""
+
 
 _SCHEMA_IDLE_MEMORY = """
 CREATE TABLE IF NOT EXISTS idle_memory (
@@ -295,6 +313,7 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_AUDIT_LOG)
         c.executescript(_SCHEMA_AGENT_RUNS)
         c.executescript(_SCHEMA_AGENT_RUN_STEPS)
+        c.executescript(_SCHEMA_PENDING_APPROVALS)
         c.executescript(_SCHEMA_NOTIFICATION_SENDS)
         c.executescript(_SCHEMA_IDLE_MEMORY)
         c.executescript(_SCHEMA_WORKING_MEMORY)
@@ -449,6 +468,80 @@ def list_agent_run_steps(run_id: str) -> list[dict[str, Any]]:
             (run_id,),
         )
         return [_row_to_dict(cur, row) for row in cur.fetchall()]
+
+
+def create_pending_approval(
+    *,
+    run_id: str,
+    tool_name: str,
+    args: dict[str, Any],
+    turn_index: int,
+    step_id: int,
+    messages: list[dict[str, Any]],
+    assistant_raw: str = "",
+    assistant_message: dict[str, Any] | None = None,
+    source: str = "",
+) -> int:
+    import json
+
+    ensure_schema()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO pending_approvals "
+            "(run_id, tool_name, args_json, status, turn_index, step_id, messages_json, "
+            "assistant_raw, assistant_message_json, source, created_at) "
+            "VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)",
+            (
+                run_id,
+                tool_name,
+                json.dumps(args, ensure_ascii=False),
+                turn_index,
+                step_id,
+                json.dumps(messages, ensure_ascii=False, default=str),
+                assistant_raw or "",
+                json.dumps(assistant_message, ensure_ascii=False, default=str)
+                if assistant_message
+                else "",
+                source or "",
+                now,
+            ),
+        )
+        return int(cur.lastrowid)
+
+
+def get_pending_approval(run_id: str) -> dict[str, Any] | None:
+    import json
+
+    ensure_schema()
+    with _conn() as c:
+        cur = c.execute(
+            "SELECT id, run_id, tool_name, args_json, status, turn_index, step_id, "
+            "messages_json, assistant_raw, assistant_message_json, source, "
+            "created_at, resolved_at "
+            "FROM pending_approvals WHERE run_id = ? AND status = 'pending' "
+            "ORDER BY id DESC LIMIT 1",
+            (run_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        data = _row_to_dict(cur, row)
+        data["args"] = json.loads(data.pop("args_json") or "{}")
+        data["messages"] = json.loads(data.pop("messages_json") or "[]")
+        raw_am = data.pop("assistant_message_json") or ""
+        data["assistant_message"] = json.loads(raw_am) if raw_am else None
+        return data
+
+
+def resolve_pending_approval(approval_id: int, status: str) -> None:
+    ensure_schema()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with _conn() as c:
+        c.execute(
+            "UPDATE pending_approvals SET status = ?, resolved_at = ? WHERE id = ?",
+            (status, now, approval_id),
+        )
 
 
 def _get_due_from_table(table: str, *, at: datetime | None = None) -> list[dict[str, Any]]:
