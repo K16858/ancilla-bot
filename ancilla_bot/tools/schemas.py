@@ -115,7 +115,13 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         required=["name"],
     ),
     "set_persona": _schema(
-        {"name": {"type": "string", "description": "Persona name. Switch yourself when the task fits; return to general when done."}},
+        {
+            "name": {"type": "string", "description": "Persona name"},
+            "temporary": {
+                "type": "boolean",
+                "description": "If true, switch only for this run; do not change the saved persona",
+            },
+        },
         required=["name"],
     ),
     "search_memory": _schema(

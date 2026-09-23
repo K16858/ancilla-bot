@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -8,8 +9,8 @@ from typing import Any
 import yaml
 
 DEFAULT_PERSONAS_DIR = Path(os.getenv("ANCILLA_PERSONAS_DIR", "personas"))
-# ponytail: process override for one task run; file is the durable primary.
-_temporary_persona: str | None = None
+# ponytail: run override; file is the durable primary.
+_temporary_persona: ContextVar[str | None] = ContextVar("temporary_persona", default=None)
 _ALWAYS_ALLOW = frozenset({"set_persona", "load_skill", "finish"})
 
 
@@ -120,8 +121,9 @@ def load_persona(name: str) -> PersonaSpec:
 
 
 def get_active_name() -> str:
-    if _temporary_persona is not None:
-        return _temporary_persona
+    tmp = _temporary_persona.get()
+    if tmp is not None:
+        return tmp
     return _read_stored_name()
 
 
@@ -142,21 +144,33 @@ def format_persona_overlay() -> str:
     if spec.output:
         lines.append(f"- output: {spec.output}")
     lines.append(
-        "- switch: call set_persona when the task fits another persona; return to general when done"
+        "- switch: call set_persona with temporary=true for a run-scoped switch; "
+        "omit temporary only to change the saved persona"
     )
     return "\n".join(lines)
 
 
+def _as_bool(value: object) -> bool:
+    if value is True:
+        return True
+    if value is False or value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes")
+    return bool(value)
+
+
 def set_persona(name: str, **kwargs: object) -> str:
-    global _temporary_persona
-    _ = kwargs
     key = (name or "").strip()
     if not key:
         return "Error: name is required."
     names = list_persona_names()
     if key not in names:
         return f"Error: unknown persona: {key}. Available: {', '.join(names)}"
-    _temporary_persona = None
+    if _as_bool(kwargs.get("temporary")):
+        begin_temporary_persona(key)
+        return f"Persona set to {key} (temporary)."
+    _temporary_persona.set(None)
     try:
         _write_stored_name(key)
     except OSError as e:
@@ -166,18 +180,16 @@ def set_persona(name: str, **kwargs: object) -> str:
 
 def begin_temporary_persona(name: str) -> str:
     """Switch persona for one task run without rewriting the durable primary."""
-    global _temporary_persona
     key = (name or "").strip()
     if not key or key not in list_persona_names():
         return get_active_name()
     prev = get_active_name()
-    _temporary_persona = key
+    _temporary_persona.set(key)
     return prev
 
 
 def end_temporary_persona() -> None:
-    global _temporary_persona
-    _temporary_persona = None
+    _temporary_persona.set(None)
 
 
 def tool_denied_by_persona(tool_name: str) -> bool:

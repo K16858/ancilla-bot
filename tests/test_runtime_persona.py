@@ -68,3 +68,17 @@ def test_researcher_blocks_semantic_memory_write(tmp_path: Path, monkeypatch):
     assert not memory_class_allowed("working", write=True)
     set_persona("general")
     assert memory_class_allowed("semantic", write=True)
+
+
+def test_set_persona_temporary_does_not_persist(tmp_path: Path, monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
+    path = tmp_path / "active_persona.txt"
+    monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(path))
+    persona_mod.end_temporary_persona()
+    set_persona("general")
+    assert set_persona("researcher", temporary=True).startswith("Persona set to researcher (temporary)")
+    assert get_active_persona().name == "researcher"
+    assert path.read_text(encoding="utf-8").strip() == "general"
+    persona_mod.end_temporary_persona()
+    assert get_active_persona().name == "general"
