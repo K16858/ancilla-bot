@@ -13,6 +13,6 @@ risk: read_only
 
 Review code in workspace. Do not change permissions.
 
-1. If the active persona is not developer, call `set_persona` with name=developer before reviewing.
+1. If the active persona is not developer, call `set_persona` with name=developer and temporary=true before reviewing.
 2. `list_workspace` then `read_file` on the files in scope. Do not read secrets.
 3. Report bugs, risks, and missing tests first. Suggest a minimal patch. Do not write files unless asked.

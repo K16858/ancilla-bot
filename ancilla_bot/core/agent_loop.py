@@ -115,6 +115,9 @@ def run_agent_loop_with_tools(
     """
     logger.info("user_input={!r}", user_input[:100] + "..." if len(user_input) > 100 else user_input)
     token = run_source.set(source)
+    from ancilla_bot.runtime.persona import _temporary_persona
+
+    persona_token = _temporary_persona.set(_temporary_persona.get())
     try:
         return _run_agent_loop_with_tools(
             user_input,
@@ -128,6 +131,7 @@ def run_agent_loop_with_tools(
             parent_run_id=parent_run_id,
         )
     finally:
+        _temporary_persona.reset(persona_token)
         run_source.reset(token)
 
 
