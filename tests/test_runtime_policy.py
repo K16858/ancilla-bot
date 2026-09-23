@@ -115,3 +115,37 @@ def test_gated_call_require_approval(monkeypatch):
     assert "requires approval" in result
     assert called["n"] == 0
     assert decide("notify_user").verdict == REQUIRE_APPROVAL
+
+
+def test_external_write_requires_approval_interactive():
+    from ancilla_bot.runtime import capability as capability_mod
+    from ancilla_bot.tools import registry as registry_mod
+
+    capability_mod.set_mcp_risk("demo__write", "external_write")
+    registry_mod.TOOL_REGISTRY["demo__write"] = lambda **kwargs: "ok"
+    token = run_source.set("user")
+    try:
+        assert decide("demo__write").verdict == REQUIRE_APPROVAL
+        assert decide("write_file").verdict == ALLOW
+    finally:
+        run_source.reset(token)
+        registry_mod.TOOL_REGISTRY.pop("demo__write", None)
+        capability_mod.clear_mcp_risks()
+
+
+def test_external_read_allowed_when_autonomous():
+    from ancilla_bot.runtime import capability as capability_mod
+    from ancilla_bot.tools import registry as registry_mod
+
+    capability_mod.set_mcp_risk("demo__search", "external_read")
+    registry_mod.TOOL_REGISTRY["demo__search"] = lambda **kwargs: "ok"
+    registry_mod.TOOL_REGISTRY["demo__unknown"] = lambda **kwargs: "ok"
+    token = run_source.set("heartbeat")
+    try:
+        assert decide("demo__search").verdict == ALLOW
+        assert decide("demo__unknown").verdict == DENY
+    finally:
+        run_source.reset(token)
+        registry_mod.TOOL_REGISTRY.pop("demo__search", None)
+        registry_mod.TOOL_REGISTRY.pop("demo__unknown", None)
+        capability_mod.clear_mcp_risks()

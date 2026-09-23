@@ -14,7 +14,12 @@ def test_load_stdio_and_http_skips_both(tmp_path: Path):
         json.dumps(
             {
                 "mcpServers": {
-                    "local": {"command": "npx", "args": ["-y", "x"], "env": {"A": 1}},
+                    "local": {
+                        "command": "npx",
+                        "args": ["-y", "x"],
+                        "env": {"A": 1},
+                        "tool_risks": {"search": "external_read", "bad": "nope"},
+                    },
                     "remote": {
                         "url": "https://example.com/mcp",
                         "headers": {"Authorization": "Bearer t"},
@@ -31,5 +36,6 @@ def test_load_stdio_and_http_skips_both(tmp_path: Path):
     assert isinstance(loaded[0], StdioServerConfig)
     assert loaded[0].name == "local"
     assert loaded[0].env == {"A": "1"}
+    assert loaded[0].tool_risks == {"search": "external_read"}
     assert isinstance(loaded[1], HttpServerConfig)
     assert loaded[1].url == "https://example.com/mcp"

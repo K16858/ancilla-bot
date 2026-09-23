@@ -25,6 +25,7 @@ class StdioServerConfig:
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
     cwd: str | None = None
+    tool_risks: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -32,9 +33,37 @@ class HttpServerConfig:
     name: str
     url: str
     headers: dict[str, str] = field(default_factory=dict)
+    tool_risks: dict[str, str] = field(default_factory=dict)
 
 
 ServerConfig = StdioServerConfig | HttpServerConfig
+
+_ALLOWED_TOOL_RISKS = frozenset(
+    {"external_read", "external_write", "destructive", "workspace_write", "read_only"}
+)
+
+
+def _as_tool_risks(raw: Any, *, server: str) -> dict[str, str]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        logger.warning("mcp server {!r}: tool_risks must be an object; ignoring", server)
+        return {}
+    out: dict[str, str] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key.strip():
+            continue
+        risk = "" if value is None else str(value).strip()
+        if risk not in _ALLOWED_TOOL_RISKS:
+            logger.warning(
+                "mcp server {!r}: tool_risks[{!r}]={!r} ignored",
+                server,
+                key,
+                value,
+            )
+            continue
+        out[key.strip()] = risk
+    return out
 
 
 def _as_str_dict(raw: Any, *, field_name: str, server: str) -> dict[str, str]:
@@ -76,12 +105,14 @@ def _parse_server(name: str, raw: Any) -> ServerConfig | None:
             args=args,
             env=_as_str_dict(raw.get("env"), field_name="env", server=name),
             cwd=cwd_str,
+            tool_risks=_as_tool_risks(raw.get("tool_risks"), server=name),
         )
     if has_url:
         return HttpServerConfig(
             name=name,
             url=url.strip(),
             headers=_as_str_dict(raw.get("headers"), field_name="headers", server=name),
+            tool_risks=_as_tool_risks(raw.get("tool_risks"), server=name),
         )
     logger.warning("mcp server {!r}: need command or url; skipping", name)
     return None
