@@ -1285,6 +1285,13 @@ def main() -> int:
     use_p = persona_sub.add_parser("use", help="活性 Persona を切替")
     use_p.add_argument("name", help="Persona 名")
 
+    skill_parser = subparsers.add_parser("skill", help="workspace Skill の昇格・ロールバック")
+    skill_sub = skill_parser.add_subparsers(dest="skill_command", required=True)
+    promote_p = skill_sub.add_parser("promote", help="trial Skill を active に昇格")
+    promote_p.add_argument("name", help="Skill 名")
+    rollback_p = skill_sub.add_parser("rollback", help="直前の昇格を戻して trial にする")
+    rollback_p.add_argument("name", help="Skill 名")
+
     subparsers.choices["run"].add_argument(
         "--no-repl",
         action="store_true",
@@ -1334,6 +1341,16 @@ def main() -> int:
         if not getattr(args, "persona_command", None):
             args.persona_command = "list"
         return persona_cmd.cmd_persona(args)
+    if args.command == "skill":
+        from ancilla_bot.skills.evolution import promote_skill, rollback_skill
+
+        if args.skill_command == "promote":
+            print(promote_skill(args.name))
+            return 0
+        if args.skill_command == "rollback":
+            print(rollback_skill(args.name))
+            return 0
+        return 1
     if args.command == "version":
         from ancilla_bot.cli.commands import update as update_cmd
 

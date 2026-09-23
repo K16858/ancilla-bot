@@ -57,6 +57,13 @@ _FORCE_SUMMARY_PROMPT: Final[str] = (
 EXIT_COMMANDS: Final[set[str]] = {"exit", "quit", ":q", "/bye"}
 
 
+def _finish_run(run_id: str, status: str, *, last_error: str = "", completed: bool = False) -> None:
+    from ancilla_bot.skills.evolution import flush_skill_runs
+
+    update_agent_run_status(run_id, status, last_error=last_error)
+    flush_skill_runs(run_id, completed=completed)
+
+
 def _inject_time_note(messages: list[dict[str, str]]) -> None:
     """
     先頭の system メッセージへ現在時刻ノートを付与する。
@@ -117,8 +124,10 @@ def run_agent_loop_with_tools(
     logger.info("user_input={!r}", user_input[:100] + "..." if len(user_input) > 100 else user_input)
     token = run_source.set(source)
     from ancilla_bot.runtime.persona import _temporary_persona
+    from ancilla_bot.skills.evolution import reset_skill_run_tracking, restore_skill_run_tracking
 
     persona_token = _temporary_persona.set(_temporary_persona.get())
+    skill_tokens = reset_skill_run_tracking()
     try:
         return _run_agent_loop_with_tools(
             user_input,
@@ -132,6 +141,7 @@ def run_agent_loop_with_tools(
             parent_run_id=parent_run_id,
         )
     finally:
+        restore_skill_run_tracking(skill_tokens)
         _temporary_persona.reset(persona_token)
         run_source.reset(token)
 
@@ -203,13 +213,15 @@ def continue_after_approval(
 
     token = run_source.set(source)
     from ancilla_bot.runtime.persona import _temporary_persona
+    from ancilla_bot.skills.evolution import reset_skill_run_tracking, restore_skill_run_tracking
 
     persona_token = _temporary_persona.set(_temporary_persona.get())
+    skill_tokens = reset_skill_run_tracking()
     try:
         func = TOOL_REGISTRY.get(tool_name)
         if func is None:
             resolve_pending_approval(int(pending["id"]), "rejected")
-            update_agent_run_status(run_id, "failed", last_error=f"unknown tool: {tool_name}")
+            _finish_run(run_id, "failed", last_error=f"unknown tool: {tool_name}")
             return f"Error: unknown tool {tool_name}", None
 
         update_agent_run_status(run_id, "running")
@@ -219,6 +231,9 @@ def continue_after_approval(
         except Exception as e:
             result = f"Error: {e!s}"
             step_status = "tool_failed"
+            from ancilla_bot.skills.evolution import note_tool_failure
+
+            note_tool_failure()
 
         resolve_pending_approval(int(pending["id"]), "approved")
         complete_agent_run_step(
@@ -258,6 +273,7 @@ def continue_after_approval(
             retry_after_verify=False,
         )
     finally:
+        restore_skill_run_tracking(skill_tokens)
         _temporary_persona.reset(persona_token)
         run_source.reset(token)
 
@@ -286,11 +302,11 @@ def _agent_loop_turns(
     for turn in range(start_turn, effective_max_turns):
         if is_cancelled():
             write_event(run_id, "run_cancelled", turn_index=turn)
-            update_agent_run_status(run_id, "cancelled")
+            _finish_run(run_id, "cancelled")
             return "処理をキャンセルしました。", None
         if is_suspended():
             write_event(run_id, "run_suspended", turn_index=turn)
-            update_agent_run_status(run_id, "suspended")
+            _finish_run(run_id, "suspended")
             from ancilla_bot.core.execution import get_runtime
 
             get_runtime().note_suspended(run_id)
@@ -307,18 +323,18 @@ def _agent_loop_turns(
         except Exception as e:
             if is_cancelled():
                 write_event(run_id, "run_cancelled", turn_index=turn)
-                update_agent_run_status(run_id, "cancelled")
+                _finish_run(run_id, "cancelled")
                 return "処理をキャンセルしました。", None
             if is_suspended():
                 write_event(run_id, "run_suspended", turn_index=turn)
-                update_agent_run_status(run_id, "suspended")
+                _finish_run(run_id, "suspended")
                 from ancilla_bot.core.execution import get_runtime
 
                 get_runtime().note_suspended(run_id)
                 return SUSPENDED_REPLY, None
             logger.warning("tool caller failed: {} ", e)
             write_event(run_id, "run_failed", turn_index=turn, payload={"error": str(e)})
-            update_agent_run_status(run_id, "failed", last_error=str(e))
+            _finish_run(run_id, "failed", last_error=str(e))
             return "応答の解析に失敗しました。もう一度試してください。", None
 
         raw = parsed_result.raw
@@ -350,7 +366,7 @@ def _agent_loop_turns(
             logger.warning("LLM returned empty response")
             write_event(run_id, "run_failed", turn_index=turn, payload={"error": "empty LLM response"})
             complete_agent_run_step(step_id, "failed", error="empty LLM response")
-            update_agent_run_status(run_id, "failed", last_error="empty LLM response")
+            _finish_run(run_id, "failed", last_error="empty LLM response")
             return (
                 "内部エラーが発生しました（空の応答）。少し待ってからもう一度試してください。",
                 None,
@@ -370,7 +386,7 @@ def _agent_loop_turns(
                     payload={"final_answer": user_answer},
                 )
                 complete_agent_run_step(step_id, "completed", observation=user_answer)
-                update_agent_run_status(run_id, "completed")
+                _finish_run(run_id, "completed", completed=True)
                 return user_answer, parsed_result.emotion
             do_verify = (
                 VERIFY_ANSWER
@@ -405,7 +421,7 @@ def _agent_loop_turns(
                 payload={"final_answer": user_answer},
             )
             complete_agent_run_step(step_id, "completed", observation=user_answer)
-            update_agent_run_status(run_id, "completed")
+            _finish_run(run_id, "completed", completed=True)
             return user_answer, parsed_result.emotion
 
         if parsed_result.action == "finish":
@@ -421,7 +437,7 @@ def _agent_loop_turns(
                 payload={"final_answer": user_answer},
             )
             complete_agent_run_step(step_id, "completed", observation=user_answer)
-            update_agent_run_status(run_id, "completed")
+            _finish_run(run_id, "completed", completed=True)
             return user_answer, parsed_result.emotion
 
         if parsed_result.action and parsed_result.action in TOOL_REGISTRY:
@@ -480,6 +496,10 @@ def _agent_loop_turns(
                 if step_status == "tool_succeeded":
                     complete_agent_run_step(step_id, step_status, observation=result)
                 else:
+                    if step_status == "tool_failed":
+                        from ancilla_bot.skills.evolution import note_tool_failure
+
+                        note_tool_failure()
                     complete_agent_run_step(
                         step_id, step_status, observation=result, error=result
                     )
@@ -487,6 +507,9 @@ def _agent_loop_turns(
                 tool_content = f"Error: {e!s}"
                 observation = f"Observation: {tool_content}"
                 logger.warning("tool exception action={} error={}", parsed_result.action, e)
+                from ancilla_bot.skills.evolution import note_tool_failure
+
+                note_tool_failure()
                 write_event(
                     run_id,
                     "tool_failed",
@@ -524,6 +547,9 @@ def _agent_loop_turns(
                     turn_index=turn,
                     payload={"action": parsed_result.action, "error": tool_content},
                 )
+                from ancilla_bot.skills.evolution import note_tool_failure
+
+                note_tool_failure()
                 complete_agent_run_step(step_id, "tool_failed", error=tool_content)
             else:
                 tool_content = ""
@@ -551,11 +577,11 @@ def _agent_loop_turns(
 
     logger.warning("max turns ({}) reached, forcing final answer", effective_max_turns)
     write_event(run_id, "max_turns_reached", turn_index=effective_max_turns)
-    update_agent_run_status(run_id, "max_turns")
     try:
         summary_msgs = list(messages) + [{"role": "user", "content": _FORCE_SUMMARY_PROMPT}]
         raw_summary = send_chat(summary_msgs, format=None, think=False)
         answer = (raw_summary or "").strip() or "処理を完了できませんでした。"
+        _finish_run(run_id, "max_turns")
     except Exception as exc:
         logger.warning("force summary failed: {}", exc)
         write_event(
@@ -564,7 +590,7 @@ def _agent_loop_turns(
             turn_index=effective_max_turns,
             payload={"error": str(exc)},
         )
-        update_agent_run_status(run_id, "failed", last_error=str(exc))
+        _finish_run(run_id, "failed", last_error=str(exc))
         answer = "処理を完了できませんでした。"
     write_event(
         run_id,
