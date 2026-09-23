@@ -216,6 +216,8 @@ CREATE TABLE IF NOT EXISTS procedures (
     name TEXT NOT NULL,
     steps TEXT NOT NULL,
     evidence_id INTEGER,
+    lifecycle TEXT NOT NULL DEFAULT 'active',
+    supersedes INTEGER,
     created_at TEXT NOT NULL
 )
 """
@@ -228,6 +230,8 @@ CREATE TABLE IF NOT EXISTS artifacts (
     name TEXT NOT NULL,
     uri TEXT NOT NULL,
     summary TEXT NOT NULL DEFAULT '',
+    lifecycle TEXT NOT NULL DEFAULT 'active',
+    supersedes INTEGER,
     created_at TEXT NOT NULL
 )
 """
@@ -277,6 +281,16 @@ _MEMORY_COL_MIGRATIONS = (
     ("scope_type", "TEXT NOT NULL DEFAULT ''"),
     ("scope_id", "TEXT NOT NULL DEFAULT ''"),
     ("valid_from", "TEXT"),
+)
+
+_PROCEDURE_COL_MIGRATIONS = (
+    ("lifecycle", "TEXT NOT NULL DEFAULT 'active'"),
+    ("supersedes", "INTEGER"),
+)
+
+_ARTIFACT_COL_MIGRATIONS = (
+    ("lifecycle", "TEXT NOT NULL DEFAULT 'active'"),
+    ("supersedes", "INTEGER"),
 )
 
 _MEMORY_COLS = (
@@ -333,6 +347,16 @@ def ensure_schema() -> None:
         for column, spec in _MEMORY_COL_MIGRATIONS:
             try:
                 c.execute(f"ALTER TABLE memories ADD COLUMN {column} {spec}")
+            except sqlite3.OperationalError:
+                pass
+        for column, spec in _PROCEDURE_COL_MIGRATIONS:
+            try:
+                c.execute(f"ALTER TABLE procedures ADD COLUMN {column} {spec}")
+            except sqlite3.OperationalError:
+                pass
+        for column, spec in _ARTIFACT_COL_MIGRATIONS:
+            try:
+                c.execute(f"ALTER TABLE artifacts ADD COLUMN {column} {spec}")
             except sqlite3.OperationalError:
                 pass
 
@@ -905,7 +929,7 @@ def search_procedures(
     with _conn() as conn:
         cur = conn.execute(
             "SELECT id, name, steps, scope_type, scope_id FROM procedures "
-            "WHERE scope_type = ? AND scope_id = ?",
+            "WHERE scope_type = ? AND scope_id = ? AND lifecycle = 'active'",
             (st, sid),
         )
         rows = [_row_to_dict(cur, row) for row in cur.fetchall()]
@@ -952,7 +976,7 @@ def search_artifacts(
     with _conn() as conn:
         cur = conn.execute(
             "SELECT id, name, uri, summary, scope_type, scope_id FROM artifacts "
-            "WHERE scope_type = ? AND scope_id = ?",
+            "WHERE scope_type = ? AND scope_id = ? AND lifecycle = 'active'",
             (st, sid),
         )
         rows = [_row_to_dict(cur, row) for row in cur.fetchall()]
@@ -1227,12 +1251,24 @@ def manage_state(
                             return "Error: evidence_id must be an integer (agent_run_steps id)."
                         if evidence_id <= 0 or not _evidence_is_valid(evidence_id):
                             return "Error: evidence_id does not match a tool observation."
+                    old = c.execute(
+                        "SELECT id FROM procedures WHERE scope_type = ? AND scope_id = ? "
+                        "AND name = ? AND lifecycle = 'active' ORDER BY id DESC LIMIT 1",
+                        (scope_type, scope_id, name),
+                    ).fetchone()
+                    supersedes = int(old[0]) if old else None
                     c.execute(
                         "INSERT INTO procedures "
-                        "(scope_type, scope_id, name, steps, evidence_id, created_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?)",
-                        (scope_type, scope_id, name, steps, evidence_id, now),
+                        "(scope_type, scope_id, name, steps, evidence_id, lifecycle, "
+                        "supersedes, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
+                        (scope_type, scope_id, name, steps, evidence_id, supersedes, now),
                     )
+                    if supersedes is not None:
+                        c.execute(
+                            "UPDATE procedures SET lifecycle = 'superseded' WHERE id = ?",
+                            (supersedes,),
+                        )
                 elif table == "artifacts":
                     from ancilla_bot.runtime.persona import memory_class_allowed
 
@@ -1247,12 +1283,23 @@ def manage_state(
                     if not name or not uri:
                         return "Error: artifacts require name and uri."
                     summary = str(payload.get("summary", "") or "")
+                    old = c.execute(
+                        "SELECT id FROM artifacts WHERE scope_type = ? AND scope_id = ? "
+                        "AND name = ? AND lifecycle = 'active' ORDER BY id DESC LIMIT 1",
+                        (scope_type, scope_id, name),
+                    ).fetchone()
+                    supersedes = int(old[0]) if old else None
                     c.execute(
                         "INSERT INTO artifacts "
-                        "(scope_type, scope_id, name, uri, summary, created_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?)",
-                        (scope_type, scope_id, name, uri, summary, now),
+                        "(scope_type, scope_id, name, uri, summary, lifecycle, supersedes, "
+                        "created_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
+                        (scope_type, scope_id, name, uri, summary, supersedes, now),
                     )
+                    if supersedes is not None:
+                        c.execute(
+                            "UPDATE artifacts SET lifecycle = 'superseded' WHERE id = ?",
+                            (supersedes,),
+                        )
                 elif table == "memories":
                     kind = str(payload.get("kind", "")).strip().lower()
                     if kind not in _MEMORY_KINDS:
@@ -1468,7 +1515,7 @@ def manage_state(
                     if isinstance(scope, str):
                         return scope
                     scope_type, scope_id = scope
-                    where = ["scope_type = ?", "scope_id = ?"]
+                    where = ["scope_type = ?", "scope_id = ?", "lifecycle = 'active'"]
                     params_p: list[Any] = [scope_type, scope_id]
                     if payload.get("name"):
                         where.append("name = ?")
@@ -1476,7 +1523,8 @@ def manage_state(
                     where_sql = " WHERE " + " AND ".join(where)
                     params_p.append(limit)
                     c.execute(
-                        "SELECT id, scope_type, scope_id, name, steps, evidence_id, created_at "
+                        "SELECT id, scope_type, scope_id, name, steps, evidence_id, "
+                        "lifecycle, supersedes, created_at "
                         f"FROM procedures{where_sql} ORDER BY id DESC LIMIT ?",
                         params_p,
                     )
@@ -1493,7 +1541,7 @@ def manage_state(
                     if isinstance(scope, str):
                         return scope
                     scope_type, scope_id = scope
-                    where = ["scope_type = ?", "scope_id = ?"]
+                    where = ["scope_type = ?", "scope_id = ?", "lifecycle = 'active'"]
                     params_a: list[Any] = [scope_type, scope_id]
                     if payload.get("name"):
                         where.append("name = ?")
@@ -1501,7 +1549,8 @@ def manage_state(
                     where_sql = " WHERE " + " AND ".join(where)
                     params_a.append(limit)
                     c.execute(
-                        "SELECT id, scope_type, scope_id, name, uri, summary, created_at "
+                        "SELECT id, scope_type, scope_id, name, uri, summary, "
+                        "lifecycle, supersedes, created_at "
                         f"FROM artifacts{where_sql} ORDER BY id DESC LIMIT ?",
                         params_a,
                     )
