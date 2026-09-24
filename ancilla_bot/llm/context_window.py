@@ -65,6 +65,12 @@ def _fetch_n_ctx_ollama() -> int | None:
     model = (os.getenv("OLLAMA_MODEL") or "").strip()
     if not model:
         return None
+    from ancilla_bot.llm.auto_model import is_auto
+
+    if is_auto(model):
+        from ancilla_bot.llm.ollama_client import resolve_model
+
+        model = resolve_model(model, base)
     timeout = float(os.getenv("OLLAMA_TIMEOUT", "10"))
     with httpx.Client(timeout=min(timeout, 15.0)) as client:
         resp = client.post(f"{base}/api/show", json={"name": model})

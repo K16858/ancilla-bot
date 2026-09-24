@@ -14,6 +14,7 @@ from typing import Callable
 
 from ancilla_bot.cli import envfile, health, process, ux
 from ancilla_bot.cli.paths import get_root
+from ancilla_bot.llm.auto_model import is_auto
 
 _ALIASES = {
     "web-search": "search",
@@ -154,6 +155,47 @@ def _prompt(
     return raw
 
 
+def model_choice(raw: str, names: list[str]) -> str:
+    """空入力・0・auto は auto。正の番号は検出一覧。それ以外は入力した名前。"""
+    text = raw.strip()
+    if text == "" or text == "0" or text.lower() == "auto":
+        return "auto"
+    if text.isdigit():
+        index = int(text)
+        if index < 1 or index > len(names):
+            raise ValueError(f"model number out of range: {text}")
+        return names[index - 1]
+    return text
+
+
+def _prompt_model(label: str, names: list[str] | None, *, current: str | None) -> str:
+    print(f"{label} (current: {current or 'empty'}):")
+    print("  [0] auto (default)")
+    if names is None:
+        print("  ! could not list models")
+    elif not names:
+        print("  ! no models reported")
+    else:
+        for i, name in enumerate(names, 1):
+            print(f"  [{i}] {name}")
+    while True:
+        try:
+            return model_choice(input("Choose [0]: "), names or [])
+        except ValueError as exc:
+            print(f"  ! {exc}")
+
+
+def _warn_model(model: str, names: list[str] | None, *, base: str) -> None:
+    if is_auto(model):
+        if names is None:
+            print("  ! auto resolves when the endpoint lists exactly one model")
+        elif len(names) != 1:
+            print(f"  ! auto requires exactly one model ({len(names)} found)")
+        return
+    if names is not None and not health.ollama_has_model(names, model):
+        print(f"  ! {model} is not pulled on {base}")
+
+
 def _apply(updates: dict[str, str | None], *, before: dict[str, str]) -> int:
     cleaned = {k: v for k, v in updates.items() if v is not None}
     # None markers for clear are kept if explicitly in updates with None - we only pass non-None from prompts
@@ -207,32 +249,30 @@ def _setup_provider() -> int:
         if v is not None:
             updates["OLLAMA_BASE_URL"] = v
             base = v
-        models = health.ollama_models(base)
-        if models is None:
+        found = health.ollama_models(base)
+        if found is None:
             print(f"  ! Cannot reach Ollama at {base}")
-        elif not models:
-            print("  ! Ollama has no models pulled (ollama pull <model>)")
+            listed = None
         else:
-            print("  Available models (enter a number or a name):")
-            for i, name in enumerate(models, 1):
-                print(f"    [{i}] {name}")
-        v = _prompt("OLLAMA_MODEL", before.get("OLLAMA_MODEL"))
-        if v is not None:
-            if models and v.isdigit() and 1 <= int(v) <= len(models):
-                v = models[int(v) - 1]
-            updates["OLLAMA_MODEL"] = v
-        model = updates.get("OLLAMA_MODEL") or before.get("OLLAMA_MODEL") or ""
-        if not model:
-            print("  ! OLLAMA_MODEL is required for LLM_PROVIDER=ollama")
-        elif models and not health.ollama_has_model(models, model):
-            print(f"  ! {model} is not pulled on {base}")
+            listed = [name for name in found if name]
+            if not listed:
+                print("  ! Ollama has no models pulled (ollama pull <model>)")
+        chosen = _prompt_model("OLLAMA_MODEL", listed, current=before.get("OLLAMA_MODEL"))
+        updates["OLLAMA_MODEL"] = chosen
+        _warn_model(chosen, listed, base=base)
     else:
         v = _prompt("LLM_BASE_URL", before.get("LLM_BASE_URL"))
         if v is not None:
             updates["LLM_BASE_URL"] = v
-        v = _prompt("LLM_MODEL", before.get("LLM_MODEL"))
-        if v is not None:
-            updates["LLM_MODEL"] = v
+        base = (updates.get("LLM_BASE_URL") or before.get("LLM_BASE_URL") or "").strip()
+        listed = health.openai_models(base) if base else None
+        chosen = _prompt_model("LLM_MODEL", listed, current=before.get("LLM_MODEL"))
+        updates["LLM_MODEL"] = chosen
+        if is_auto(chosen):
+            if listed is None:
+                print("  ! auto resolves when the endpoint lists exactly one model")
+            elif len(listed) != 1:
+                print(f"  ! auto requires exactly one model ({len(listed)} found)")
         if not (updates.get("OPENAI_API_KEY") or before.get("OPENAI_API_KEY")):
             print("  ! OPENAI_API_KEY is not set (ancilla setup keys)")
     return _apply(updates, before=before)
