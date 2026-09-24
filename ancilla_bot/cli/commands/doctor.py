@@ -54,18 +54,39 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
     healthy = health.check_health()
     check("Core health", healthy, health.health_url(), next_cmd="ancilla logs core")
 
+    from ancilla_bot.llm.auto_model import is_auto, pick_auto
+
     provider = (envfile.get_value("LLM_PROVIDER") or "ollama").strip().lower()
     if provider == "openai":
         base = (envfile.get_value("LLM_BASE_URL") or "").strip()
         model = (envfile.get_value("LLM_MODEL") or "").strip()
-        check("LLM provider", bool(base and model), f"openai base={base or '?'} model={model or '?'}", next_cmd="ancilla setup provider")
+        if is_auto(model) and base:
+            names = health.openai_models(base)
+            try:
+                if names is None:
+                    raise ValueError(f"endpoint unreachable: {base}")
+                resolved = pick_auto(names, setting="LLM_MODEL")
+                check("LLM provider", True, f"openai base={base} model=auto -> {resolved}", next_cmd="ancilla setup provider")
+            except ValueError as exc:
+                check("LLM provider", False, str(exc), next_cmd="ancilla setup provider")
+        else:
+            check("LLM provider", bool(base and model), f"openai base={base or '?'} model={model or '?'}", next_cmd="ancilla setup provider")
     else:
         ollama = (envfile.get_value("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
         models = health.ollama_models(ollama)
         check("Ollama reachable", models is not None, ollama, next_cmd="ancilla setup provider")
         model = (envfile.get_value("OLLAMA_MODEL") or "").strip()
-        model_ok = bool(model) and models is not None and health.ollama_has_model(models, model)
-        check("Ollama model", model_ok, model or "not set", next_cmd="ancilla setup provider")
+        if is_auto(model):
+            try:
+                if models is None:
+                    raise ValueError("auto")
+                resolved = pick_auto(models, setting="OLLAMA_MODEL")
+                check("Ollama model", True, f"auto -> {resolved}")
+            except ValueError as exc:
+                check("Ollama model", False, str(exc), next_cmd="ancilla setup provider")
+        else:
+            model_ok = bool(model) and models is not None and health.ollama_has_model(models, model)
+            check("Ollama model", model_ok, model or "not set", next_cmd="ancilla setup provider")
 
     rag_on = (envfile.get_value("ANCILLA_RAG_ENABLED") or "true").strip().lower() in ("1", "true", "yes")
     embed = (envfile.get_value("OLLAMA_EMBED_MODEL") or envfile.get_value("LLM_EMBED_MODEL") or "").strip()

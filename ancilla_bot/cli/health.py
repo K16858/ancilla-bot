@@ -81,3 +81,18 @@ def ollama_has_model(models: list[str], model: str) -> bool:
     """タグ省略（llama3 で llama3:8b にマッチ）を許容した存在判定。"""
     stem = model.split(":")[0]
     return any(n == model or n.startswith(f"{stem}:") for n in models)
+
+
+def openai_models(base_url: str | None = None, *, timeout: float = 3.0) -> list[str] | None:
+    """OpenAI 互換 /v1/models の id 一覧。到達不能または URL なしなら None。"""
+    base = (base_url if base_url is not None else os.getenv("LLM_BASE_URL") or "").strip().rstrip("/")
+    if not base:
+        return None
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.get(f"{base}/v1/models")
+            if resp.status_code != 200:
+                return None
+            return [str(m.get("id")) for m in (resp.json().get("data") or []) if m.get("id")]
+    except Exception:
+        return None

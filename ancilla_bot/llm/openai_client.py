@@ -20,14 +20,27 @@ VISION_ENABLED = os.getenv("OLLAMA_VISION_ENABLED", "true").strip().lower() in (
 _NON_THINKING_MODEL_MARKERS = ("granite", "llama", "mistral", "phi", "sarashina")
 
 
-def _require_config(model: str | None) -> tuple[str, str]:
-    base_url = DEFAULT_BASE_URL.strip()
+def resolve_model(model: str | None, base_url: str | None = None) -> str:
+    _, name = _require_config(model, base_url)
+    return name
+
+
+def _require_config(model: str | None, base_url: str | None = None) -> tuple[str, str]:
+    from ancilla_bot.cli.health import openai_models
+    from ancilla_bot.llm.auto_model import is_auto, pick_auto
+
+    resolved_base = (base_url if base_url is not None else DEFAULT_BASE_URL).strip().rstrip("/")
     use_model = (model if model is not None else DEFAULT_MODEL).strip()
-    if not base_url:
+    if not resolved_base:
         raise ValueError("LLM_PROVIDER=openai のときは LLM_BASE_URL が必要です")
     if not use_model:
         raise ValueError("LLM_PROVIDER=openai のときは LLM_MODEL が必要です")
-    return base_url.rstrip("/"), use_model
+    if is_auto(use_model):
+        names = openai_models(resolved_base)
+        if names is None:
+            raise ValueError(f"OpenAI 互換エンドポイントに接続できません: {resolved_base}")
+        use_model = pick_auto(names, setting="LLM_MODEL")
+    return resolved_base, use_model
 
 
 def _model_base_name(model: str) -> str:
@@ -132,9 +145,7 @@ def send_chat(
     format 指定時は response_format=json_schema で出力を制約する。
     think: None ならモデル/OLLAMA_THINK から判定。明示指定で上書き。
     """
-    resolved_base, use_model = _require_config(model)
-    if base_url is not None:
-        resolved_base = base_url.rstrip("/")
+    resolved_base, use_model = _require_config(model, base_url)
     if images and not VISION_ENABLED:
         raise ValueError("画像付きリクエストには OLLAMA_VISION_ENABLED=true が必要です")
     if images and VISION_ENABLED:
@@ -189,9 +200,7 @@ def send_chat_message(
     OpenAI 互換 /v1/chat/completions を呼び出し、message オブジェクトを返す。
     think: None ならモデル/OLLAMA_THINK から判定。明示指定で上書き。
     """
-    resolved_base, use_model = _require_config(model)
-    if base_url is not None:
-        resolved_base = base_url.rstrip("/")
+    resolved_base, use_model = _require_config(model, base_url)
     if images and not VISION_ENABLED:
         raise ValueError("画像付きリクエストには OLLAMA_VISION_ENABLED=true が必要です")
     if images and VISION_ENABLED:

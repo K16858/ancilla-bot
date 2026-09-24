@@ -21,11 +21,19 @@ VISION_ENABLED = os.getenv("OLLAMA_VISION_ENABLED", "true").strip().lower() in (
 _NON_THINKING_MODEL_MARKERS = ("granite", "llama", "mistral", "phi", "sarashina")
 
 
-def _require_model(model: str | None) -> str:
+def resolve_model(model: str | None, base_url: str) -> str:
+    from ancilla_bot.cli.health import ollama_models
+    from ancilla_bot.llm.auto_model import is_auto, pick_auto
+
     use_model = (model if model is not None else DEFAULT_MODEL).strip()
     if not use_model:
         raise ValueError("LLM_PROVIDER=ollama のときは OLLAMA_MODEL が必要です")
-    return use_model
+    if not is_auto(use_model):
+        return use_model
+    names = ollama_models(base_url)
+    if names is None:
+        raise ValueError(f"Ollama に接続できません: {base_url.rstrip('/')}")
+    return pick_auto(names, setting="OLLAMA_MODEL")
 
 
 def _attach_images(messages: list[dict[str, Any]], images: list[str] | None) -> list[dict[str, Any]]:
@@ -96,7 +104,7 @@ def send_chat(
     Returns:
         LLM が返したテキスト。format 指定時は JSON 文字列。エラー時は例外を投げる。
     """
-    use_model = _require_model(model)
+    use_model = resolve_model(model, base_url)
     messages = _attach_images(messages, images)
     url = f"{base_url.rstrip('/')}/api/chat"
     body: dict[str, Any] = {
@@ -169,7 +177,7 @@ def send_chat_message(
     """
     Ollama /api/chat を呼び出し、message オブジェクト全体を返す。native tool calling 用。
     """
-    use_model = _require_model(model)
+    use_model = resolve_model(model, base_url)
     messages = _attach_images(messages, images)
     url = f"{base_url.rstrip('/')}/api/chat"
     body: dict[str, Any] = {
