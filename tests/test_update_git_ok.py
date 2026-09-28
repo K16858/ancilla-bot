@@ -1,6 +1,9 @@
 from pathlib import Path
 
+from ancilla_bot.cli.commands.install import _ensure_character
+from ancilla_bot.cli.commands.update import _ensure_character as ensure_character_after_update
 from ancilla_bot.cli.commands.update import _git_ok
+from ancilla_bot.cli.commands.update import _read_character
 
 
 def _git(root: Path, *args: str) -> None:
@@ -42,3 +45,37 @@ def test_git_ok_rejects_modified_tracked_file(tmp_path: Path):
     reason = _git_ok(root)
     assert reason is not None
     assert "Dirty" in reason
+
+
+def test_update_restores_preserved_character(tmp_path: Path):
+    root = tmp_path / "repo"
+    prompts = root / "data" / "prompts"
+    prompts.mkdir(parents=True)
+    (prompts / "CHARACTER.md.example").write_text("default\n", encoding="utf-8")
+
+    ensure_character_after_update(root, "custom character\n")
+    assert (prompts / "CHARACTER.md").read_text(encoding="utf-8") == "custom character\n"
+    assert _read_character(root) == "custom character\n"
+
+
+def test_update_seeds_character_from_example(tmp_path: Path):
+    root = tmp_path / "repo"
+    prompts = root / "data" / "prompts"
+    prompts.mkdir(parents=True)
+    (prompts / "CHARACTER.md.example").write_text("default\n", encoding="utf-8")
+
+    ensure_character_after_update(root, None)
+    assert (prompts / "CHARACTER.md").read_text(encoding="utf-8") == "default\n"
+
+
+def test_install_seeds_character_once(tmp_path: Path):
+    root = tmp_path / "repo"
+    prompts = root / "data" / "prompts"
+    prompts.mkdir(parents=True)
+    (prompts / "CHARACTER.md.example").write_text("default\n", encoding="utf-8")
+
+    assert _ensure_character(root) is True
+    assert (prompts / "CHARACTER.md").read_text(encoding="utf-8") == "default\n"
+    (prompts / "CHARACTER.md").write_text("custom\n", encoding="utf-8")
+    assert _ensure_character(root) is False
+    assert (prompts / "CHARACTER.md").read_text(encoding="utf-8") == "custom\n"
