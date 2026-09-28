@@ -7,6 +7,8 @@ notes/
 .venv/
 data/*
 !data/prompts/
+# CHARACTER.md はユーザー上書き。更新を阻害しない
+data/prompts/CHARACTER.md
 *.pyc
 *.egg-info/
 sessions/
