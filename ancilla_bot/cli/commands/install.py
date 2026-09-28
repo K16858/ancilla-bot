@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from ancilla_bot.cli import envfile, ux
 from ancilla_bot.cli.paths import ensure_runtime_dirs, ensure_workspace, get_root
@@ -21,6 +22,18 @@ def cmd_install(args: argparse.Namespace) -> int:
     )
 
 
+def _ensure_character(root: Path) -> bool:
+    path = root / "data" / "prompts" / "CHARACTER.md"
+    if path.is_file():
+        return False
+    example = root / "data" / "prompts" / "CHARACTER.md.example"
+    if not example.is_file():
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
+    return True
+
+
 def _install_core() -> int:
     root = get_root()
     ensure_runtime_dirs(root)
@@ -29,6 +42,7 @@ def _install_core() -> int:
     conv.mkdir(parents=True, exist_ok=True)
     (root / "data" / "vector_store").mkdir(parents=True, exist_ok=True)
     (root / "data" / "notifications").mkdir(parents=True, exist_ok=True)
+    created_character = _ensure_character(root)
 
     env_path = envfile.env_path(root)
     created_env = not env_path.is_file()
@@ -37,6 +51,8 @@ def _install_core() -> int:
     print(f"Installed core layout under {root}")
     print(f"  workspace: {workspace}")
     print(f"  data:      {root / 'data'}")
+    if created_character:
+        print("  CHARACTER.md: created from CHARACTER.md.example")
     if created_env:
         print(f"  .env:      created from .env.example")
     else:
