@@ -10,6 +10,9 @@ from pathlib import Path
 from ancilla_bot.cli import process, ux
 from ancilla_bot.cli.paths import get_root
 
+CHARACTER_REL = Path("data/prompts/CHARACTER.md")
+CHARACTER_EXAMPLE_REL = Path("data/prompts/CHARACTER.md.example")
+
 
 def _run(cmd: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True)
@@ -31,6 +34,27 @@ def _git_ok(root: Path) -> str | None:
     return None
 
 
+def _read_character(root: Path) -> str | None:
+    path = root / CHARACTER_REL
+    if not path.is_file():
+        return None
+    return path.read_text(encoding="utf-8")
+
+
+def _ensure_character(root: Path, preserved: str | None) -> None:
+    path = root / CHARACTER_REL
+    if preserved is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(preserved, encoding="utf-8")
+        return
+    if path.is_file():
+        return
+    example = root / CHARACTER_EXAMPLE_REL
+    if example.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
+
+
 def cmd_update(args: argparse.Namespace) -> int:
     root = get_root()
     if getattr(args, "check", False):
@@ -48,6 +72,8 @@ def cmd_update(args: argparse.Namespace) -> int:
     if reason:
         return ux.fail("Cannot update.", cause=reason, next_cmds=["git status", "ancilla doctor"])
 
+    preserved_character = _read_character(root)
+
     print(f"Updating in {root} ...")
     fetch = _run(["git", "fetch", "--quiet"], cwd=root)
     if fetch.returncode != 0:
@@ -61,6 +87,8 @@ def cmd_update(args: argparse.Namespace) -> int:
             next_cmds=["git status"],
         )
     print(pull.stdout.strip() or "Already up to date.")
+
+    _ensure_character(root, preserved_character)
 
     pip = _run([sys.executable, "-m", "pip", "install", "-e", "."], cwd=root)
     if pip.returncode != 0:
