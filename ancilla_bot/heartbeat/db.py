@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
     source TEXT NOT NULL DEFAULT 'heartbeat',
     status TEXT NOT NULL DEFAULT 'pending',
     persona TEXT NOT NULL DEFAULT '',
+    task_key TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 )
 """
@@ -77,6 +78,9 @@ _MIGRATE_AGENT_TASKS_STATUS = (
 )
 _MIGRATE_AGENT_TASKS_PERSONA = (
     "ALTER TABLE agent_tasks ADD COLUMN persona TEXT NOT NULL DEFAULT ''"
+)
+_MIGRATE_AGENT_TASKS_TASK_KEY = (
+    "ALTER TABLE agent_tasks ADD COLUMN task_key TEXT NOT NULL DEFAULT ''"
 )
 _OWNERSHIP_MIGRATIONS = (
     ("user_tasks", "owner", "TEXT NOT NULL DEFAULT 'user'"),
@@ -358,7 +362,12 @@ def ensure_schema() -> None:
         c.executescript(_SCHEMA_PROCEDURES)
         c.executescript(_SCHEMA_ARTIFACTS)
         c.executescript(_SCHEMA_MEMORIES)
-        for sql in (_MIGRATE_AGENT_TASKS_SOURCE, _MIGRATE_AGENT_TASKS_STATUS, _MIGRATE_AGENT_TASKS_PERSONA):
+        for sql in (
+            _MIGRATE_AGENT_TASKS_SOURCE,
+            _MIGRATE_AGENT_TASKS_STATUS,
+            _MIGRATE_AGENT_TASKS_PERSONA,
+            _MIGRATE_AGENT_TASKS_TASK_KEY,
+        ):
             try:
                 c.execute(sql)
             except sqlite3.OperationalError:
@@ -667,8 +676,10 @@ def _get_due_from_table(table: str, *, at: datetime | None = None) -> list[dict[
     with _conn() as conn:
         if table == "agent_tasks":
             cur = conn.execute(
-                "SELECT id, scheduled_at, content, completed, source, persona, created_at FROM agent_tasks "
+                "SELECT id, scheduled_at, content, completed, source, status, persona, task_key, created_at "
+                "FROM agent_tasks "
                 "WHERE datetime(scheduled_at) <= datetime(?) AND completed = 0 AND source = 'heartbeat' "
+                "AND status != 'in_progress' "
                 "ORDER BY scheduled_at ASC",
                 (ts,),
             )
@@ -690,11 +701,45 @@ def get_due_tasks(*, at: datetime | None = None) -> list[dict[str, Any]]:
     """
     実行予定時刻 <= at かつ未完了の user_tasks / agent_tasks をまとめて返す。
     at 省略時は現在時刻。0 件なら LLM に触れず return する用途。
+    agent_tasks の status=in_progress は対象外。再開は wakeup が行う。
     """
     tasks: list[dict[str, Any]] = []
     tasks.extend(_get_due_from_table("user_tasks", at=at))
     tasks.extend(_get_due_from_table("agent_tasks", at=at))
     return tasks
+
+
+def get_agent_task_by_key(task_key: str) -> dict[str, Any] | None:
+    key = str(task_key or "").strip()
+    if not key:
+        return None
+    ensure_schema()
+    with _conn() as conn:
+        cur = conn.execute(
+            "SELECT id, scheduled_at, content, completed, source, status, persona, task_key, created_at "
+            "FROM agent_tasks WHERE task_key = ? ORDER BY id DESC LIMIT 1",
+            (key,),
+        )
+        row = cur.fetchone()
+        return _row_to_dict(cur, row) if row else None
+
+
+def get_open_working_memory(task_key: str) -> dict[str, Any] | None:
+    """task_key の open Working Memory。scope_type=task, scope_id=task_key。"""
+    key = str(task_key or "").strip()
+    if not key:
+        return None
+    ensure_schema()
+    with _conn() as conn:
+        cur = conn.execute(
+            "SELECT id, scope_type, scope_id, task_key, goal, state, next_actions, resources, status "
+            "FROM working_memory "
+            "WHERE scope_type = 'task' AND scope_id = ? AND task_key = ? AND status = 'open' "
+            "ORDER BY id DESC LIMIT 1",
+            (key, key),
+        )
+        row = cur.fetchone()
+        return _row_to_dict(cur, row) if row else None
 
 
 def get_due_reminders(*, at: datetime | None = None, kind: str | None = None) -> list[dict[str, Any]]:
@@ -1215,10 +1260,12 @@ def manage_state(
 
                             if persona not in list_persona_names():
                                 return f"Error: unknown persona: {persona}."
+                        task_key = str(payload.get("task_key") or "").strip()[:200]
                         c.execute(
-                            "INSERT INTO agent_tasks (scheduled_at, content, completed, source, status, persona, created_at) "
-                            "VALUES (?, ?, 0, ?, ?, ?, ?)",
-                            (scheduled_at, content, source, status, persona, now),
+                            "INSERT INTO agent_tasks "
+                            "(scheduled_at, content, completed, source, status, persona, task_key, created_at) "
+                            "VALUES (?, ?, 0, ?, ?, ?, ?, ?)",
+                            (scheduled_at, content, source, status, persona, task_key, now),
                         )
                     else:
                         from ancilla_bot.core.run_context import current_source, is_autonomous
@@ -1518,10 +1565,13 @@ def manage_state(
                             if raw_st in ("pending", "in_progress", "completed", "cancelled"):
                                 where.append("status = ?")
                                 params.append(raw_st)
+                        if str(payload.get("task_key") or "").strip():
+                            where.append("task_key = ?")
+                            params.append(str(payload["task_key"]).strip()[:200])
                     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
                     params.append(limit)
                     select_cols = (
-                        "id, scheduled_at, content, completed, source, status, created_at"
+                        "id, scheduled_at, content, completed, source, status, persona, task_key, created_at"
                         if table == "agent_tasks"
                         else "id, scheduled_at, content, completed, owner, source, kind, created_at"
                         if table == "reminders"
@@ -1745,7 +1795,7 @@ def manage_state(
                         return meta
                     memory_meta = meta
                 allowed_cols = (
-                    {"completed", "scheduled_at", "content", "source", "status", "persona"} if table == "agent_tasks"
+                    {"completed", "scheduled_at", "content", "source", "status", "persona", "task_key"} if table == "agent_tasks"
                     else {"completed", "scheduled_at", "content", "owner", "source", "kind"} if table == "reminders"
                     else {"completed", "scheduled_at", "content", "owner", "source"} if table == "user_tasks"
                     else {"amount", "category", "memo", "date"} if table == "finances"
@@ -1821,6 +1871,9 @@ def manage_state(
                                     if persona not in list_persona_names():
                                         return f"Error: unknown persona: {persona}."
                                 params.append(persona)
+                                continue
+                            if k == "task_key" and table == "agent_tasks":
+                                params.append(str(v or "").strip()[:200])
                                 continue
                             params.append(v)
                 if not sets and not (table == "memories" and payload.get("evidence_id") is not None):
