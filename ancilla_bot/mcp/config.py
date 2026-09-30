@@ -39,7 +39,14 @@ class HttpServerConfig:
 ServerConfig = StdioServerConfig | HttpServerConfig
 
 _ALLOWED_TOOL_RISKS = frozenset(
-    {"external_read", "external_write", "destructive", "workspace_write", "read_only"}
+    {
+        "local_read",
+        "local_write",
+        "external_read",
+        "external_write",
+        "destructive",
+        "privileged",
+    }
 )
 
 

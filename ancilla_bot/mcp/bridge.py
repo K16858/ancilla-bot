@@ -143,7 +143,7 @@ def _ensure_meta_tools(
     _META_REGISTERED = True
 
 
-def _risk_from_annotations(tool: Any) -> str:
+def _effect_from_annotations(tool: Any) -> str:
     ann = getattr(tool, "annotations", None)
     if ann is None:
         return "external_write"
@@ -155,12 +155,12 @@ def _risk_from_annotations(tool: Any) -> str:
 
 
 def sync_registry_from_manager(manager: McpManager | None = None) -> None:
-    from ancilla_bot.runtime.capability import clear_mcp_risks, set_mcp_risk
+    from ancilla_bot.runtime.capability import clear_mcp_effects, set_mcp_effect
     from ancilla_bot.tools.registry import TOOL_DESCRIPTIONS, TOOL_REGISTRY
 
     mgr = manager or get_manager()
     register_meta_tools()
-    clear_mcp_risks()
+    clear_mcp_effects()
 
     desired: dict[str, tuple[str, str, dict[str, Any], str, str]] = {}
     for server, tool in mgr.get_tools():
@@ -170,8 +170,8 @@ def sync_registry_from_manager(manager: McpManager | None = None) -> None:
             continue
         desc = tool.description or f"MCP tool {tool.name} from server {server}."
         override = mgr.get_tool_risk_override(server, tool.name)
-        risk = override if override else _risk_from_annotations(tool)
-        desired[full] = (server, tool.name, _tool_schema(tool.input_schema), desc, risk)
+        effect = override if override else _effect_from_annotations(tool)
+        desired[full] = (server, tool.name, _tool_schema(tool.input_schema), desc, effect)
 
     for old in list(_MCP_TOOL_NAMES):
         if old not in desired:
@@ -180,9 +180,9 @@ def sync_registry_from_manager(manager: McpManager | None = None) -> None:
             MCP_NATIVE_SCHEMAS.pop(old, None)
             _MCP_TOOL_NAMES.discard(old)
 
-    for full, (server, tool_name, schema, desc, risk) in desired.items():
+    for full, (server, tool_name, schema, desc, effect) in desired.items():
         TOOL_REGISTRY[full] = _make_mcp_tool(server, tool_name)
         TOOL_DESCRIPTIONS[full] = desc
         MCP_NATIVE_SCHEMAS[full] = schema
         _MCP_TOOL_NAMES.add(full)
-        set_mcp_risk(full, risk)
+        set_mcp_effect(full, effect, server)

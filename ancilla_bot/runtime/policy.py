@@ -11,7 +11,7 @@ ALLOW = "allow"
 DENY = "deny"
 REQUIRE_APPROVAL = "require_approval"
 
-_AUTONOMOUS_DENY = frozenset({"external_write", "destructive", "shell"})
+_AUTONOMOUS_DENY = frozenset({"external_write", "destructive", "privileged"})
 _REQUIRE_APPROVAL = frozenset({"external_write", "destructive"})
 
 
@@ -30,10 +30,10 @@ def decide(tool_name: str) -> Decision:
     cap = get_capability(tool_name)
     if cap is None:
         return Decision(ALLOW)
-    if is_autonomous() and cap.risk in _AUTONOMOUS_DENY:
+    if is_autonomous() and cap.effect in _AUTONOMOUS_DENY:
         return Decision(
             DENY,
-            f"Error: capability '{tool_name}' ({cap.risk}) is denied for {run_source.get()}.",
+            f"Error: capability '{tool_name}' ({cap.effect}) is denied for {run_source.get()}.",
         )
     if tool_requires_approval_by_persona(tool_name):
         return Decision(
@@ -45,10 +45,10 @@ def decide(tool_name: str) -> Decision:
             DENY,
             f"Error: capability '{tool_name}' is denied for the active persona.",
         )
-    if cap.risk in _REQUIRE_APPROVAL:
+    if cap.effect in _REQUIRE_APPROVAL:
         return Decision(
             REQUIRE_APPROVAL,
-            f"Error: capability '{tool_name}' ({cap.risk}) requires approval.",
+            f"Error: capability '{tool_name}' ({cap.effect}) requires approval.",
         )
     return Decision(ALLOW)
 

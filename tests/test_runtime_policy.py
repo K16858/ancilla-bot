@@ -99,7 +99,7 @@ def test_persona_require_approval(tmp_path, monkeypatch):
 
 
 def test_gated_call_require_approval(monkeypatch):
-    monkeypatch.setattr(policy, "_REQUIRE_APPROVAL", frozenset({"notify"}))
+    monkeypatch.setattr(policy, "_REQUIRE_APPROVAL", frozenset({"local_write"}))
     token = run_source.set("user")
     called = {"n": 0}
 
@@ -121,31 +121,33 @@ def test_external_write_requires_approval_interactive():
     from ancilla_bot.runtime import capability as capability_mod
     from ancilla_bot.tools import registry as registry_mod
 
-    capability_mod.set_mcp_risk("demo__write", "external_write")
+    capability_mod.set_mcp_effect("demo__write", "external_write", "demo")
     registry_mod.TOOL_REGISTRY["demo__write"] = lambda **kwargs: "ok"
     token = run_source.set("user")
     try:
         assert decide("demo__write").verdict == REQUIRE_APPROVAL
         assert decide("write_file").verdict == ALLOW
+        assert decide("trash_file").verdict == REQUIRE_APPROVAL
     finally:
         run_source.reset(token)
         registry_mod.TOOL_REGISTRY.pop("demo__write", None)
-        capability_mod.clear_mcp_risks()
+        capability_mod.clear_mcp_effects()
 
 
 def test_external_read_allowed_when_autonomous():
     from ancilla_bot.runtime import capability as capability_mod
     from ancilla_bot.tools import registry as registry_mod
 
-    capability_mod.set_mcp_risk("demo__search", "external_read")
+    capability_mod.set_mcp_effect("demo__search", "external_read", "demo")
     registry_mod.TOOL_REGISTRY["demo__search"] = lambda **kwargs: "ok"
     registry_mod.TOOL_REGISTRY["demo__unknown"] = lambda **kwargs: "ok"
     token = run_source.set("heartbeat")
     try:
         assert decide("demo__search").verdict == ALLOW
         assert decide("demo__unknown").verdict == DENY
+        assert decide("trash_file").verdict == DENY
     finally:
         run_source.reset(token)
         registry_mod.TOOL_REGISTRY.pop("demo__search", None)
         registry_mod.TOOL_REGISTRY.pop("demo__unknown", None)
-        capability_mod.clear_mcp_risks()
+        capability_mod.clear_mcp_effects()

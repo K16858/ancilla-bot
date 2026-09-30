@@ -22,8 +22,9 @@ def format_runtime_self_model() -> str:
         f"sandbox: {sandbox}",
         f"bash_allowlist: {allow}",
         "permissions:",
-        "  shell: deny_autonomous",
+        "  privileged: deny_autonomous",
         "  external_write: deny_autonomous",
+        "  destructive: deny_autonomous",
         "capabilities: " + ", ".join(names),
     ]
     if persona.resources_notes:
