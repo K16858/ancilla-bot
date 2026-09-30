@@ -28,6 +28,7 @@ from ancilla_bot.llm.tool_adapter import (
     is_native_tool_mode,
 )
 from ancilla_bot.memory.conversation_store import is_system_event_content
+from ancilla_bot.memory.router import MemoryContext, retrieve_context
 from ancilla_bot.runtime.policy import gated_call
 from ancilla_bot.tools import TOOL_REGISTRY, build_tools_system_prompt
 from ancilla_bot.tracing import new_run_id, write_event
@@ -98,6 +99,16 @@ def is_exit_command(text: str) -> bool:
     return normalized in EXIT_COMMANDS
 
 
+def compose_run_system(user_input: str, *, task_key: str = "", source: str = "") -> str:
+    system = build_tools_system_prompt()
+    if source == "idle_reflection":
+        return system
+    memory = retrieve_context(user_input, MemoryContext(task_id=task_key))
+    if not memory:
+        return system
+    return system + "\n\n" + memory
+
+
 def run_agent_loop_with_tools(
     user_input: str,
     conversation_history: list[dict[str, str]] | None = None,
@@ -111,6 +122,7 @@ def run_agent_loop_with_tools(
     nag_message: str | None = None,
     source: str = "unknown",
     parent_run_id: str | None = None,
+    task_key: str = "",
 ) -> tuple[str, str | None]:
     """
     ツール呼び出しありの ReAct ループ。
@@ -139,6 +151,7 @@ def run_agent_loop_with_tools(
             nag_message=nag_message,
             source=source,
             parent_run_id=parent_run_id,
+            task_key=task_key,
         )
     finally:
         restore_skill_run_tracking(skill_tokens)
@@ -159,6 +172,7 @@ def _run_agent_loop_with_tools(
     nag_message: str | None,
     source: str,
     parent_run_id: str | None,
+    task_key: str = "",
 ) -> tuple[str, str | None]:
     run_id = new_run_id()
     write_event(
@@ -174,7 +188,10 @@ def _run_agent_loop_with_tools(
     create_agent_run(run_id, source=source, user_input=user_input, parent_run_id=parent_run_id)
     history = list(conversation_history or [])
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": build_tools_system_prompt()},
+        {
+            "role": "system",
+            "content": compose_run_system(user_input, task_key=task_key, source=source),
+        },
         *history,
         {"role": "user", "content": user_input},
     ]
