@@ -82,6 +82,9 @@ _MIGRATE_AGENT_TASKS_PERSONA = (
 _MIGRATE_AGENT_TASKS_TASK_KEY = (
     "ALTER TABLE agent_tasks ADD COLUMN task_key TEXT NOT NULL DEFAULT ''"
 )
+_MIGRATE_REMINDERS_TASK_KEY = (
+    "ALTER TABLE reminders ADD COLUMN task_key TEXT NOT NULL DEFAULT ''"
+)
 _OWNERSHIP_MIGRATIONS = (
     ("user_tasks", "owner", "TEXT NOT NULL DEFAULT 'user'"),
     ("user_tasks", "source", "TEXT NOT NULL DEFAULT 'user'"),
@@ -99,6 +102,7 @@ CREATE TABLE IF NOT EXISTS reminders (
     owner TEXT NOT NULL DEFAULT 'user',
     source TEXT NOT NULL DEFAULT 'user',
     kind TEXT NOT NULL DEFAULT 'user_reminder',
+    task_key TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 )
 """
@@ -367,6 +371,7 @@ def ensure_schema() -> None:
             _MIGRATE_AGENT_TASKS_STATUS,
             _MIGRATE_AGENT_TASKS_PERSONA,
             _MIGRATE_AGENT_TASKS_TASK_KEY,
+            _MIGRATE_REMINDERS_TASK_KEY,
         ):
             try:
                 c.execute(sql)
@@ -684,7 +689,7 @@ def _get_due_from_table(table: str, *, at: datetime | None = None) -> list[dict[
                 (ts,),
             )
         else:
-            extra = ", owner, source, kind" if table == "reminders" else ", owner, source"
+            extra = ", owner, source, kind, task_key" if table == "reminders" else ", owner, source"
             cur = conn.execute(
                 f"SELECT id, scheduled_at, content, completed, created_at{extra} FROM {table} "
                 "WHERE datetime(scheduled_at) <= datetime(?) AND completed = 0 ORDER BY scheduled_at ASC",
@@ -742,6 +747,59 @@ def get_open_working_memory(task_key: str) -> dict[str, Any] | None:
         return _row_to_dict(cur, row) if row else None
 
 
+def ensure_open_working_memory(task_key: str, *, goal: str = "") -> str:
+    """task_key の open Working Memory が無ければ1件作る。既存なら空文字。"""
+    key = str(task_key or "").strip()
+    if not key:
+        return ""
+    if get_open_working_memory(key):
+        return ""
+    return manage_state(
+        "working_memory",
+        "insert",
+        {
+            "scope_type": "task",
+            "scope_id": key,
+            "task_key": key,
+            "goal": goal,
+            "status": "open",
+        },
+    )
+
+
+def settle_agent_task_after_run(task_id: int, task_key: str) -> str:
+    """open Working Memory が残っていれば in_progress。無ければ完了。"""
+    key = str(task_key or "").strip()
+    if key and get_open_working_memory(key):
+        ensure_schema()
+        with _conn() as c:
+            c.execute(
+                "UPDATE agent_tasks SET status = 'in_progress' WHERE id = ?",
+                (int(task_id),),
+            )
+        return "in_progress"
+    mark_agent_tasks_completed([int(task_id)])
+    return "completed"
+
+
+def wakeup_resume(wakeups: list[dict[str, Any]]) -> tuple[str, str]:
+    """wakeup 群から復元する (persona, task_key)。一意でないときは空。"""
+    keys: list[str] = []
+    personas: set[str] = set()
+    for row in wakeups:
+        key = str(row.get("task_key") or "").strip()
+        if not key:
+            continue
+        keys.append(key)
+        task = get_agent_task_by_key(key)
+        persona = str((task or {}).get("persona") or "").strip()
+        if persona:
+            personas.add(persona)
+    task_key = keys[0] if keys and len(set(keys)) == 1 else ""
+    persona = next(iter(personas)) if len(personas) == 1 else ""
+    return persona, task_key
+
+
 def get_due_reminders(*, at: datetime | None = None, kind: str | None = None) -> list[dict[str, Any]]:
     """
     実行予定時刻 <= at かつ未完了の reminders を返す。
@@ -781,7 +839,7 @@ def mark_agent_tasks_completed(task_ids: list[int]) -> None:
     with _conn() as c:
         placeholders = ",".join("?" * len(task_ids))
         c.execute(
-            f"UPDATE agent_tasks SET completed = 1 WHERE id IN ({placeholders})",
+            f"UPDATE agent_tasks SET completed = 1, status = 'completed' WHERE id IN ({placeholders})",
             task_ids,
         )
 
@@ -1276,9 +1334,12 @@ def manage_state(
                         if table == "reminders":
                             kind_default = "agent_wakeup" if is_autonomous() else "user_reminder"
                             kind = _norm_choice(payload.get("kind"), _REMINDER_KINDS, kind_default)
+                            task_key = str(payload.get("task_key") or "").strip()[:200]
                             c.execute(
-                                "INSERT INTO reminders (scheduled_at, content, completed, owner, source, kind, created_at) VALUES (?, ?, 0, ?, ?, ?, ?)",
-                                (scheduled_at, content, owner, source, kind, now),
+                                "INSERT INTO reminders "
+                                "(scheduled_at, content, completed, owner, source, kind, task_key, created_at) "
+                                "VALUES (?, ?, 0, ?, ?, ?, ?, ?)",
+                                (scheduled_at, content, owner, source, kind, task_key, now),
                             )
                         else:
                             c.execute(
@@ -1573,7 +1634,7 @@ def manage_state(
                     select_cols = (
                         "id, scheduled_at, content, completed, source, status, persona, task_key, created_at"
                         if table == "agent_tasks"
-                        else "id, scheduled_at, content, completed, owner, source, kind, created_at"
+                        else "id, scheduled_at, content, completed, owner, source, kind, task_key, created_at"
                         if table == "reminders"
                         else "id, scheduled_at, content, completed, owner, source, created_at"
                     )
@@ -1796,7 +1857,7 @@ def manage_state(
                     memory_meta = meta
                 allowed_cols = (
                     {"completed", "scheduled_at", "content", "source", "status", "persona", "task_key"} if table == "agent_tasks"
-                    else {"completed", "scheduled_at", "content", "owner", "source", "kind"} if table == "reminders"
+                    else {"completed", "scheduled_at", "content", "owner", "source", "kind", "task_key"} if table == "reminders"
                     else {"completed", "scheduled_at", "content", "owner", "source"} if table == "user_tasks"
                     else {"amount", "category", "memo", "date"} if table == "finances"
                     else {"name", "description", "status", "url"} if table == "interests"
@@ -1872,7 +1933,7 @@ def manage_state(
                                         return f"Error: unknown persona: {persona}."
                                 params.append(persona)
                                 continue
-                            if k == "task_key" and table == "agent_tasks":
+                            if k == "task_key" and table in ("agent_tasks", "reminders"):
                                 params.append(str(v or "").strip()[:200])
                                 continue
                             params.append(v)
