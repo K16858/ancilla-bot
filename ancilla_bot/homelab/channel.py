@@ -21,7 +21,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from ancilla_bot.homelab import inventory as inv
 from ancilla_bot.homelab import store
 
-REPORT_INTERVAL_SEC = 30
+REPORT_INTERVAL_SEC = float(os.getenv("ANCILLA_HOMELAB_INTERVAL") or 30)  # 報告・ヘルスチェック・鮮度・検証の共通間隔（秒）
 HELLO_TIMEOUT_SEC = 10.0
 # 失効の検知方法: CLI は別プロセスなので接続を直接切れない。
 # 接続ごとに RECHECK_SEC 間隔で nodes 表を見直し、失効・再発行されていたら切断する。
