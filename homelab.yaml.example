@@ -1,0 +1,69 @@
+# HomeLab Inventory の見本。コピーして data/homelab.yaml を作る（data/ は gitignore 済み）。
+# 秘密情報は書かない。IP・ホスト名は自分の環境に置き換える。
+# ID は小文字 slug（a-z 0-9 - _）。Service ID は Host から独立。
+hosts:
+  - id: core
+    name: Core Server
+    os: ubuntu            # ubuntu / arch / windows / haos / other
+    role: Ancilla Core・監視基盤
+    criticality: high     # high / normal / low
+    address: core.home.arpa    # 任意。到達先のヒント
+    node: true            # ancilla-node を入れる予定か
+  - id: node-1
+    name: App Node
+    os: ubuntu
+    role: 汎用アプリ・コンテナ実行環境
+    criticality: normal
+    address: node-1.home.arpa
+    node: true
+  - id: gpu-node
+    name: GPU Node
+    os: ubuntu
+    role: ローカル LLM 推論・音声処理
+    criticality: normal
+    address: gpu-node.home.arpa
+    node: true
+  - id: workstation
+    name: Workstation
+    os: windows
+    role: 作業用デスクトップ PC
+    criticality: low
+    node: true
+  - id: haos
+    name: Home Assistant
+    os: haos
+    role: スマートホーム（Home Assistant OS）
+    criticality: normal
+    address: haos.home.arpa
+    node: false           # 専用 OS には Node を入れない
+
+services:
+  - id: ancilla-core
+    name: Ancilla Core
+    host: core
+    kind: systemd         # systemd / docker / windows_service / http / other
+    unit: ancilla
+    health_url: http://core.home.arpa:8765/health   # 任意
+    criticality: high
+    depends_on: [llm-backend]
+  - id: prometheus
+    name: Prometheus
+    host: core
+    kind: docker
+    unit: prometheus      # systemd unit 名・コンテナ名・Windows サービス名
+    health_url: http://core.home.arpa:9090/-/healthy
+    criticality: high
+    depends_on: []
+  - id: llm-backend
+    name: LLM Backend (Ollama)
+    host: gpu-node
+    kind: systemd
+    unit: ollama
+    health_url: http://gpu-node.home.arpa:11434/api/version
+    criticality: normal
+  - id: wazuh
+    name: Wazuh Manager
+    host: node-1
+    kind: docker
+    unit: wazuh-manager
+    criticality: normal
