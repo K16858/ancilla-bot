@@ -191,7 +191,18 @@ def test_fault_injection_end_to_end(base, monkeypatch):
 
     monkeypatch.setattr(channel, "REPORT_INTERVAL_SEC", 0.05)
     monkeypatch.setattr(events, "_subscribers", [incidents.handle])
-    monkeypatch.setattr(incidents, "_created_hooks", [lambda i, r: autoheal.process(i)])  # worker の代わりに同期で呼ぶ
+    monkeypatch.setattr(incidents, "_created_hooks", [lambda i, r: outcomes.append(autoheal.process(i))])  # worker の代わりに同期で呼ぶ
+    outcomes = []
+    verified = threading.Event()
+    real_verify = operations._verify
+
+    def verify(*a):
+        try:
+            real_verify(*a)
+        finally:
+            verified.set()
+
+    monkeypatch.setattr(operations, "_verify", verify)
     channel._connections.clear()
     token = store.issue_token("h1")
     ex = Executor("h1", frozenset({"nginx"}), frozenset(), runner)
@@ -205,9 +216,7 @@ def test_fault_injection_end_to_end(base, monkeypatch):
         time.sleep(0.1)
         events.update(st.evaluate_all())
         events.update(st.evaluate_all())  # 2 回連続で確定 -> service_down -> Incident -> autoheal
-        deadline = time.time() + 5
-        while time.time() < deadline and not any(r["verification"] == "ok" for r in log_rows()):
-            time.sleep(0.05)
+        assert verified.wait(30), outcomes  # 検証スレッドの完了を待つ（時間依存の sleep ではなく完了通知）
         events.update(st.evaluate_all())
         events.update(st.evaluate_all())  # healthy が 2 回 -> recovered -> 自動解決
         stop.set()
@@ -217,10 +226,11 @@ def test_fault_injection_end_to_end(base, monkeypatch):
         async with channel.make_server("127.0.0.1", 0) as server:
             port = server.sockets[0].getsockname()[1]
             task = asyncio.create_task(daemon.run(f"ws://127.0.0.1:{port}", "h1", token, executor=ex))
-            for _ in range(100):
+            for _ in range(600):  # 負荷時でも接続完了を待つ（待たずに進むと Node 未接続で見送られる）
                 if channel.is_connected("h1"):
                     break
                 await asyncio.sleep(0.05)
+            assert channel.is_connected("h1")
             try:
                 await asyncio.to_thread(body)
             finally:

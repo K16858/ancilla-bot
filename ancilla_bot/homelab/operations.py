@@ -144,7 +144,7 @@ def _verify(log_id: int, target: str, on_done: Callable[[bool, str], None] | Non
         time.sleep(channel.REPORT_INTERVAL_SEC)
         try:
             state = status.evaluate_all()[target].state
-        except (KeyError, inv.InventoryError) as e:
+        except Exception as e:  # 一時的な DB ロックなどで検証スレッドが死んで pending のまま残るのを防ぐ
             state = f"unknown ({e})"
         if state == "healthy":
             break
