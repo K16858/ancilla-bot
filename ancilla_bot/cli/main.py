@@ -1051,14 +1051,15 @@ def _run_resident(args: argparse.Namespace) -> None:
     api_host = api_bind_host()
     api_port = api_bind_port()
     node_host, node_port, node_ssl = node_bind()
-    bind_hosts = {
-        "API": api_host,
+    bind_hosts = {  # API は /api/v1 のトークン認証があるのでガード対象外
         "MCP_HTTP": os.getenv("ANCILLA_MCP_HTTP_HOST", "127.0.0.1"),
         "WS": os.getenv("ANCILLA_WS_HOST", "127.0.0.1"),
     }
     if node_ssl is None:  # TLS なしの平文 ws はループバック外なら ANCILLA_INSECURE_BIND=1 が必要
         bind_hosts["NODE"] = node_host
     check_bind_hosts(bind_hosts)
+    if api_host.strip().strip("[]").lower() not in ("localhost", "127.0.0.1", "::1"):
+        logger.info("API をループバック外 ({}) で待ち受けます。/api/v1 と非ループバックからの操作にはトークンが必要です", api_host)
     write_pid("core", os.getpid())
 
     def chat_handler(msg: str, imgs: list[str] | None = None) -> str:
@@ -1390,6 +1391,15 @@ def main() -> int:
                     ("resolve", "Incident を手動で解決する")):
         homelab_sub.add_parser(name, help=h).add_argument("id", help="例: INC-000001")
 
+    api_parser = subparsers.add_parser("api", help="クライアント API（WebUI / Companion）のトークン管理")
+    api_tok = api_parser.add_subparsers(dest="api_command", required=True).add_parser("token", help="トークン操作")
+    api_tok_sub = api_tok.add_subparsers(dest="token_command", required=True)
+    atc = api_tok_sub.add_parser("create", help="トークンを発行（1 回だけ表示。同名は再発行=ローテーション）")
+    atc.add_argument("name")
+    atc.add_argument("--role", choices=("read", "operate"), required=True)
+    api_tok_sub.add_parser("revoke", help="トークンを失効").add_argument("name")
+    api_tok_sub.add_parser("list", help="トークン一覧")
+
     skill_parser = subparsers.add_parser("skill", help="workspace Skill の昇格・ロールバック")
     skill_sub = skill_parser.add_subparsers(dest="skill_command", required=True)
     promote_p = skill_sub.add_parser("promote", help="trial Skill を active に昇格")
@@ -1454,6 +1464,10 @@ def main() -> int:
         from ancilla_bot.cli.commands.homelab import cmd_homelab
 
         return cmd_homelab(args)
+    if args.command == "api":
+        from ancilla_bot.cli.commands.api import cmd_api
+
+        return cmd_api(args)
     if args.command == "skill":
         from ancilla_bot.skills.evolution import promote_skill, rollback_skill
 

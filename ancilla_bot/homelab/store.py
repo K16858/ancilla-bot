@@ -93,6 +93,19 @@ CREATE TABLE IF NOT EXISTS incident_events (
 )
 """
 
+# クライアント API（WebUI / Companion）用トークン。role: read | operate（operate は read を含む）
+_SCHEMA_API_TOKENS = """
+CREATE TABLE IF NOT EXISTS api_tokens (
+    name TEXT PRIMARY KEY,
+    role TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    revoked_at TEXT
+)
+"""
+
+API_ROLES = ("read", "operate")
+
 
 @contextmanager
 def _conn() -> Iterator[sqlite3.Connection]:
@@ -104,6 +117,7 @@ def _conn() -> Iterator[sqlite3.Connection]:
         c.execute(_SCHEMA_EVENTS)
         c.execute(_SCHEMA_INCIDENTS)
         c.execute(_SCHEMA_INCIDENT_EVENTS)
+        c.execute(_SCHEMA_API_TOKENS)
         with c:
             yield c
 
@@ -197,3 +211,44 @@ def get_observations() -> dict[tuple[str, str], tuple[dict, str]]:
             (r["subject"], r["source"]): (json.loads(r["value"]), r["observed_at"])
             for r in c.execute("SELECT * FROM observations_latest")
         }
+
+
+# ---- クライアント API トークン ----
+
+def create_api_token(name: str, role: str) -> str:
+    """トークンを発行する。同名は上書き（ローテーション）され、古いトークンは失効する。"""
+    if role not in API_ROLES:
+        raise ValueError(f"role は {' / '.join(API_ROLES)} のいずれか")
+    token = secrets.token_urlsafe(32)
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO api_tokens (name, role, token_hash, created_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET role=excluded.role, token_hash=excluded.token_hash, "
+            "created_at=excluded.created_at, revoked_at=NULL",
+            (name, role, _hash(token), _now()),
+        )
+    return token
+
+
+def revoke_api_token(name: str) -> bool:
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE api_tokens SET revoked_at=? WHERE name=? AND revoked_at IS NULL", (_now(), name)
+        )
+        return cur.rowcount > 0
+
+
+def verify_api_token(token: str) -> str | None:
+    """有効なトークンなら role、そうでなければ None（定数時間比較）。"""
+    digest = _hash(token)
+    found = None
+    with _conn() as c:
+        for r in c.execute("SELECT role, token_hash FROM api_tokens WHERE revoked_at IS NULL"):
+            if hmac.compare_digest(r["token_hash"], digest):
+                found = r["role"]
+    return found
+
+
+def list_api_tokens() -> list[dict]:
+    with _conn() as c:
+        return [dict(r) for r in c.execute("SELECT name, role, created_at, revoked_at FROM api_tokens ORDER BY name")]
