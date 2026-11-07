@@ -131,7 +131,7 @@ def test_preferred_skills_lead_catalog(tmp_path: Path, monkeypatch):
         persona_mod.end_temporary_persona()
 
 
-def test_composer_includes_persona_overlay(tmp_path: Path, monkeypatch):
+def test_composer_includes_persona_overlay(tmp_path: Path, monkeypatch, character_prompts):
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
     monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(root / "workspace"))

@@ -19,7 +19,7 @@ def test_self_model_has_persona_not_gpu(tmp_path, monkeypatch):
     assert "gpu" not in text.lower()
 
 
-def test_character_stable_across_personas(tmp_path: Path, monkeypatch):
+def test_character_stable_across_personas(tmp_path: Path, monkeypatch, character_prompts):
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(root / "workspace"))
     monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))

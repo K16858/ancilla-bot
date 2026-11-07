@@ -45,10 +45,9 @@ def test_builtin_tool_registry_keys():
     assert BUILTIN_TOOLS.issubset(TOOL_REGISTRY.keys())
 
 
-def test_core_memory_includes_character_agent_skills(monkeypatch):
+def test_core_memory_includes_character_agent_skills(monkeypatch, character_prompts):
     monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(ROOT / "workspace"))
     monkeypatch.setenv("ANCILLA_SKILLS_DIR", str(ROOT / "skills"))
-    monkeypatch.setattr(memory_core, "DEFAULT_PROMPTS_DIR", ROOT / "data" / "prompts")
     prompt = build_core_memory("- get_time: now")
     assert "Ancilla" in prompt
     assert "Behavior" in prompt or "valid JSON" in prompt
