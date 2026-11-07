@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import time
 
 import httpx
+from loguru import logger
 
 
 def core_url() -> str:
@@ -26,6 +28,27 @@ def api_bind_host() -> str:
     if bind:
         return bind
     return os.getenv("ANCILLA_API_HOST", "127.0.0.1").strip() or "127.0.0.1"
+
+
+def check_bind_hosts(hosts: dict[str, str]) -> None:
+    """ループバック以外の待ち受けは ANCILLA_INSECURE_BIND=1 が無ければ起動を拒否する。"""
+    bad = []
+    for name, host in hosts.items():
+        h = host.strip().strip("[]")
+        try:
+            ok = h.lower() == "localhost" or ipaddress.ip_address(h).is_loopback
+        except ValueError:
+            ok = False
+        if not ok:
+            bad.append(f"{name}={host}")
+    if not bad:
+        return
+    if os.getenv("ANCILLA_INSECURE_BIND") != "1":
+        raise SystemExit(
+            f"ループバック以外では待ち受けできません（{', '.join(bad)}）。"
+            " 認証が無いため、意図的に公開する場合のみ ANCILLA_INSECURE_BIND=1 を設定してください。"
+        )
+    logger.warning("認証なしでループバック以外に待ち受けます: {}", ", ".join(bad))
 
 
 def api_bind_port() -> int:

@@ -1010,7 +1010,7 @@ def _run_resident(args: argparse.Namespace) -> None:
     from ancilla_bot.memory.store import maybe_import_user_md
 
     maybe_import_user_md()
-    from ancilla_bot.cli.health import api_bind_host, api_bind_port
+    from ancilla_bot.cli.health import api_bind_host, api_bind_port, check_bind_hosts
     from ancilla_bot.cli.preflight import run_preflight
     from ancilla_bot.cli.process import reclaim_listen_port, write_pid
 
@@ -1045,6 +1045,13 @@ def _run_resident(args: argparse.Namespace) -> None:
     write_pid("core", os.getpid())
     api_host = api_bind_host()
     api_port = api_bind_port()
+    check_bind_hosts(
+        {
+            "API": api_host,
+            "MCP_HTTP": os.getenv("ANCILLA_MCP_HTTP_HOST", "127.0.0.1"),
+            "WS": os.getenv("ANCILLA_WS_HOST", "127.0.0.1"),
+        }
+    )
 
     def chat_handler(msg: str, imgs: list[str] | None = None) -> str:
         return _handle_message(
