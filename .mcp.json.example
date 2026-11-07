@@ -10,6 +10,27 @@
       "headers": {
         "Authorization": "Bearer YOUR_TOKEN"
       }
+    },
+    "prometheus": {
+      "command": "ancilla",
+      "args": ["plugin", "prometheus"],
+      "env": {
+        "PROMETHEUS_URL": "http://core.home.arpa:9090",
+        "PROMETHEUS_TOKEN": "YOUR_TOKEN_OPTIONAL"
+      }
+    },
+    "wazuh": {
+      "command": "ancilla",
+      "args": ["plugin", "wazuh"],
+      "env": {
+        "WAZUH_INDEXER_URL": "https://wazuh.home.arpa:9200",
+        "WAZUH_INDEXER_USER": "YOUR_INDEXER_USER",
+        "WAZUH_INDEXER_PASSWORD": "YOUR_INDEXER_PASSWORD",
+        "WAZUH_API_URL": "https://wazuh.home.arpa:55000",
+        "WAZUH_API_USER": "YOUR_API_USER",
+        "WAZUH_API_PASSWORD": "YOUR_API_PASSWORD",
+        "WAZUH_VERIFY_TLS": "true"
+      }
     }
   }
 }
