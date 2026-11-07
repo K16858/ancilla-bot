@@ -9,7 +9,7 @@ from urllib.parse import parse_qsl, urlsplit
 
 from loguru import logger
 
-from ancilla_bot.api import v1
+from ancilla_bot.api import v1, webui
 from ancilla_bot.core.execution import ConversationBusy
 from ancilla_bot.homelab import events, incidents, store
 
@@ -72,6 +72,24 @@ def make_server(
         def do_GET(self):
             u = urlsplit(self.path)
             is_v1 = u.path.startswith("/api/v1/")
+            if u.path in ("/", "/ui"):  # WebUI の入口
+                self.send_response(302)
+                self.send_header("Location", "/ui/")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if u.path.startswith("/ui/"):  # 静的ファイル。トークン不要
+                status, ctype, body, cache = webui.resolve(u.path)
+                try:
+                    self.send_response(status)
+                    self.send_header("Content-Type", ctype)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header("Cache-Control", cache)
+                    self.end_headers()
+                    self.wfile.write(body)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
             if u.path == "/health":  # 生存確認だけ（{"ok": true}）。外部の死活監視用にトークン不要
                 self._json(200, {"ok": True})
                 return
