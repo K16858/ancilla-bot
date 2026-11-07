@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from datetime import datetime, timezone
 
 import psutil
@@ -48,6 +49,9 @@ def collect_disks() -> list[dict]:
     for p in psutil.disk_partitions(all=False):
         if not is_real_fs(p.fstype):
             continue
+        opts = getattr(p, "opts", "")
+        if sys.platform == "win32" and opts and "fixed" not in opts.split(","):
+            continue  # Windows は固定ドライブのみ（CD-ROM / リムーバブル / ネットワークを除く）
         try:
             out.append({"mount": p.mountpoint, "percent": psutil.disk_usage(p.mountpoint).percent})
         except OSError:
@@ -129,13 +133,40 @@ def check_docker(name: str) -> tuple[str, str]:
     return parse_docker(r.stdout)
 
 
+# psutil.win_service_get の status -> state（detail には元の status を入れる）
+_WIN_STATE = {
+    "running": "running",
+    "stopped": "stopped",
+    "paused": "stopped",            # 一時停止中はサービスを提供していない
+    "start_pending": "unknown",     # 遷移中は確定させない
+    "stop_pending": "unknown",
+    "continue_pending": "unknown",
+    "pause_pending": "unknown",
+}
+
+
+def check_windows_service(name: str) -> tuple[str, str]:
+    """psutil で Windows サービスの状態を読む（status 参照は管理者権限不要）。"""
+    if sys.platform != "win32":
+        return "unknown", "windows_service is Windows only"
+    try:
+        status = psutil.win_service_get(name).as_dict()["status"]
+    except psutil.NoSuchProcess:
+        return "unknown", "service not found"
+    except (OSError, psutil.Error, KeyError) as e:
+        return "unknown", f"service query failed: {type(e).__name__}"
+    return _WIN_STATE.get(status, "unknown"), status
+
+
 def check_service(svc: dict) -> dict:
     kind, unit = svc.get("kind"), str(svc.get("unit") or svc.get("id") or "")
     if kind == "systemd":
         state, detail = check_systemd(unit)
     elif kind == "docker":
         state, detail = check_docker(unit)
-    else:  # windows_service は PR 14
+    elif kind == "windows_service":
+        state, detail = check_windows_service(unit)
+    else:
         state, detail = "unknown", f"unsupported kind: {kind}"
     return {"id": svc.get("id"), "state": state, "detail": detail}
 
