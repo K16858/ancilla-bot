@@ -102,6 +102,7 @@ def _install_client(args: argparse.Namespace) -> int:
 
 
 NODE_SERVICE = "ancilla-node"
+WIN_TASK = "AncillaNode"
 
 
 def node_unit_text(user: str, root: Path, exe: str) -> str:
@@ -127,6 +128,30 @@ WantedBy=multi-user.target
 """
 
 
+def schtasks_create_cmd(exe: str) -> list[str]:
+    """Windows の常駐方式: タスクスケジューラ（ログオン時起動）。
+
+    Windows Service は pywin32/nssm が要り、管理者権限も必要になるため採らない。
+    ONLOGON + /RL LIMITED は現在ユーザーで管理者権限なしに登録できる。
+    schtasks では失敗時の自動再起動を簡潔に書けないので、再接続はデーモン自身に任せる。
+    """
+    return ["schtasks", "/Create", "/TN", WIN_TASK, "/SC", "ONLOGON", "/RL", "LIMITED",
+            "/TR", f'"{exe}" node', "/F"]
+
+
+def _install_node_windows(root: Path) -> int:
+    exe = shutil.which("ancilla") or str(Path(sys.argv[0]).resolve())
+    try:
+        subprocess.run(schtasks_create_cmd(exe), check=True, capture_output=True, text=True)
+        subprocess.run(["schtasks", "/Run", "/TN", WIN_TASK], check=True, capture_output=True, text=True)
+    except (OSError, subprocess.CalledProcessError) as e:
+        return ux.fail(f"タスクスケジューラ登録に失敗しました: {e}", next_cmds=["ancilla node"])
+    print(f"タスク {WIN_TASK}（ログオン時に起動）を登録して起動しました。")
+    print(f"  状態: schtasks /Query /TN {WIN_TASK}")
+    print("  Core 側: ancilla homelab nodes")
+    return 0
+
+
 def _sudo(cmd: list[str], **kw) -> None:
     subprocess.run(["sudo", *cmd], check=True, **kw)
 
@@ -148,8 +173,10 @@ def _install_node(args: argparse.Namespace) -> int:
     )
     print(f"Node settings written to {envfile.env_path(root)}")
 
+    if sys.platform == "win32":
+        return _install_node_windows(root)
     if not sys.platform.startswith("linux"):
-        print("systemd 登録は Linux のみ対応です（Windows は別 PR で対応予定）。")
+        print("常駐登録は Linux / Windows のみ対応です。")
         print("手動実行: ancilla node")
         return 0
 
