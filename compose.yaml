@@ -4,6 +4,8 @@ services:
       context: .
     restart: unless-stopped
     environment:
+      # コンテナ内は 0.0.0.0 で待ち受ける。ホストへの公開は ports の bind アドレス（既定 127.0.0.1）で制限される
+      ANCILLA_INSECURE_BIND: "1"
       ANCILLA_API_HOST: 0.0.0.0
       ANCILLA_API_PORT: 8765
       ANCILLA_WS_HOST: 0.0.0.0
@@ -29,6 +31,7 @@ services:
       SEARXNG_TOKEN: ${SEARXNG_TOKEN:-}
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
       DISCORD_NOTIFY_USER_ID: ${DISCORD_NOTIFY_USER_ID:-}
+      DISCORD_OWNER_ID: ${DISCORD_OWNER_ID:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

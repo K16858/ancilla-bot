@@ -1042,7 +1042,6 @@ def _run_resident(args: argparse.Namespace) -> None:
             runtime.end()
 
     runtime.set_resume_handler(_resume_suspended)
-    write_pid("core", os.getpid())
     api_host = api_bind_host()
     api_port = api_bind_port()
     check_bind_hosts(
@@ -1052,6 +1051,7 @@ def _run_resident(args: argparse.Namespace) -> None:
             "WS": os.getenv("ANCILLA_WS_HOST", "127.0.0.1"),
         }
     )
+    write_pid("core", os.getpid())
 
     def chat_handler(msg: str, imgs: list[str] | None = None) -> str:
         return _handle_message(

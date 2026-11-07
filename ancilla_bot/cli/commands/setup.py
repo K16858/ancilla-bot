@@ -362,11 +362,17 @@ def _setup_notify() -> int:
     v = _prompt("DISCORD_NOTIFY_USER_ID", before.get("DISCORD_NOTIFY_USER_ID"))
     if v is not None:
         updates["DISCORD_NOTIFY_USER_ID"] = v
+    v = _prompt("DISCORD_OWNER_ID", before.get("DISCORD_OWNER_ID"))
+    if v is not None:
+        updates["DISCORD_OWNER_ID"] = v
     if not (before.get("SLACK_BOT_TOKEN") and before.get("SLACK_APP_TOKEN")):
         print("! SLACK_BOT_TOKEN / SLACK_APP_TOKEN are not set (ancilla setup keys)")
     v = _prompt("SLACK_NOTIFY_CHANNEL_ID", before.get("SLACK_NOTIFY_CHANNEL_ID"))
     if v is not None:
         updates["SLACK_NOTIFY_CHANNEL_ID"] = v
+    v = _prompt("SLACK_OWNER_ID", before.get("SLACK_OWNER_ID"))
+    if v is not None:
+        updates["SLACK_OWNER_ID"] = v
     return _apply(updates, before=before)
 
 
@@ -469,9 +475,11 @@ _SHOW_KEYS = [
     "DISCORD_BOT_TOKEN",
     "DISCORD_NOTIFY_CHANNEL_ID",
     "DISCORD_NOTIFY_USER_ID",
+    "DISCORD_OWNER_ID",
     "SLACK_BOT_TOKEN",
     "SLACK_APP_TOKEN",
     "SLACK_NOTIFY_CHANNEL_ID",
+    "SLACK_OWNER_ID",
 ]
 
 
