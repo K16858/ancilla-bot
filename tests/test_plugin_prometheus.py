@@ -108,6 +108,9 @@ def test_tools_are_read_only_annotated():
     tools = asyncio.run(prom.create_server().list_tools())
     assert sorted(t.name for t in tools) == ["alerts", "query", "query_range", "targets"]
     assert all(t.annotations.read_only_hint is True for t in tools)
-    from ancilla_bot.mcp.bridge import _risk_from_annotations
+    from ancilla_bot.mcp.bridge import _effect_from_annotations
+    from ancilla_bot.runtime import policy
 
-    assert all(_risk_from_annotations(t) == "external_read" for t in tools)
+    assert all(_effect_from_annotations(t) == "external_read" for t in tools)
+    # 承認なし・自律実行でも拒否されない
+    assert "external_read" not in policy._AUTONOMOUS_DENY | policy._REQUIRE_APPROVAL
