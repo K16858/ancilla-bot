@@ -1,17 +1,37 @@
-"""CLI: ancilla homelab hosts|services|inspect|check"""
+"""CLI: ancilla homelab hosts|services|inspect|check|node-token|node-revoke|nodes"""
 
 from __future__ import annotations
 
 import argparse
+import sys
 
 from ancilla_bot.homelab import inventory as inv
+from ancilla_bot.homelab import store
 
 
 def cmd_homelab(args: argparse.Namespace) -> int:
     action = getattr(args, "homelab_command", None)
     try:
         i = inv.load_inventory()
-        if action == "hosts":
+        if action == "node-token":
+            h = i.host(args.host)
+            if h is None or not h.node:
+                print(f"Error: '{args.host}' は homelab.yaml に無いか node: true ではありません")
+                return 1
+            print(store.issue_token(h.id))
+            print("(このトークンは再表示できません。再発行すると古いトークンは失効します)", file=sys.stderr)
+        elif action == "node-revoke":
+            ok = store.revoke(args.host)
+            print("失効しました（接続中の Node は 10 秒以内に切断されます）" if ok else "有効なトークンがありません")
+            return 0 if ok else 1
+        elif action == "nodes":
+            for n in store.list_nodes():
+                state = "revoked" if n["revoked_at"] else "connected" if n["connected"] else "disconnected"
+                print(
+                    f"{n['host_id']}	{state}	last_seen={n['last_seen'] or '-'}"
+                    f"	os={n['os'] or '-'}	version={n['version'] or '-'}"
+                )
+        elif action == "hosts":
             print(inv.format_hosts(i))
         elif action == "services":
             print(inv.format_services(i, getattr(args, "host", "") or ""))

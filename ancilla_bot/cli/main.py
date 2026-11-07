@@ -1042,15 +1042,19 @@ def _run_resident(args: argparse.Namespace) -> None:
             runtime.end()
 
     runtime.set_resume_handler(_resume_suspended)
+    from ancilla_bot.homelab.channel import node_bind, run_node_server
+
     api_host = api_bind_host()
     api_port = api_bind_port()
-    check_bind_hosts(
-        {
-            "API": api_host,
-            "MCP_HTTP": os.getenv("ANCILLA_MCP_HTTP_HOST", "127.0.0.1"),
-            "WS": os.getenv("ANCILLA_WS_HOST", "127.0.0.1"),
-        }
-    )
+    node_host, node_port, node_ssl = node_bind()
+    bind_hosts = {
+        "API": api_host,
+        "MCP_HTTP": os.getenv("ANCILLA_MCP_HTTP_HOST", "127.0.0.1"),
+        "WS": os.getenv("ANCILLA_WS_HOST", "127.0.0.1"),
+    }
+    if node_ssl is None:  # TLS なしの平文 ws はループバック外なら ANCILLA_INSECURE_BIND=1 が必要
+        bind_hosts["NODE"] = node_host
+    check_bind_hosts(bind_hosts)
     write_pid("core", os.getpid())
 
     def chat_handler(msg: str, imgs: list[str] | None = None) -> str:
@@ -1165,6 +1169,10 @@ def _run_resident(args: argparse.Namespace) -> None:
     )
     ws_thread.start()
     logger.info("WebSocket ws://{}:{}", ws_host, ws_port)
+
+    threading.Thread(
+        target=run_node_server, args=(node_host, node_port, node_ssl), daemon=True, name="node"
+    ).start()
 
     slow_thread = threading.Thread(
         target=_slow_heartbeat_loop,
@@ -1343,6 +1351,11 @@ def main() -> int:
     hi_p = homelab_sub.add_parser("inspect", help="Host / Service の詳細と影響範囲")
     hi_p.add_argument("id", help="Host ID または Service ID")
     homelab_sub.add_parser("check", help="homelab.yaml の検証のみ")
+    nt_p = homelab_sub.add_parser("node-token", help="Node 用トークンを発行（1 回だけ表示）")
+    nt_p.add_argument("host", help="Host ID（node: true のもの）")
+    nr_p = homelab_sub.add_parser("node-revoke", help="Node のトークンを失効（接続中なら切断）")
+    nr_p.add_argument("host", help="Host ID")
+    homelab_sub.add_parser("nodes", help="登録済み Node と接続状態")
 
     skill_parser = subparsers.add_parser("skill", help="workspace Skill の昇格・ロールバック")
     skill_sub = skill_parser.add_subparsers(dest="skill_command", required=True)
