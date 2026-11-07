@@ -1,7 +1,6 @@
 import asyncio
 import subprocess
 import threading
-import time
 from datetime import datetime, timedelta
 
 import pytest
@@ -173,21 +172,16 @@ def test_resolved_incident_ignored(env):
 
 def test_fault_injection_end_to_end(base, monkeypatch):
     state = {"web": "running"}
-    stop = threading.Event()
 
     def runner(argv, **k):
         if argv[:2] == ["systemctl", "restart"]:
             state["web"] = "running"  # 再起動で failed -> running
+            feed()  # 次の telemetry を待たず同期で反映（バックグラウンドの feeder は負荷で遅れて検証窓に間に合わない）
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
     def feed():  # Node の telemetry の代わり
         store.put_observation("h1", "node", {"services": [{"id": "web", "state": state["web"]}],
                                              "resources": {}, "disks": []})
-
-    def feeder():
-        while not stop.is_set():
-            feed()
-            time.sleep(0.02)
 
     monkeypatch.setattr(channel, "REPORT_INTERVAL_SEC", 0.05)
     monkeypatch.setattr(events, "_subscribers", [incidents.handle])
@@ -211,15 +205,13 @@ def test_fault_injection_end_to_end(base, monkeypatch):
     def body():
         feed()
         events.update(st.evaluate_all())  # 基準状態: healthy
-        threading.Thread(target=feeder, daemon=True).start()
         state["web"] = "failed"  # 故障注入
-        time.sleep(0.1)
+        feed()  # 同期で反映する。別スレッドの feeder だと負荷で遅れ、failed を見ずに Incident が作られない
         events.update(st.evaluate_all())
         events.update(st.evaluate_all())  # 2 回連続で確定 -> service_down -> Incident -> autoheal
         assert verified.wait(30), outcomes  # 検証スレッドの完了を待つ（時間依存の sleep ではなく完了通知）
         events.update(st.evaluate_all())
         events.update(st.evaluate_all())  # healthy が 2 回 -> recovered -> 自動解決
-        stop.set()
         result["rows"] = log_rows()
 
     async def main():
