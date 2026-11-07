@@ -8,6 +8,7 @@ from typing import Any, Callable
 from ancilla_bot.heartbeat.db import manage_state as heartbeat_manage_state
 from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.homelab.inventory import homelab_inspect, homelab_list_hosts, homelab_list_services
+from ancilla_bot.homelab.status import homelab_get_metrics, homelab_get_status
 from ancilla_bot.tools.end_edge_session import end_edge_session
 from ancilla_bot.tools.fetch_page import fetch_page
 from ancilla_bot.tools.get_audio import get_audio
@@ -55,6 +56,15 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "Inspect a HomeLab host or service by id. Host: its services. "
         "Service: dependencies and the services affected (transitively) if it stops. "
         "action_input: {\"id\": \"prometheus\"}."
+    ),
+    "homelab_get_status": (
+        "Observed state (healthy/degraded/unhealthy/unknown) of HomeLab hosts/services with freshness, "
+        "evidence per source and mismatches vs the declaration. "
+        "action_input: {\"id\": \"core\"}. id optional (omit for a summary of all)."
+    ),
+    "homelab_get_metrics": (
+        "Latest telemetry (CPU/memory/disk/service states) reported by a HomeLab host's node. "
+        "action_input: {\"id\": \"core\"}."
     ),
     # ── File operations ───────────────────────────────────────────────────
     "list_workspace": (
@@ -349,6 +359,8 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "homelab_list_hosts": homelab_list_hosts,
     "homelab_list_services": homelab_list_services,
     "homelab_inspect": homelab_inspect,
+    "homelab_get_status": homelab_get_status,
+    "homelab_get_metrics": homelab_get_metrics,
     "list_workspace": list_workspace,
     "edit_file_safe": edit_file_safe,
     "bash": bash,

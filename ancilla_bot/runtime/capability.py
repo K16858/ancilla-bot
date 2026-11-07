@@ -30,6 +30,8 @@ _BUILTIN: dict[str, tuple[str, str]] = {
     "homelab_list_hosts": ("local_read", "homelab"),
     "homelab_list_services": ("local_read", "homelab"),
     "homelab_inspect": ("local_read", "homelab"),
+    "homelab_get_status": ("local_read", "homelab"),
+    "homelab_get_metrics": ("local_read", "homelab"),
     "end_edge_session": ("local_read", "os"),
     "use_edgedevice": ("local_read", "os"),
     "get_image": ("local_read", "os"),

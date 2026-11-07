@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import secrets
 import sqlite3
 from contextlib import closing, contextmanager
@@ -28,12 +29,24 @@ CREATE TABLE IF NOT EXISTS nodes (
 )
 """
 
+# 主体 × 情報源ごとの最新値だけ（履歴は持たない）。source: node | health
+_SCHEMA_OBS = """
+CREATE TABLE IF NOT EXISTS observations_latest (
+    subject TEXT NOT NULL,
+    source TEXT NOT NULL,
+    value TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    PRIMARY KEY (subject, source)
+)
+"""
+
 
 @contextmanager
 def _conn() -> Iterator[sqlite3.Connection]:
     with closing(db._conn()) as c:
         c.row_factory = sqlite3.Row
         c.execute(_SCHEMA_NODES)
+        c.execute(_SCHEMA_OBS)
         with c:
             yield c
 
@@ -109,3 +122,21 @@ def list_nodes() -> list[dict]:
             and datetime.fromisoformat(r["last_seen"]) >= limit
         )
     return rows
+
+
+def put_observation(subject: str, source: str, value: dict, observed_at: str | None = None) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO observations_latest (subject, source, value, observed_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(subject, source) DO UPDATE SET value=excluded.value, observed_at=excluded.observed_at",
+            (subject, source, json.dumps(value, ensure_ascii=False), observed_at or _now()),
+        )
+
+
+def get_observations() -> dict[tuple[str, str], tuple[dict, str]]:
+    """(subject, source) -> (value, observed_at)"""
+    with _conn() as c:
+        return {
+            (r["subject"], r["source"]): (json.loads(r["value"]), r["observed_at"])
+            for r in c.execute("SELECT * FROM observations_latest")
+        }

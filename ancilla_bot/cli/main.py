@@ -1080,6 +1080,11 @@ def _run_resident(args: argparse.Namespace) -> None:
         name="api",
     )
     api_thread.start()
+    from ancilla_bot.homelab import channel as node_channel
+    from ancilla_bot.homelab import status as homelab_status
+
+    node_channel.set_telemetry_handler(homelab_status.on_telemetry)
+    threading.Thread(target=homelab_status.run_health_loop, daemon=True, name="homelab-health").start()
     logger.info("API http://{}:{}/chat", api_host, api_port)
 
     from ancilla_bot.mcp.manager import get_manager
@@ -1364,6 +1369,8 @@ def main() -> int:
     nr_p = homelab_sub.add_parser("node-revoke", help="Node のトークンを失効（接続中なら切断）")
     nr_p.add_argument("host", help="Host ID")
     homelab_sub.add_parser("nodes", help="登録済み Node と接続状態")
+    st_p = homelab_sub.add_parser("status", help="Host / Service の観測状態")
+    st_p.add_argument("id", nargs="?", default="", help="Host ID または Service ID（省略で全体）")
 
     skill_parser = subparsers.add_parser("skill", help="workspace Skill の昇格・ロールバック")
     skill_sub = skill_parser.add_subparsers(dest="skill_command", required=True)

@@ -31,6 +31,10 @@ def cmd_homelab(args: argparse.Namespace) -> int:
                     f"{n['host_id']}	{state}	last_seen={n['last_seen'] or '-'}"
                     f"	os={n['os'] or '-'}	version={n['version'] or '-'}"
                 )
+        elif action == "status":
+            from ancilla_bot.homelab.status import homelab_get_status
+
+            print(homelab_get_status(args.id))
         elif action == "hosts":
             print(inv.format_hosts(i))
         elif action == "services":

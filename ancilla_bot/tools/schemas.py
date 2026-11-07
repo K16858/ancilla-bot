@@ -280,6 +280,13 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         {"id": {"type": "string", "description": "Host id or service id"}},
         required=["id"],
     ),
+    "homelab_get_status": _schema(
+        {"id": {"type": "string", "description": "Optional host or service id (omit for a summary of all)"}},
+    ),
+    "homelab_get_metrics": _schema(
+        {"id": {"type": "string", "description": "Host id"}},
+        required=["id"],
+    ),
     "search_arxiv": _schema(
         {
             "query": {"type": "string", "description": "arXiv search query"},
