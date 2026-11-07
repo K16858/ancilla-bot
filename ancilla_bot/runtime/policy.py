@@ -12,7 +12,7 @@ DENY = "deny"
 REQUIRE_APPROVAL = "require_approval"
 
 _AUTONOMOUS_DENY = frozenset({"external_write", "destructive", "privileged"})
-_REQUIRE_APPROVAL = frozenset({"external_write", "destructive"})
+_REQUIRE_APPROVAL = frozenset({"external_write", "destructive", "privileged"})
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,7 @@ def decide(tool_name: str) -> Decision:
 
     cap = get_capability(tool_name)
     if cap is None:
-        return Decision(ALLOW)
+        return Decision(DENY, f"Error: capability '{tool_name}' is not registered.")
     if is_autonomous() and cap.effect in _AUTONOMOUS_DENY:
         return Decision(
             DENY,

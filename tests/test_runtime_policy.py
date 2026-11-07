@@ -13,12 +13,48 @@ def test_bash_denied_when_autonomous():
         run_source.reset(token)
 
 
-def test_bash_allowed_when_interactive():
+def test_bash_requires_approval_when_interactive(monkeypatch):
+    monkeypatch.delenv("ANCILLA_SANDBOX", raising=False)
+    token = run_source.set("user")
+    try:
+        assert decide("bash").verdict == REQUIRE_APPROVAL
+        assert check("bash") is not None
+    finally:
+        run_source.reset(token)
+
+
+def test_bash_allowed_with_docker_sandbox(monkeypatch):
+    monkeypatch.setenv("ANCILLA_SANDBOX", "docker")
     token = run_source.set("user")
     try:
         assert decide("bash").verdict == ALLOW
-        assert check("bash") is None
     finally:
+        run_source.reset(token)
+
+
+def test_unregistered_tool_denied():
+    assert decide("no_such_tool").verdict == DENY
+
+
+def test_persona_switch_does_not_lift_effect_gate(monkeypatch, tmp_path):
+    from pathlib import Path
+
+    from ancilla_bot.runtime import persona as persona_mod
+
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("ANCILLA_PERSONAS_DIR", str(root / "personas"))
+    monkeypatch.setenv("ANCILLA_ACTIVE_PERSONA_PATH", str(tmp_path / "active_persona.txt"))
+    monkeypatch.delenv("ANCILLA_SANDBOX", raising=False)
+    persona_mod.end_temporary_persona()
+    token = run_source.set("user")
+    try:
+        persona_mod.set_persona("general")
+        assert decide("bash").verdict == REQUIRE_APPROVAL
+        assert decide("trash_file").verdict == REQUIRE_APPROVAL
+        run_source.set("heartbeat")
+        assert decide("bash").verdict == DENY
+    finally:
+        persona_mod.end_temporary_persona()
         run_source.reset(token)
 
 

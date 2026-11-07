@@ -51,3 +51,14 @@ def test_missing_annotations_are_external_write():
         annotations = None
 
     assert _effect_from_annotations(_Tool()) == "external_write"
+
+
+def test_all_registry_tools_classified():
+    from ancilla_bot.tools.registry import TOOL_REGISTRY
+
+    assert [n for n in TOOL_REGISTRY if n not in capability_mod._BUILTIN and "__" not in n] == []
+
+
+def test_unclassified_defaults_to_privileged():
+    assert effect_for("brand_new_tool") == "privileged"
+

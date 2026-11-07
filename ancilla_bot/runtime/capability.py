@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 from ancilla_bot.tools.registry import TOOL_DESCRIPTIONS, TOOL_REGISTRY, _short_tool_description
@@ -58,6 +59,8 @@ def clear_mcp_effects() -> None:
 
 
 def _spec(tool_name: str) -> tuple[str, str]:
+    if tool_name == "bash" and os.getenv("ANCILLA_SANDBOX", "none").strip().lower() == "docker":
+        return ("local_write", "os")
     if tool_name in _BUILTIN:
         return _BUILTIN[tool_name]
     if tool_name in _MCP:
@@ -65,7 +68,7 @@ def _spec(tool_name: str) -> tuple[str, str]:
     if "__" in tool_name:
         server = tool_name.split("__", 1)[0]
         return ("external_write", server)
-    return ("local_read", "workspace")
+    return ("privileged", "os")
 
 
 def effect_for(tool_name: str) -> str:
