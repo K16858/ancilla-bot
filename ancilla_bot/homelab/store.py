@@ -40,6 +40,32 @@ CREATE TABLE IF NOT EXISTS observations_latest (
 )
 """
 
+# 主体ごとの確定状態と確認待ち（events.py が使う）
+_SCHEMA_STATUS = """
+CREATE TABLE IF NOT EXISTS status_latest (
+    subject TEXT PRIMARY KEY,
+    state TEXT NOT NULL,
+    flags TEXT NOT NULL DEFAULT '[]',
+    since TEXT NOT NULL,
+    pending_state TEXT,
+    pending_flags TEXT,
+    pending_count INTEGER NOT NULL DEFAULT 0
+)
+"""
+
+_SCHEMA_EVENTS = """
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    from_state TEXT NOT NULL,
+    to_state TEXT NOT NULL,
+    flags TEXT NOT NULL DEFAULT '[]',
+    detected_at TEXT NOT NULL,
+    evidence TEXT NOT NULL
+)
+"""
+
 
 @contextmanager
 def _conn() -> Iterator[sqlite3.Connection]:
@@ -47,6 +73,8 @@ def _conn() -> Iterator[sqlite3.Connection]:
         c.row_factory = sqlite3.Row
         c.execute(_SCHEMA_NODES)
         c.execute(_SCHEMA_OBS)
+        c.execute(_SCHEMA_STATUS)
+        c.execute(_SCHEMA_EVENTS)
         with c:
             yield c
 

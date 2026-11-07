@@ -287,6 +287,13 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         {"id": {"type": "string", "description": "Host id"}},
         required=["id"],
     ),
+    "homelab_get_events": _schema(
+        {
+            "subject": {"type": "string", "description": "Host/Service id filter"},
+            "since": {"type": "string", "description": "Relative (30m, 24h, 7d) or ISO time"},
+            "limit": {"type": "integer", "description": "Max events (default 50)"},
+        },
+    ),
     "search_arxiv": _schema(
         {
             "query": {"type": "string", "description": "arXiv search query"},

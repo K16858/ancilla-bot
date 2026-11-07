@@ -1371,6 +1371,8 @@ def main() -> int:
     homelab_sub.add_parser("nodes", help="登録済み Node と接続状態")
     st_p = homelab_sub.add_parser("status", help="Host / Service の観測状態")
     st_p.add_argument("id", nargs="?", default="", help="Host ID または Service ID（省略で全体）")
+    ev_p = homelab_sub.add_parser("events", help="確定した状態変化 Event")
+    ev_p.add_argument("--subject", default="", help="Host ID または Service ID")
 
     skill_parser = subparsers.add_parser("skill", help="workspace Skill の昇格・ロールバック")
     skill_sub = skill_parser.add_subparsers(dest="skill_command", required=True)

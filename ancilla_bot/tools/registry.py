@@ -8,6 +8,7 @@ from typing import Any, Callable
 from ancilla_bot.heartbeat.db import manage_state as heartbeat_manage_state
 from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.homelab.inventory import homelab_inspect, homelab_list_hosts, homelab_list_services
+from ancilla_bot.homelab.events import homelab_get_events
 from ancilla_bot.homelab.status import homelab_get_metrics, homelab_get_status
 from ancilla_bot.tools.end_edge_session import end_edge_session
 from ancilla_bot.tools.fetch_page import fetch_page
@@ -65,6 +66,10 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "homelab_get_metrics": (
         "Latest telemetry (CPU/memory/disk/service states) reported by a HomeLab host's node. "
         "action_input: {\"id\": \"core\"}."
+    ),
+    "homelab_get_events": (
+        "Recent confirmed state-change events of HomeLab hosts/services (newest first). "
+        "action_input: {} , optional {\"subject\": \"web\", \"since\": \"24h\" or ISO time, \"limit\": 50}."
     ),
     # ── File operations ───────────────────────────────────────────────────
     "list_workspace": (
@@ -361,6 +366,7 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "homelab_inspect": homelab_inspect,
     "homelab_get_status": homelab_get_status,
     "homelab_get_metrics": homelab_get_metrics,
+    "homelab_get_events": homelab_get_events,
     "list_workspace": list_workspace,
     "edit_file_safe": edit_file_safe,
     "bash": bash,

@@ -35,6 +35,10 @@ def cmd_homelab(args: argparse.Namespace) -> int:
             from ancilla_bot.homelab.status import homelab_get_status
 
             print(homelab_get_status(args.id))
+        elif action == "events":
+            from ancilla_bot.homelab.events import homelab_get_events
+
+            print(homelab_get_events(args.subject))
         elif action == "hosts":
             print(inv.format_hosts(i))
         elif action == "services":

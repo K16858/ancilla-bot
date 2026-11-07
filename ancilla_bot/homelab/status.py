@@ -70,6 +70,12 @@ def run_health_loop(interval: float = REPORT_INTERVAL_SEC, stop: threading.Event
                 check_all(inv.load_inventory(), client)
             except Exception as e:  # inventory 不正でもループは止めない
                 logger.warning("health check failed: {}", e)
+            try:
+                from ancilla_bot.homelab import events
+
+                events.process()
+            except Exception as e:  # 判定失敗でもループは止めない
+                logger.warning("event pipeline failed: {}", e)
             stop.wait(interval)
 
 
