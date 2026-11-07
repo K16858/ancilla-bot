@@ -19,10 +19,29 @@ _APPROVE_RE = re.compile(r"^\s*(?:/)?approve\s+(\S+)\s*$", re.IGNORECASE)
 _REJECT_RE = re.compile(r"^\s*(?:/)?reject\s+(\S+)\s*$", re.IGNORECASE)
 
 
+def _homelab_detail(args: dict[str, Any]) -> str:
+    """homelab_run_action の承認文: 操作・対象・引数・期限を明示する。"""
+    from ancilla_bot.homelab import actions, operations
+
+    ttl = float(os.getenv("ANCILLA_APPROVAL_TTL_HOURS", "24") or 24)
+    until = (datetime.now() + timedelta(hours=ttl)).strftime("%Y-%m-%d %H:%M")
+    try:
+        r = actions.resolve(args.get("action"), args.get("target"), {"lines": args.get("lines")})
+        where, extra = f"{r.target} ({r.kind}: {r.unit} @ {r.host_id})", r.args
+    except actions.ActionError as e:
+        where, extra = f"{args.get('target')} (宣言を確認できません: {e})", {}
+    return (
+        f"操作: {args.get('action')}\n対象: {where}\n引数: {extra or '(なし)'}\n"
+        f"承認の期限: {until} まで（承認後に Node へ送る命令は {operations.COMMAND_TTL_SEC} 秒で失効）\n"
+    )
+
+
 def approval_request_message(run_id: str, tool_name: str, args: dict[str, Any]) -> str:
+    detail = _homelab_detail(args) if tool_name == "homelab_run_action" else ""
     return (
         f"承認が必要です (run_id={run_id})\n"
         f"tool: {tool_name}\n"
+        f"{detail}"
         f"args: {args}\n"
         f"承認: approve {run_id}\n"
         f"拒否: reject {run_id}"

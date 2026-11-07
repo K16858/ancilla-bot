@@ -35,6 +35,8 @@ _BUILTIN: dict[str, tuple[str, str]] = {
     "homelab_get_events": ("local_read", "homelab"),
     "homelab_list_incidents": ("local_read", "homelab"),
     "homelab_get_incident": ("local_read", "homelab"),
+    "homelab_get_actions": ("local_read", "homelab"),
+    "homelab_run_action": ("privileged", "homelab"),
     "end_edge_session": ("local_read", "os"),
     "use_edgedevice": ("local_read", "os"),
     "get_image": ("local_read", "os"),

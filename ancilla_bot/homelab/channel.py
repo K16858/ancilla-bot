@@ -7,6 +7,7 @@ PR 08 は set_telemetry_handler() で telemetry の処理を差し込む。
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import json
 import os
@@ -30,6 +31,8 @@ RECHECK_SEC = 10.0
 _connections: dict[str, ServerConnection] = {}
 # host_id -> 最新の telemetry（メモリのみ。永続化は PR 08）
 latest_telemetry: dict[str, dict] = {}
+_loop: asyncio.AbstractEventLoop | None = None  # 接続を扱っているイベントループ（send_command が別スレッドから使う）
+_pending: dict[str, tuple[str, concurrent.futures.Future]] = {}  # command id -> (host_id, 結果の Future)
 _telemetry_handler: Callable[[str, dict], None] | None = None
 
 
@@ -41,6 +44,30 @@ def set_telemetry_handler(fn: Callable[[str, dict], None] | None) -> None:
 
 def is_connected(host_id: str) -> bool:
     return host_id in _connections
+
+
+def send_command(host_id: str, cmd: dict, timeout: float = 60) -> dict:
+    """別スレッドから呼ぶ。Node に命令を送り command_result を待つ。失敗は ok=False の結果で返す（例外にしない）。"""
+    cid = str(cmd.get("id", ""))
+
+    def fail(msg: str) -> dict:
+        return {"type": "command_result", "id": cid, "ok": False, "output": "", "error": msg,
+                "started_at": "", "finished_at": ""}
+
+    ws, loop = _connections.get(host_id), _loop
+    if ws is None or loop is None:
+        return fail(f"node '{host_id}' は接続されていません")
+    fut: concurrent.futures.Future = concurrent.futures.Future()
+    _pending[cid] = (host_id, fut)
+    try:
+        asyncio.run_coroutine_threadsafe(ws.send(json.dumps(cmd)), loop).result(timeout=10)
+        return fut.result(timeout=timeout)
+    except concurrent.futures.TimeoutError:
+        return fail("node からの応答がタイムアウトしました")
+    except Exception as e:
+        return fail(f"送信に失敗しました: {type(e).__name__}: {e}")
+    finally:
+        _pending.pop(cid, None)
 
 
 def _authenticate(connection: ServerConnection, request):
@@ -77,6 +104,8 @@ async def _watch(ws: ServerConnection, host_id: str) -> None:
 
 
 async def _handle(ws: ServerConnection) -> None:
+    global _loop
+    _loop = asyncio.get_running_loop()
     host_id: str = ws.node_host_id
     try:
         hello = json.loads(await asyncio.wait_for(ws.recv(), HELLO_TIMEOUT_SEC))
@@ -115,6 +144,11 @@ async def _handle(ws: ServerConnection) -> None:
                 latest_telemetry[host_id] = msg
                 if _telemetry_handler is not None:
                     _telemetry_handler(host_id, msg)
+            elif isinstance(msg, dict) and msg.get("type") == "command_result":
+                # 命令を送った host 本人の結果だけ受け取る（他 Node の接続からは解決できない）
+                p = _pending.get(str(msg.get("id", "")))
+                if p is not None and p[0] == host_id and not p[1].done():
+                    p[1].set_result(msg)
     except Exception as e:  # ConnectionClosed を含む。切断は通常の終了として扱う
         logger.info("node: 切断 host={}: {}", host_id, type(e).__name__)
     finally:

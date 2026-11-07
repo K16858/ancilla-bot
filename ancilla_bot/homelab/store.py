@@ -93,6 +93,39 @@ CREATE TABLE IF NOT EXISTS incident_events (
 )
 """
 
+# Operations（operations.py が使う）。decision: approved | auto | dry_run | denied。
+# verification: none | pending | ok | failed。incident_notes は Incident に残す検証結果などのメモ
+_SCHEMA_ACTION_LOG = """
+CREATE TABLE IF NOT EXISTS action_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    requested_by TEXT NOT NULL,
+    run_id TEXT,
+    incident_id INTEGER,
+    decision TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target TEXT NOT NULL,
+    host_id TEXT,
+    command_id TEXT,
+    ok INTEGER,
+    output TEXT,
+    error TEXT,
+    verification TEXT NOT NULL DEFAULT 'none',
+    verification_result TEXT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    verified_at TEXT
+)
+"""
+
+_SCHEMA_INCIDENT_NOTES = """
+CREATE TABLE IF NOT EXISTS incident_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    incident_id INTEGER NOT NULL,
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL
+)
+"""
+
 # クライアント API（WebUI / Companion）用トークン。role: read | operate（operate は read を含む）
 _SCHEMA_API_TOKENS = """
 CREATE TABLE IF NOT EXISTS api_tokens (
@@ -117,6 +150,8 @@ def _conn() -> Iterator[sqlite3.Connection]:
         c.execute(_SCHEMA_EVENTS)
         c.execute(_SCHEMA_INCIDENTS)
         c.execute(_SCHEMA_INCIDENT_EVENTS)
+        c.execute(_SCHEMA_ACTION_LOG)
+        c.execute(_SCHEMA_INCIDENT_NOTES)
         c.execute(_SCHEMA_API_TOKENS)
         with c:
             yield c

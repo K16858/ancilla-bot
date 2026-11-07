@@ -246,7 +246,7 @@ def continue_after_approval(
 
         from ancilla_bot.runtime.policy import DENY, decide
 
-        decision = decide(tool_name)
+        decision = decide(tool_name, args)
         if decision.verdict == DENY:
             resolve_pending_approval(int(pending["id"]), "rejected")
             _finish_run(run_id, "failed", last_error=decision.message)

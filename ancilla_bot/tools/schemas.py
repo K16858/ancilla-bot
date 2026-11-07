@@ -297,6 +297,17 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         {"id": {"type": "string", "description": "Incident id, e.g. INC-000001"}},
         required=["id"],
     ),
+    "homelab_get_actions": _schema(
+        {"target": {"type": "string", "description": "Service id filter"}},
+    ),
+    "homelab_run_action": _schema(
+        {
+            "action": {"type": "string", "enum": ["logs", "restart"]},
+            "target": {"type": "string", "description": "Service id declared in homelab.yaml"},
+            "lines": {"type": "integer", "description": "logs only: number of lines (1-500, default 100)"},
+        },
+        required=["action", "target"],
+    ),
     "homelab_get_events": _schema(
         {
             "subject": {"type": "string", "description": "Host/Service id filter"},

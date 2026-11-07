@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 SLUG = r"^[a-z0-9][a-z0-9_-]*$"
 
@@ -27,6 +27,10 @@ class Host(BaseModel):
     node: bool = False
 
 
+# Operations(Phase 5): サービスごとに許可する Action とその承認方式。書いていない Action は DENY
+ACTION_MODES = {"restart": ("approval", "auto", "auto_dry_run"), "logs": ("approval", "auto")}
+
+
 class Service(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(pattern=SLUG)
@@ -37,6 +41,17 @@ class Service(BaseModel):
     health_url: str = ""
     criticality: Literal["high", "normal", "low"] = "normal"
     depends_on: list[str] = Field(default_factory=list)
+    actions: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("actions")
+    @classmethod
+    def _check_actions(cls, v: dict[str, str]) -> dict[str, str]:
+        for k, mode in v.items():
+            if k not in ACTION_MODES:
+                raise ValueError(f"未知の action '{k}'（{', '.join(ACTION_MODES)}）")
+            if mode not in ACTION_MODES[k]:
+                raise ValueError(f"action '{k}' の値は {' | '.join(ACTION_MODES[k])} のいずれか")
+        return v
 
 
 class Inventory(BaseModel):

@@ -270,11 +270,13 @@ def homelab_get_incident(id: str = "", **kwargs: Any) -> str:  # noqa: A002
         r = c.execute("SELECT * FROM incidents WHERE id=?", (n,)).fetchone() if n else None
         if not r:
             return f"Error: 未知の Incident: {id}"
+        notes = c.execute("SELECT note, created_at FROM incident_notes WHERE incident_id=? ORDER BY id", (n,)).fetchall()
         evs = c.execute("SELECT e.*, l.role FROM incident_events l JOIN events e ON e.id=l.event_id "
                         "WHERE l.incident_id=? ORDER BY e.id", (n,)).fetchall()
     d = _summary(r) | {
         "affected_services": json.loads(r["affected"]),
         "diagnosis": r["diagnosis"],
+        "notes": [{"at": x["created_at"], "note": x["note"]} for x in notes],
         "events": [{"id": e["id"], "role": e["role"], "subject": e["subject"], "kind": e["kind"],
                     "from": e["from_state"], "to": e["to_state"], "detected_at": e["detected_at"],
                     "evidence": json.loads(e["evidence"])} for e in evs],
