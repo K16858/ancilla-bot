@@ -72,6 +72,9 @@ def make_server(
         def do_GET(self):
             u = urlsplit(self.path)
             is_v1 = u.path.startswith("/api/v1/")
+            if u.path == "/health":  # 生存確認だけ（{"ok": true}）。外部の死活監視用にトークン不要
+                self._json(200, {"ok": True})
+                return
             if not self._gate(is_v1, "read"):
                 return
             if not is_v1:

@@ -167,14 +167,15 @@ def test_stream_does_not_block_other_requests(api):
 def test_legacy_gating(api, monkeypatch):
     assert httpx.get(f"{api}/health").status_code == 200  # ループバック
     monkeypatch.setattr(server, "_peer", lambda h: "192.168.1.9")
-    assert httpx.get(f"{api}/health").status_code == 403
+    assert httpx.get(f"{api}/health").json() == {"ok": True}  # 死活監視用に開放
+    assert httpx.get(f"{api}/chat").status_code == 403
     assert httpx.post(f"{api}/chat", json={"message": "hi"}).status_code == 403
     r = store.create_api_token("r", "read")
     o = store.create_api_token("o", "operate")
-    assert httpx.get(f"{api}/health", headers=auth(r)).status_code == 403
-    assert httpx.get(f"{api}/health", headers=auth(o)).status_code == 200
+    assert httpx.get(f"{api}/chat", headers=auth(r)).status_code == 403
+    assert httpx.get(f"{api}/chat", headers=auth(o)).status_code == 404  # 認証は通る（GET /chat は無い）
     assert httpx.post(f"{api}/chat", json={"message": "hi"}, headers=auth(o)).json() == {"response": "echo:hi"}
-    assert httpx.get(f"{api}/health", headers=auth("bad")).status_code == 401
+    assert httpx.get(f"{api}/chat", headers=auth("bad")).status_code == 401
 
 
 def test_bind_guard_keeps_ws_and_mcp(monkeypatch):
