@@ -119,6 +119,23 @@ def _since(v: str, now: datetime) -> str:
     return datetime.fromisoformat(v).isoformat(timespec="seconds")
 
 
+def _row(r) -> dict:
+    return {"id": r["id"], "subject": r["subject"], "kind": r["kind"], "from": r["from_state"],
+            "to": r["to_state"], "flags": json.loads(r["flags"]), "detected_at": r["detected_at"],
+            "evidence": json.loads(r["evidence"])}
+
+
+def last_event_id() -> int:
+    with store._conn() as c:
+        return c.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0]
+
+
+def events_after(after: int, limit: int = 200) -> list[dict]:
+    """id が after より大きい Event を古い順に返す（SSE の追い付き用）。"""
+    with store._conn() as c:
+        return [_row(r) for r in c.execute("SELECT * FROM events WHERE id>? ORDER BY id LIMIT ?", (after, limit))]
+
+
 def homelab_get_events(subject: str = "", since: str = "", limit: Any = 50, **kwargs: Any) -> str:
     _ = kwargs
     sql, args = "SELECT * FROM events WHERE 1=1", []
@@ -134,8 +151,6 @@ def homelab_get_events(subject: str = "", since: str = "", limit: Any = 50, **kw
         return "Error: since は '24h' / '30m' / '7d' または ISO 時刻、limit は整数で指定してください"
     with store._conn() as c:
         rows = c.execute(sql + " ORDER BY id DESC LIMIT ?", (*args, n)).fetchall()
-    data = [{"id": r["id"], "subject": r["subject"], "kind": r["kind"], "from": r["from_state"],
-             "to": r["to_state"], "flags": json.loads(r["flags"]), "detected_at": r["detected_at"],
-             "evidence": json.loads(r["evidence"])} for r in rows]
+    data = [_row(r) for r in rows]
     # evidence は外部由来のデータ。JSON のまま返し、指示としては扱わない
     return json.dumps(data, ensure_ascii=False, indent=2)

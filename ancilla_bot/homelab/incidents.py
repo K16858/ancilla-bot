@@ -21,6 +21,7 @@ PR 13（診断）が使う口:
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timedelta
 from typing import Any, Callable
@@ -234,6 +235,14 @@ def resolve(incident_id: Any, now: datetime | None = None) -> str:
 
 
 # ---- ツール ----
+
+def signature() -> str:
+    """Incident 表の変化検知用。別プロセス（CLI の ack / resolve）の更新も拾う。"""
+    with store._conn() as c:
+        rows = c.execute("SELECT id, status, severity, acknowledged_at, resolved_at, affected, diagnosis_status "
+                         "FROM incidents ORDER BY id").fetchall()
+    return hashlib.sha256(repr([tuple(r) for r in rows]).encode()).hexdigest()
+
 
 def _summary(r) -> dict:
     return {"id": fmt_id(r["id"]), "subject": r["subject"], "kind": r["kind"], "severity": r["severity"],
