@@ -12,6 +12,13 @@ from ancilla_bot.homelab import store
 def cmd_homelab(args: argparse.Namespace) -> int:
     action = getattr(args, "homelab_command", None)
     try:
+        if action == "autoheal":  # homelab.yaml が壊れていても止められるようにする
+            from ancilla_bot.homelab import autoheal
+
+            if args.switch != "status":
+                autoheal.set_enabled(args.switch == "on")
+            print("autoheal: " + ("on" if autoheal.is_enabled() else "off"))
+            return 0
         i = inv.load_inventory()
         if action == "node-token":
             h = i.host(args.host)
