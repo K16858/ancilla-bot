@@ -1338,7 +1338,7 @@ def main() -> int:
     subparsers.add_parser("discord", help="Discord Bot。先に ancilla run を起動し、DISCORD_BOT_TOKEN を設定すること。")
     subparsers.add_parser("slack", help="Slack Bot（Socket Mode）。先に ancilla run を起動し、SLACK_BOT_TOKEN と SLACK_APP_TOKEN を設定すること。")
     plugin_parser = subparsers.add_parser("plugin", help="同梱プラグイン（stdio MCP サーバー）を起動")
-    plugin_parser.add_argument("name", choices=["prometheus"])
+    plugin_parser.add_argument("name", choices=["prometheus", "wazuh"])
     runs_parser = subparsers.add_parser("runs", help="agent_runs を一覧表示")
     runs_parser.add_argument("--limit", type=int, default=20)
     trace_parser = subparsers.add_parser("trace", help="agent_run のステップを表示")
