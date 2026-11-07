@@ -184,6 +184,13 @@ def run_bot() -> None:
     intents = discord.Intents.default()
     intents.message_content = True
 
+    owner_id = os.getenv("DISCORD_OWNER_ID", "").strip()
+    if not owner_id:
+        raise SystemExit(
+            "DISCORD_OWNER_ID を設定してください。操作を許可する自分の Discord ユーザー ID です"
+            "（通知先の DISCORD_NOTIFY_USER_ID とは別）。"
+        )
+
     client = discord.Client(intents=intents)
     tree = discord.app_commands.CommandTree(client)
 
@@ -213,7 +220,7 @@ def run_bot() -> None:
 
     @client.event
     async def on_message(message: discord.Message):
-        if message.author == client.user:
+        if message.author == client.user or str(message.author.id) != owner_id:
             return
         text = message.content.strip() if message.content else ""
         is_dm = message.guild is None

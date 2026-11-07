@@ -145,12 +145,18 @@ def run_bot() -> None:
             " App-Level Token (connections:write) を発行してください。"
         )
 
+    owner_id = os.getenv("SLACK_OWNER_ID", "").strip()
+    if not owner_id:
+        raise SystemExit("SLACK_OWNER_ID を設定してください。操作を許可する自分の Slack ユーザー ID（U...）です。")
+
     app = App(token=bot_token)
 
     def _handle_event(body: dict[str, Any], say: Any, is_mention: bool) -> None:
         event = body.get("event", {})
         if event.get("bot_id"):
             return  # 自分自身のメッセージは無視
+        if event.get("user") != owner_id:
+            return  # オーナー以外は会話も承認も不可
         text = (event.get("text") or "").strip()
         if is_mention:
             text = re.sub(r"<@[A-Z0-9]+>", "", text).strip()
