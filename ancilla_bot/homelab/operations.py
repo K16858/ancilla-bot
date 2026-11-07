@@ -12,7 +12,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 
 from loguru import logger
 
@@ -73,10 +73,12 @@ def run_action(
     requested_by: str,
     run_id: str | None = None,
     dry_run: bool = False,
+    on_done: Callable[[bool, str], None] | None = None,
 ) -> dict:
     """-> {ok, error, output, log_id, verifying}。requested_by: "llm" | "autoheal"。
 
     dry_run は判定と記録だけ行い、Node には送らない。
+    on_done(ok, result) は検証が終わったとき（検証スレッド上で）1 回呼ばれる。
     """
     # 1) 宣言との突き合わせ（未宣言・未対応は ActionError = DENY）
     try:
@@ -120,7 +122,7 @@ def run_action(
     verifying = ok and actions.CATALOG[r.action].verify
     if verifying:
         _update(log_id, verification="pending")
-        _spawn(_verify, log_id, r.target)
+        _spawn(_verify, log_id, r.target, on_done)
     return {"ok": ok, "error": error, "output": output, "log_id": log_id, "verifying": verifying}
 
 
@@ -130,7 +132,7 @@ def _spawn(fn, *a) -> None:
     threading.Thread(target=fn, args=a, daemon=True, name="ancilla-verify").start()
 
 
-def _verify(log_id: int, target: str) -> None:
+def _verify(log_id: int, target: str, on_done: Callable[[bool, str], None] | None = None) -> None:
     """報告間隔ごとに最大 VERIFY_POLLS 回、target が healthy に戻ったか確かめる。"""
     with store._conn() as c:
         incident_id = c.execute("SELECT incident_id FROM action_log WHERE id=?", (log_id,)).fetchone()[0]
@@ -153,6 +155,11 @@ def _verify(log_id: int, target: str) -> None:
             append_notification(message=result, source="system", level="warning", title=f"restart {target}")
         except Exception as e:  # 通知の失敗で検証記録を失わない
             logger.warning("verify notify failed: {}", e)
+    if on_done:
+        try:
+            on_done(ok, result)
+        except Exception as e:
+            logger.warning("verify callback failed: {}", e)
 
 
 # ---- LLM ツール ----

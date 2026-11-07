@@ -61,6 +61,11 @@ services:
     unit: ollama
     health_url: http://gpu-node.home.arpa:11434/api/version
     criticality: normal
+    # 操作の許可（書いていない操作は DENY）。restart: approval | auto | auto_dry_run、logs: approval | auto
+    # restart: auto は承認なしの自動再起動（Self-Healing）。最初は auto_dry_run で
+    # 「再起動するはずだった」通知だけを出して様子を見てから、auto に切り替えること。
+    # 自動再起動は ancilla homelab autoheal off で一括停止できる。
+    # actions: {restart: auto_dry_run, logs: auto}
   - id: wazuh
     name: Wazuh Manager
     host: node-1

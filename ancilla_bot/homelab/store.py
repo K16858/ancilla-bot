@@ -137,6 +137,14 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 )
 """
 
+# 小さな設定値（autoheal の停止スイッチなど）
+_SCHEMA_SETTINGS = """
+CREATE TABLE IF NOT EXISTS homelab_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+)
+"""
+
 API_ROLES = ("read", "operate")
 
 
@@ -153,6 +161,7 @@ def _conn() -> Iterator[sqlite3.Connection]:
         c.execute(_SCHEMA_ACTION_LOG)
         c.execute(_SCHEMA_INCIDENT_NOTES)
         c.execute(_SCHEMA_API_TOKENS)
+        c.execute(_SCHEMA_SETTINGS)
         with c:
             yield c
 
@@ -287,3 +296,15 @@ def verify_api_token(token: str) -> str | None:
 def list_api_tokens() -> list[dict]:
     with _conn() as c:
         return [dict(r) for r in c.execute("SELECT name, role, created_at, revoked_at FROM api_tokens ORDER BY name")]
+
+
+def get_setting(key: str, default: str = "") -> str:
+    with _conn() as c:
+        r = c.execute("SELECT value FROM homelab_settings WHERE key=?", (key,)).fetchone()
+    return r["value"] if r else default
+
+
+def set_setting(key: str, value: str) -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO homelab_settings (key, value) VALUES (?, ?) "
+                  "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))

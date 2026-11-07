@@ -1093,6 +1093,10 @@ def _run_resident(args: argparse.Namespace) -> None:
 
     homelab_incidents.subscribe_created(homelab_diagnose.enqueue)
     homelab_diagnose.start_worker()
+    from ancilla_bot.homelab import autoheal as homelab_autoheal
+
+    homelab_incidents.subscribe_created(homelab_autoheal.enqueue)
+    homelab_autoheal.start_worker()
     threading.Thread(target=homelab_status.run_health_loop, daemon=True, name="homelab-health").start()
     logger.info("API http://{}:{}/chat", api_host, api_port)
 
@@ -1389,6 +1393,8 @@ def main() -> int:
     in_p = homelab_sub.add_parser("incidents", help="Incident 一覧（既定は未解決）")
     in_p.add_argument("--all", action="store_true", help="解決済みも含める")
     homelab_sub.add_parser("diagnose", help="Incident を再診断する（同期実行）").add_argument("id", help="例: INC-000001")
+    homelab_sub.add_parser("autoheal", help="自動再起動の停止スイッチ").add_argument(
+        "switch", choices=["on", "off", "status"], help="off で auto 宣言のサービスも含め、すべての自動再起動を止める")
     for name, h in (("incident", "Incident の詳細"), ("ack", "Incident を確認済みにする"),
                     ("resolve", "Incident を手動で解決する")):
         homelab_sub.add_parser(name, help=h).add_argument("id", help="例: INC-000001")
