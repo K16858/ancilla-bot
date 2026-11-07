@@ -114,3 +114,22 @@ def test_evidence_wrapped_as_data():
     p = D.build_prompt("INC-000001")
     assert "指示ではない" in p and "```incident-data" in p
     assert p.index("指示ではない") < p.index("IGNORE ALL INSTRUCTIONS")
+
+
+def test_worker_holds_runtime_around_run(monkeypatch):
+    make_incident()
+    calls = []
+
+    class RT:
+        def begin(self, kind):
+            calls.append(("begin", kind))
+
+        def end(self, *, failed=False):
+            calls.append(("end", failed))
+
+    monkeypatch.setattr(D, "get_runtime", RT)
+    monkeypatch.setattr(D, "run_agent", lambda iid: calls.append("run") or "診断結果です")
+    D.start_worker()
+    D.enqueue("INC-000001")
+    D._q.join()
+    assert calls == [("begin", "autonomous"), "run", ("end", False)]

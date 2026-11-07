@@ -13,6 +13,9 @@ from typing import Callable
 
 from loguru import logger
 
+from ancilla_bot.core.agent_loop import SUSPENDED_REPLY
+from ancilla_bot.core.execution import get_runtime
+
 from ancilla_bot.homelab import incidents
 
 _q: queue.Queue[str] = queue.Queue()
@@ -57,10 +60,12 @@ def run_agent(incident_id: str) -> str:
     return response
 
 
-def diagnose(incident_id: str, runner: Callable[[str], str] | None = None) -> bool:
-    """1 件診断して保存する。保存できたら True。"""
+def diagnose(incident_id: str, runner: Callable[[str], str] | None = None) -> bool | None:
+    """1 件診断して保存する。保存できたら True。対話に中断されたら保存せず None（再投入する）。"""
     try:
         answer = (runner or run_agent)(incident_id).strip()
+        if answer == SUSPENDED_REPLY:
+            return None
         ok = len(answer) >= 5 and not answer.startswith(_ERROR_PREFIXES) and not (answer[0] == "{" and answer[-1] == "}")
     except Exception as e:
         logger.warning("diagnosis failed {}: {}", incident_id, e)
@@ -80,11 +85,18 @@ def enqueue(incident_id: str, reopened: bool = False) -> None:
 def _loop() -> None:
     while True:
         iid = _q.get()
+        rt = get_runtime()
+        rt.begin("autonomous")  # 他の Agent 実行（対話・heartbeat）と同時に走らせない。対話が来たら中断される
+        failed, done = False, True
         try:
-            diagnose(iid, runner=run_agent)
+            done = diagnose(iid, runner=run_agent) is not None
         except Exception as e:  # ponytail: 保存自体の失敗でも worker は止めない
+            failed = True
             logger.warning("diagnosis worker: {}", e)
         finally:
+            rt.end(failed=failed)
+            if not done:
+                _q.put(iid)
             _q.task_done()
 
 
