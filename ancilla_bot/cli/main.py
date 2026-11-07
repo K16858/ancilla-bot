@@ -5,6 +5,7 @@ Ancilla-Bot CLIエントリーポイント
 from __future__ import annotations
 
 import argparse
+import functools
 import os
 import signal
 import sys
@@ -62,8 +63,11 @@ REASONING_OBSERVATION_MAX = 100
 DIM = "\033[2m"
 RESET = "\033[0m"
 
-# 履歴最大文字数（未設定時は LLM の n_ctx から自動算出）
-MAX_HISTORY_CHARS = resolve_max_history_chars()
+# 履歴最大文字数（未設定時は LLM の n_ctx から自動算出）。
+# n_ctx 取得は LLM が無いと遅いので import 時ではなく初回使用時に行う（ancilla node 等に影響させない）
+@functools.cache
+def _max_history_chars() -> int:
+    return resolve_max_history_chars()
 
 HEARTBEAT_TIME_STR = os.getenv("ANCILLA_HEARTBEAT_TIME", "03:00")
 HEARTBEAT_INTERVAL_SEC = 60
@@ -788,7 +792,7 @@ def _run_repl(
                         pending_input,
                         history,
                         agent_runtime,
-                        MAX_HISTORY_CHARS,
+                        _max_history_chars(),
                         on_turn,
                         pending_images,
                         source=str(pending.get("source") or "queued"),
@@ -813,7 +817,7 @@ def _run_repl(
                     user_input,
                     history,
                     agent_runtime,
-                    MAX_HISTORY_CHARS,
+                    _max_history_chars(),
                     on_turn,
                     source="repl",
                 )
@@ -984,7 +988,7 @@ def _run_resume(args: argparse.Namespace) -> None:
     response = _process_message_core(
         _build_resume_prompt(run, list_agent_run_steps(args.run_id)),
         history,
-        max_chars=MAX_HISTORY_CHARS,
+        max_chars=_max_history_chars(),
         on_turn=None,
         source="resume",
         parent_run_id=args.run_id,
@@ -1062,7 +1066,7 @@ def _run_resident(args: argparse.Namespace) -> None:
             msg,
             conversation_history,
             runtime,
-            MAX_HISTORY_CHARS,
+            _max_history_chars(),
             None,
             images=imgs,
             source="api",
@@ -1121,12 +1125,12 @@ def _run_resident(args: argparse.Namespace) -> None:
                 history.append(assistant_msg)
             # WS 会話を main 履歴にも追記してディスクに保存（idle/heartbeat 参照用）
             dropped = append_and_trim(
-                conversation_history, [user_msg, assistant_msg], max_chars=MAX_HISTORY_CHARS
+                conversation_history, [user_msg, assistant_msg], max_chars=_max_history_chars()
             )
             if dropped:
                 append_overflow(dropped)
             save_active_history(conversation_history)
-            _run_compress_loop(conversation_history, MAX_HISTORY_CHARS)
+            _run_compress_loop(conversation_history, _max_history_chars())
             return answer, emotion
         finally:
             runtime.end()
@@ -1272,7 +1276,10 @@ def main() -> int:
     )
 
     install_parser = subparsers.add_parser("install", help="コンポーネント初期化")
-    install_parser.add_argument("component", choices=["core", "client"])
+    install_parser.add_argument("component", choices=["core", "client", "node"])
+    install_parser.add_argument("--core", help="node: Core の Node 用 URL（例: wss://core.home.arpa:8768）")
+    install_parser.add_argument("--host-id", help="node: homelab.yaml の Host ID")
+    install_parser.add_argument("--token", help="node: ancilla homelab node-token で発行したトークン")
     install_parser.add_argument("--host", help="client: Core ホスト")
     install_parser.add_argument("--port", type=int, help="client: Core ポート")
 
@@ -1295,6 +1302,7 @@ def main() -> int:
         help="setup show で .env.example の全キーを表示",
     )
 
+    subparsers.add_parser("node", help="Node（HomeLab の状態を Core に送る）をフォアグラウンドで実行")
     subparsers.add_parser("doctor", help="環境診断")
     update_parser = subparsers.add_parser("update", help="ソースと依存を更新")
     update_parser.add_argument("--check", action="store_true", help="更新の有無だけ確認")
@@ -1391,6 +1399,10 @@ def main() -> int:
         return lifecycle.cmd_logs(args)
     if args.command == "_worker":
         return lifecycle.cmd_worker(args)
+    if args.command == "node":
+        from ancilla_bot.node.daemon import run_from_env
+
+        return run_from_env()
     if args.command == "install":
         from ancilla_bot.cli.commands import install as install_cmd
 
