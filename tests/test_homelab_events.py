@@ -135,3 +135,12 @@ def test_startup_grace_skips_process(monkeypatch):
     monkeypatch.setattr(events, "_started", time.monotonic() - 91)
     events.process(interval=30)
     assert called
+
+
+def test_startup_grace_has_floor_for_short_interval(monkeypatch):
+    import time
+
+    called = []
+    monkeypatch.setattr(st, "evaluate_all", lambda *a, **k: called.append(1) or {})
+    monkeypatch.setattr(events, "_started", time.monotonic() - 30)  # Node の再接続バックオフ上限(60s)内
+    assert events.process(interval=3) == [] and not called

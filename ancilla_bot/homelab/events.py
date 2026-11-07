@@ -34,6 +34,7 @@ CONFIRM_COUNT = 2
 _subscribers: list[Callable[[dict], None]] = []
 _started = time.monotonic()  # 起動直後は保存済みの観測が古く、Node 再接続前に host_lost が誤検知されるため猶予する
 GRACE_INTERVALS = 3
+GRACE_MIN_SEC = 90  # Node の再接続バックオフ上限(60s)より短くしない。ANCILLA_HOMELAB_INTERVAL を短くしても誤検知しない
 
 
 def subscribe(fn: Callable[[dict], None]) -> None:
@@ -104,7 +105,7 @@ def update(statuses: dict[str, st.SubjectStatus], now: datetime | None = None) -
 
 def process(now: datetime | None = None, interval: float | None = None) -> list[dict]:
     kw = {} if interval is None else {"interval": interval}
-    if time.monotonic() - _started < GRACE_INTERVALS * (interval or st.REPORT_INTERVAL_SEC):
+    if time.monotonic() - _started < max(GRACE_MIN_SEC, GRACE_INTERVALS * (interval or st.REPORT_INTERVAL_SEC)):
         return []
     return update(st.evaluate_all(now, **kw), now)
 
