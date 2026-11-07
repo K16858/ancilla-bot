@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
 from ancilla_bot.cli import envfile, ux
 from ancilla_bot.cli.paths import ensure_runtime_dirs, ensure_workspace, get_root
@@ -128,24 +131,47 @@ WantedBy=multi-user.target
 """
 
 
-def schtasks_create_cmd(exe: str) -> list[str]:
-    """Windows の常駐方式: タスクスケジューラ（ログオン時起動）。
+def schtasks_create_cmd(xml_path: str) -> list[str]:
+    return ["schtasks", "/Create", "/TN", WIN_TASK, "/XML", xml_path, "/F"]
+
+
+def task_xml(exe: str, user: str, workdir: str) -> str:
+    """Windows の常駐方式: タスクスケジューラ（ログオン時起動）のタスク XML。
 
     Windows Service は pywin32/nssm が要り、管理者権限も必要になるため採らない。
-    ONLOGON + /RL LIMITED は現在ユーザーで管理者権限なしに登録できる。
-    schtasks では失敗時の自動再起動を簡潔に書けないので、再接続はデーモン自身に任せる。
+    現在ユーザーの LogonTrigger + LeastPrivilege は管理者権限なしに登録でき、昇格もしない。
+    既定の実行時間制限（72h で強制終了）とバッテリー時停止を無効にし、失敗時は 1 分間隔で再起動する。
     """
-    return ["schtasks", "/Create", "/TN", WIN_TASK, "/SC", "ONLOGON", "/RL", "LIMITED",
-            "/TR", f'"{exe}" node', "/F"]
+    e = xml_escape
+    return f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{e(user)}</UserId></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><UserId>{e(user)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <RestartOnFailure><Interval>PT1M</Interval><Count>999</Count></RestartOnFailure>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>{e(exe)}</Command><Arguments>node</Arguments><WorkingDirectory>{e(workdir)}</WorkingDirectory></Exec></Actions>
+</Task>
+"""
 
 
 def _install_node_windows(root: Path) -> int:
     exe = shutil.which("ancilla") or str(Path(sys.argv[0]).resolve())
+    user = os.environ.get("USERDOMAIN", "") + "\\" + getpass.getuser() if os.environ.get("USERDOMAIN") else getpass.getuser()
+    fd, xml_path = tempfile.mkstemp(suffix=".xml")
     try:
-        subprocess.run(schtasks_create_cmd(exe), check=True, capture_output=True, text=True)
+        with os.fdopen(fd, "w", encoding="utf-16") as f:
+            f.write(task_xml(exe, user, str(root)))
+        subprocess.run(schtasks_create_cmd(xml_path), check=True, capture_output=True, text=True)
         subprocess.run(["schtasks", "/Run", "/TN", WIN_TASK], check=True, capture_output=True, text=True)
     except (OSError, subprocess.CalledProcessError) as e:
         return ux.fail(f"タスクスケジューラ登録に失敗しました: {e}", next_cmds=["ancilla node"])
+    finally:
+        os.unlink(xml_path)
     print(f"タスク {WIN_TASK}（ログオン時に起動）を登録して起動しました。")
     print(f"  状態: schtasks /Query /TN {WIN_TASK}")
     print("  Core 側: ancilla homelab nodes")

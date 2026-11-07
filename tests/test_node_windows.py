@@ -52,10 +52,18 @@ def test_check_service_dispatch(monkeypatch):
 
 
 def test_schtasks_cmd():
-    cmd = install.schtasks_create_cmd(r"C:\x\ancilla.exe")
-    assert cmd[:4] == ["schtasks", "/Create", "/TN", "AncillaNode"]
-    assert "ONLOGON" in cmd and "LIMITED" in cmd and "/F" in cmd
-    assert cmd[cmd.index("/TR") + 1] == r'"C:\x\ancilla.exe" node'
+    assert install.schtasks_create_cmd("t.xml") == ["schtasks", "/Create", "/TN", "AncillaNode", "/XML", "t.xml", "/F"]
+
+
+def test_task_xml():
+    import xml.etree.ElementTree as ET
+    x = install.task_xml(r"C:\a&b\ancilla.exe", r"PC\me", r"C:\root")
+    ET.fromstring(x.split("?>", 1)[1])  # well-formed (escaped)
+    for s in ["<ExecutionTimeLimit>PT0S<", "<DisallowStartIfOnBatteries>false<",
+              "<StopIfGoingOnBatteries>false<", "IgnoreNew", "<Interval>PT1M<", "<Count>999<",
+              "InteractiveToken", "LeastPrivilege", "<LogonTrigger>", r"C:\a&amp;b\ancilla.exe",
+              "<Arguments>node<"]:
+        assert s in x
 
 
 def test_install_windows_runs_create_then_run(monkeypatch, tmp_path):
@@ -63,4 +71,4 @@ def test_install_windows_runs_create_then_run(monkeypatch, tmp_path):
     monkeypatch.setattr(install.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
     monkeypatch.setattr(install.shutil, "which", lambda n: r"C:\x\ancilla.exe")
     assert install._install_node_windows(tmp_path) == 0
-    assert calls[0][1] == "/Create" and calls[1][:2] == ["schtasks", "/Run"]
+    assert calls[0][1] == "/Create" and "/XML" in calls[0] and calls[1][:2] == ["schtasks", "/Run"]
