@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 from ancilla_bot.cli import envfile, ux
 from ancilla_bot.cli.paths import ensure_runtime_dirs, ensure_workspace, get_root
+from ancilla_bot.homelab.actions import UNIT_RE
 
 
 def cmd_install(args: argparse.Namespace) -> int:
@@ -178,6 +180,45 @@ def _install_node_windows(root: Path) -> int:
     return 0
 
 
+POLKIT_RULE_PATH = "/etc/polkit-1/rules.d/50-ancilla-node.rules"
+_USER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,31}$")
+
+
+def polkit_rules_text(user: str, units: list[str]) -> str:
+    """Node が `systemctl restart <unit>` を非 root で実行するための polkit ルール（unit ごとに 1 条件）。
+
+    計画の「unit ごとの sudoers 1 行」からの変更: Node の systemd unit は NoNewPrivileges=yes で、
+    sudo（setuid）が効かない。polkit は systemd 側（PID 1）が認可するので NoNewPrivileges と両立する。
+    許可は manage-units の restart verb × 列挙した unit × Node 実行ユーザーだけ。
+    """
+    if not _USER_RE.fullmatch(user):
+        raise ValueError(f"ユーザー名が不正です: {user}")
+    names = []
+    for u in units:
+        if not UNIT_RE.fullmatch(u):
+            raise ValueError(f"unit 名が不正です: {u}")
+        names.append(u if u.endswith(".service") else f"{u}.service")
+    if not names:
+        return ""
+    conds = " ||\n            ".join(f'action.lookup("unit") == "{n}"' for n in names)
+    return f"""// ancilla install node が生成。Node ユーザーに、下記 unit の restart だけを許可する
+polkit.addRule(function(action, subject) {{
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        subject.user == "{user}" &&
+        action.lookup("verb") == "restart" &&
+        (
+            {conds}
+        )) {{
+        return polkit.Result.YES;
+    }}
+}});
+"""
+
+
+def _csv(v: str | None) -> list[str]:
+    return [x.strip() for x in (v or "").split(",") if x.strip()]
+
+
 def _sudo(cmd: list[str], **kw) -> None:
     subprocess.run(["sudo", *cmd], check=True, **kw)
 
@@ -191,10 +232,16 @@ def _install_node(args: argparse.Namespace) -> int:
         )
     if not core.startswith(("ws://", "wss://")):
         return ux.fail("--core は ws:// か wss:// で始まる URL を指定してください。")
+    allow_restart, allow_logs = _csv(getattr(args, "allow_restart", None)), _csv(getattr(args, "allow_logs", None))
+    for u in allow_restart + allow_logs:
+        if not UNIT_RE.fullmatch(u):
+            return ux.fail(f"--allow-restart / --allow-logs の unit 名が不正です: {u}")
     root = get_root()
     envfile.ensure_env_file(root)
     envfile.set_values(
-        {"ANCILLA_NODE_CORE_URL": core, "ANCILLA_NODE_HOST_ID": host_id, "ANCILLA_NODE_TOKEN": token},
+        {"ANCILLA_NODE_CORE_URL": core, "ANCILLA_NODE_HOST_ID": host_id, "ANCILLA_NODE_TOKEN": token,
+         # Node 側のローカル許可リスト（Core が乗っ取られてもここにない unit は触れない）。毎回上書きする
+         "ANCILLA_NODE_ALLOW_RESTART": ",".join(allow_restart), "ANCILLA_NODE_ALLOW_LOGS": ",".join(allow_logs)},
         path=envfile.env_path(root),
     )
     print(f"Node settings written to {envfile.env_path(root)}")
@@ -209,11 +256,19 @@ def _install_node(args: argparse.Namespace) -> int:
     exe = shutil.which("ancilla") or str(Path(sys.argv[0]).resolve())
     unit = node_unit_text(getpass.getuser(), root, exe)
     try:
+        rules = polkit_rules_text(getpass.getuser(), allow_restart)
+        if rules:
+            _sudo(["tee", POLKIT_RULE_PATH], input=rules, text=True, stdout=subprocess.DEVNULL)
+        else:  # 許可リストを空にして再インストールしたら古いルールを消す
+            _sudo(["rm", "-f", POLKIT_RULE_PATH])
         _sudo(["tee", f"/etc/systemd/system/{NODE_SERVICE}.service"], input=unit, text=True, stdout=subprocess.DEVNULL)
         _sudo(["systemctl", "daemon-reload"])
         _sudo(["systemctl", "enable", "--now", NODE_SERVICE])
     except (OSError, subprocess.CalledProcessError) as e:
         return ux.fail(f"systemd 登録に失敗しました: {e}", next_cmds=["ancilla node"])
+    if allow_logs:
+        print("ログ取得 (journalctl) には Node 実行ユーザーが systemd-journal グループに必要です（自動では変更しません）:")
+        print(f"  sudo usermod -aG systemd-journal {getpass.getuser()}   # 反映にはサービス再起動が必要")
     print(f"{NODE_SERVICE} を登録して起動しました。")
     print(f"  状態: systemctl status {NODE_SERVICE}")
     print("  Core 側: ancilla homelab nodes")

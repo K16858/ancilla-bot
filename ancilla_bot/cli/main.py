@@ -1294,6 +1294,8 @@ def main() -> int:
     install_parser.add_argument("--core", help="node: Core の Node 用 URL（例: wss://core.home.arpa:8768）")
     install_parser.add_argument("--host-id", help="node: homelab.yaml の Host ID")
     install_parser.add_argument("--token", help="node: ancilla homelab node-token で発行したトークン")
+    install_parser.add_argument("--allow-restart", help="node: Node が再起動を許す unit/コンテナ名（カンマ区切り）")
+    install_parser.add_argument("--allow-logs", help="node: Node がログ取得を許す unit/コンテナ名（カンマ区切り）")
     install_parser.add_argument("--host", help="client: Core ホスト")
     install_parser.add_argument("--port", type=int, help="client: Core ポート")
 
