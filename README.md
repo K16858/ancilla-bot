@@ -43,3 +43,7 @@ ancilla update                # 更新前に stop が必要
 ```
 
 設定の詳細は `.env.example`、WebSocket 仕様は `docs/ws_client_api.md` を参照。
+
+## HomeLab
+
+自宅サーバーの状態監視・Incident 通知・診断・承認付き再起動・Self-Healing は [`docs/homelab.md`](docs/homelab.md) を参照（Client API / WebUI は [`docs/client_api.md`](docs/client_api.md)）。
