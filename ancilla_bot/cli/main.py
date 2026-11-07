@@ -1335,6 +1335,15 @@ def main() -> int:
     use_p = persona_sub.add_parser("use", help="活性 Persona を切替")
     use_p.add_argument("name", help="Persona 名")
 
+    homelab_parser = subparsers.add_parser("homelab", help="HomeLab Inventory の照会・検証")
+    homelab_sub = homelab_parser.add_subparsers(dest="homelab_command", required=True)
+    homelab_sub.add_parser("hosts", help="Host 一覧")
+    hs_p = homelab_sub.add_parser("services", help="Service 一覧")
+    hs_p.add_argument("--host", default="", help="Host ID で絞り込み")
+    hi_p = homelab_sub.add_parser("inspect", help="Host / Service の詳細と影響範囲")
+    hi_p.add_argument("id", help="Host ID または Service ID")
+    homelab_sub.add_parser("check", help="homelab.yaml の検証のみ")
+
     skill_parser = subparsers.add_parser("skill", help="workspace Skill の昇格・ロールバック")
     skill_sub = skill_parser.add_subparsers(dest="skill_command", required=True)
     promote_p = skill_sub.add_parser("promote", help="trial Skill を active に昇格")
@@ -1391,6 +1400,10 @@ def main() -> int:
         if not getattr(args, "persona_command", None):
             args.persona_command = "list"
         return persona_cmd.cmd_persona(args)
+    if args.command == "homelab":
+        from ancilla_bot.cli.commands.homelab import cmd_homelab
+
+        return cmd_homelab(args)
     if args.command == "skill":
         from ancilla_bot.skills.evolution import promote_skill, rollback_skill
 

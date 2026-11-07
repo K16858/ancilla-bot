@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from ancilla_bot.heartbeat.db import manage_state as heartbeat_manage_state
 from ancilla_bot.memory.core import build_core_memory
+from ancilla_bot.homelab.inventory import homelab_inspect, homelab_list_hosts, homelab_list_services
 from ancilla_bot.tools.end_edge_session import end_edge_session
 from ancilla_bot.tools.fetch_page import fetch_page
 from ancilla_bot.tools.get_audio import get_audio
@@ -44,6 +45,16 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "search_arxiv": (
         "Search arXiv papers. "
         "action_input: {\"query\": \"...\", \"max_results\": 5}."
+    ),
+    "homelab_list_hosts": "List declared HomeLab hosts (from homelab.yaml). action_input: {}.",
+    "homelab_list_services": (
+        "List declared HomeLab services. "
+        "action_input: {\"host\": \"core\"}. host optional (filter by host id)."
+    ),
+    "homelab_inspect": (
+        "Inspect a HomeLab host or service by id. Host: its services. "
+        "Service: dependencies and the services affected (transitively) if it stops. "
+        "action_input: {\"id\": \"prometheus\"}."
     ),
     # ── File operations ───────────────────────────────────────────────────
     "list_workspace": (
@@ -335,6 +346,9 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "web_search": web_search,
     "fetch_page": fetch_page,
     "search_arxiv": search_arxiv,
+    "homelab_list_hosts": homelab_list_hosts,
+    "homelab_list_services": homelab_list_services,
+    "homelab_inspect": homelab_inspect,
     "list_workspace": list_workspace,
     "edit_file_safe": edit_file_safe,
     "bash": bash,

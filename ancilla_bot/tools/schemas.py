@@ -272,6 +272,14 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
             "timeout_sec": {"type": "integer", "description": "Timeout in seconds (default 60)"},
         },
     ),
+    "homelab_list_hosts": _EMPTY_OBJECT,
+    "homelab_list_services": _schema(
+        {"host": {"type": "string", "description": "Optional host id to filter by"}},
+    ),
+    "homelab_inspect": _schema(
+        {"id": {"type": "string", "description": "Host id or service id"}},
+        required=["id"],
+    ),
     "search_arxiv": _schema(
         {
             "query": {"type": "string", "description": "arXiv search query"},
