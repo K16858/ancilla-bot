@@ -6,7 +6,7 @@ from contextvars import ContextVar
 
 run_source: ContextVar[str] = ContextVar("run_source", default="unknown")
 
-_AUTONOMOUS = frozenset({"idle_reflection", "heartbeat", "proactive"})
+_AUTONOMOUS = frozenset({"idle_reflection", "heartbeat", "proactive", "event"})
 
 
 def is_autonomous() -> bool:
@@ -17,6 +17,6 @@ def current_source() -> str:
     src = run_source.get()
     if src in ("idle_reflection", "proactive"):
         return "idle"
-    if src == "heartbeat":
+    if src in ("heartbeat", "event"):
         return "scheduler"
     return "user"

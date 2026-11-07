@@ -50,6 +50,16 @@ def cmd_homelab(args: argparse.Namespace) -> int:
             }[action]()
             print(out)
             return 1 if out.startswith("Error") else 0
+        elif action == "diagnose":
+            from ancilla_bot.homelab import diagnose, incidents
+
+            iid = incidents.fmt_id(incidents.parse_id(args.id) or 0)
+            if incidents.homelab_get_incident(iid).startswith("Error"):
+                print(f"Error: {args.id} は存在しません")
+                return 1
+            ok = diagnose.diagnose(iid)
+            print(incidents.homelab_get_incident(iid) if ok else "診断未実施（LLM が使えないか失敗しました）")
+            return 0 if ok else 1
         elif action == "hosts":
             print(inv.format_hosts(i))
         elif action == "services":

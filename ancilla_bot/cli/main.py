@@ -1088,6 +1088,10 @@ def _run_resident(args: argparse.Namespace) -> None:
 
     node_channel.set_telemetry_handler(homelab_status.on_telemetry)
     homelab_events.subscribe(homelab_incidents.handle)
+    from ancilla_bot.homelab import diagnose as homelab_diagnose
+
+    homelab_incidents.subscribe_created(homelab_diagnose.enqueue)
+    homelab_diagnose.start_worker()
     threading.Thread(target=homelab_status.run_health_loop, daemon=True, name="homelab-health").start()
     logger.info("API http://{}:{}/chat", api_host, api_port)
 
@@ -1381,6 +1385,7 @@ def main() -> int:
     ev_p.add_argument("--subject", default="", help="Host ID または Service ID")
     in_p = homelab_sub.add_parser("incidents", help="Incident 一覧（既定は未解決）")
     in_p.add_argument("--all", action="store_true", help="解決済みも含める")
+    homelab_sub.add_parser("diagnose", help="Incident を再診断する（同期実行）").add_argument("id", help="例: INC-000001")
     for name, h in (("incident", "Incident の詳細"), ("ack", "Incident を確認済みにする"),
                     ("resolve", "Incident を手動で解決する")):
         homelab_sub.add_parser(name, help=h).add_argument("id", help="例: INC-000001")
