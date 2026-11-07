@@ -43,6 +43,12 @@ def _require_config(model: str | None, base_url: str | None = None) -> tuple[str
     return resolved_base, use_model
 
 
+def _auth_headers() -> dict[str, str] | None:
+    """LLM_API_KEY があれば Bearer 認証ヘッダを返す（Sarashina API 等のホスト型エンドポイント用）。"""
+    key = os.getenv("LLM_API_KEY", "").strip()
+    return {"Authorization": f"Bearer {key}"} if key else None
+
+
 def _model_base_name(model: str) -> str:
     name = model.rsplit("/", 1)[-1].lower()
     return name.split(":", 1)[0]
@@ -252,7 +258,7 @@ def _post_chat(url: str, body: dict[str, Any], *, timeout: float) -> dict[str, A
     from ancilla_bot.llm.http import post_json
 
     try:
-        resp = post_json(url, body, timeout=timeout)
+        resp = post_json(url, body, timeout=timeout, headers=_auth_headers())
         resp.raise_for_status()
     except httpx.HTTPStatusError as e:
         detail = (e.response.text or "")[:500]
@@ -293,7 +299,7 @@ def embed_text(
 
     from ancilla_bot.llm.http import post_json
 
-    resp = post_json(url, body, timeout=timeout)
+    resp = post_json(url, body, timeout=timeout, headers=_auth_headers())
     resp.raise_for_status()
     data = resp.json()
 

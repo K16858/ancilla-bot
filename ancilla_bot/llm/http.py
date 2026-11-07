@@ -27,5 +27,11 @@ def close_client() -> None:
             _client = None
 
 
-def post_json(url: str, body: dict[str, Any], *, timeout: float) -> httpx.Response:
-    return get_client().post(url, json=body, timeout=timeout)
+def post_json(
+    url: str,
+    body: dict[str, Any],
+    *,
+    timeout: float,
+    headers: dict[str, str] | None = None,
+) -> httpx.Response:
+    return get_client().post(url, json=body, timeout=timeout, headers=headers)
