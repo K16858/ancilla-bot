@@ -44,7 +44,7 @@ def _require_config(model: str | None, base_url: str | None = None) -> tuple[str
 
 
 def _auth_headers() -> dict[str, str] | None:
-    """LLM_API_KEY があれば Bearer 認証ヘッダを返す（Sarashina API 等のホスト型エンドポイント用）。"""
+    """LLM_API_KEY があれば Bearer 認証ヘッダを返す（ホスト型エンドポイント用）。"""
     key = os.getenv("LLM_API_KEY", "").strip()
     return {"Authorization": f"Bearer {key}"} if key else None
 

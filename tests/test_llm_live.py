@@ -1,6 +1,9 @@
-"""Sarashina API（OpenAI 互換）への実通信テスト。SARASHINA_API_KEY が無ければ skip。
+"""OpenAI 互換エンドポイントへの実通信テスト。LIVE_LLM_BASE_URL と LIVE_LLM_MODEL が無ければ skip。
 
-キーは .env（gitignore 済み）か環境変数に置く。リポジトリへは書かない。
+本体設定（LLM_*）とは分けてある。キーは .env（gitignore 済み）か環境変数に置き、リポジトリへは書かない。
+  LIVE_LLM_BASE_URL=https://...   （/v1/chat/completions の手前まで）
+  LIVE_LLM_MODEL=...
+  LIVE_LLM_API_KEY=...            （認証不要なら省略）
 """
 
 import os
@@ -14,15 +17,15 @@ from ancilla_bot.llm.tool_adapter import _build_ollama_tools, _native_message_to
 
 load_dotenv()
 
-BASE = os.getenv("SARASHINA_BASE_URL", "https://api.sarashina.ai")
-MODEL = os.getenv("SARASHINA_MODEL", "sarashina3-mini")
+BASE = os.getenv("LIVE_LLM_BASE_URL", "")
+MODEL = os.getenv("LIVE_LLM_MODEL", "")
 
-pytestmark = pytest.mark.skipif(not os.getenv("SARASHINA_API_KEY"), reason="SARASHINA_API_KEY not set")
+pytestmark = pytest.mark.skipif(not (BASE and MODEL), reason="LIVE_LLM_BASE_URL / LIVE_LLM_MODEL not set")
 
 
 @pytest.fixture(autouse=True)
 def api_key(monkeypatch):
-    monkeypatch.setenv("LLM_API_KEY", os.environ["SARASHINA_API_KEY"])
+    monkeypatch.setenv("LLM_API_KEY", os.getenv("LIVE_LLM_API_KEY", ""))
     monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
 
 
