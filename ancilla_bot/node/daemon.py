@@ -14,6 +14,7 @@ from loguru import logger
 from websockets.asyncio.client import connect
 
 from ancilla_bot.node import collect
+from ancilla_bot.node.execute import Executor
 
 BACKOFF_START_SEC = 1.0
 BACKOFF_MAX_SEC = 60.0
@@ -25,6 +26,14 @@ def _version() -> str:
         return version("ancilla-bot")
     except PackageNotFoundError:
         return "unknown"
+
+
+async def _run_command(ws, executor: Executor, cmd: dict) -> None:
+    try:
+        res = await asyncio.to_thread(executor.handle, cmd)
+        await ws.send(json.dumps(res))
+    except Exception as e:  # 切断中など。Core 側は timeout になり、再送されても結果は記憶済み
+        logger.warning("node: command_result 送信失敗: {}", e)
 
 
 async def _session(ws, state: dict, backoff_start: float) -> None:
@@ -44,6 +53,10 @@ async def _session(ws, state: dict, backoff_start: float) -> None:
             state["interval"] = max(float(cfg.get("interval", 30)), 0.1)
             state["services"] = list(cfg.get("services") or [])
             logger.info("node: config interval={} services={}", state["interval"], len(state["services"]))
+        elif isinstance(cfg, dict) and cfg.get("type") == "command":
+            task = asyncio.create_task(_run_command(ws, state["executor"], cfg))
+            state["tasks"].add(task)
+            task.add_done_callback(state["tasks"].discard)
         cfg = None
         delay = next_at - loop.time()
         if delay <= 0:
@@ -66,9 +79,11 @@ async def run(
     ssl_context: ssl.SSLContext | None = None,
     backoff_start: float = BACKOFF_START_SEC,
     backoff_max: float = BACKOFF_MAX_SEC,
+    executor: Executor | None = None,
 ) -> None:
     """切断・失敗時は指数バックオフで再接続し続ける。切断中の telemetry は送らず捨てる。"""
-    state = {"host_id": host_id, "seq": 0, "interval": 30.0, "services": [], "backoff": backoff_start}
+    state = {"host_id": host_id, "seq": 0, "interval": 30.0, "services": [], "backoff": backoff_start,
+             "executor": executor or Executor(host_id), "tasks": set()}  # 既定 Executor は許可リストが空 = 全拒否
     kwargs = {"ssl": ssl_context} if ssl_context is not None else {}
     psutil.cpu_percent(interval=None)  # 初回の 0.0 を捨てる
     while True:
@@ -98,7 +113,7 @@ def run_from_env() -> int:
     ca = os.getenv("ANCILLA_NODE_CA_FILE", "").strip()
     ctx = ssl.create_default_context(cafile=ca) if ca and url.startswith("wss://") else None
     try:
-        asyncio.run(run(url, host_id, token, ssl_context=ctx))
+        asyncio.run(run(url, host_id, token, ssl_context=ctx, executor=Executor.from_env(host_id)))
     except KeyboardInterrupt:
         pass
     return 0
