@@ -166,7 +166,7 @@ def run_bot() -> None:
             return
         from ancilla_bot.runtime.approval import try_handle_approval_command
 
-        handled = try_handle_approval_command(text) if text else None
+        handled = try_handle_approval_command(text, "slack") if text else None
         response = handled if handled is not None else _call_daemon(text, images if images else None)
         if not (response or "").strip():
             return

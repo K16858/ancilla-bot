@@ -27,6 +27,8 @@ ancilla api token list
 | `GET /api/v1/nodes` | `host_id` `connected` `last_seen` `os` `version` `hostname`（トークン hash は返さない） |
 | `GET /api/v1/incidents?all=1` | 既定は未解決のみ |
 | `GET /api/v1/incidents/{INC-000001}` | 詳細（Event・影響・診断） |
+| `GET /api/v1/me` | トークン名と role（`{name, role}`）。UI が操作ボタンの出し分けに使う |
+| `GET /api/v1/approvals` | 承認待ち。`run_id` `tool` `args` `description`（操作・対象・引数・期限）`created_at` `expires_at`（TTL=`ANCILLA_APPROVAL_TTL_HOURS`）`source`（依頼元） |
 | `GET /api/v1/events?subject=&since=&limit=` | `since` は `24h` / `30m` / `7d` または ISO 時刻 |
 
 エラーは `{"error": "..."}`（400 / 404 / 503=Inventory 不正）。
@@ -35,19 +37,22 @@ ancilla api token list
 
 `POST /api/v1/chat` — `{"message": "...", "images": [...]}` → `{"response": "..."}`（409: 会話中）。`/chat` と同じ処理。
 
+`POST /api/v1/approvals/{run_id}/approve` / `/reject` — `{"message": "..."}`。CLI（`ancilla approve`）・Discord・Slack と同じ `approve_run` / `reject_run` を呼ぶので、期限（TTL）と Policy の再検査も同一。承認は同期実行で、homelab の再起動は Node の応答待ち（最大 約 60 秒）でブロックする（接続ごとのスレッドなので他は塞がれない）。拒否・期限切れ・Policy DENY も 200 でメッセージに入る。承認待ちの確保は DB の `UPDATE ... WHERE status='pending'` で原子的に行うため、同時に承認しても実行は 1 回。承認者は `pending_approvals.resolved_by` と `action_log.approved_by` に `webui:<token名>` / `cli` / `discord` / `slack` で残る。
+
 ## SSE: `GET /api/v1/stream`（role: read）
 
 `fetch` のストリーミングで読む（`EventSource` は Authorization ヘッダーを付けられない）。
 
 - `event: homelab_event` / `id: <events.id>` / `data: <Event JSON>`：新しい Event ごと。
 - `event: incidents_changed` / `data: {}`（id なし）：Incident 表が変わった（作成・確認・解決・診断。CLI からの操作も検出）。受け取ったら `/incidents` を取り直す。
+- `event: approvals_changed` / `data: {}`（id なし）：承認待ちの増減・状態変化。`/approvals` を取り直す。
 - `: heartbeat` コメントを約 15 秒ごと。
 - 追い付き：`Last-Event-ID` ヘッダー（または `?after=<id>`）を付けて再接続すると、その id より後の Event を送る。無指定なら接続後の新規のみ。
 - DB を約 2 秒ごとにポーリングする。接続ごとにスレッドを使うため他のリクエストは塞がれない。
 
 ## WebUI（`/ui`）
 
-Read-only の WebUI（React + Vite、`webui/`）を Core が `/ui/` で静的配信する（`/` は `/ui/` へ 302）。静的ファイルはトークン不要で、データは `/api/v1` がトークンで守る。
+WebUI（React + Vite、`webui/`）を Core が `/ui/` で静的配信する（`/` は `/ui/` へ 302）。静的ファイルはトークン不要で、データは `/api/v1` がトークンで守る。
 
 ```
 cd webui && npm ci && npm run build        # webui/dist に出力

@@ -704,7 +704,7 @@ def _process_message_core(
     """
     from ancilla_bot.runtime.approval import try_handle_approval_command
 
-    handled = try_handle_approval_command(user_input)
+    handled = try_handle_approval_command(user_input, "cli")
     if handled is not None:
         return handled
     if images and not VISION_ENABLED:

@@ -236,7 +236,7 @@ def run_bot() -> None:
             return
         from ancilla_bot.runtime.approval import try_handle_approval_command
 
-        handled = try_handle_approval_command(text) if text else None
+        handled = try_handle_approval_command(text, "discord") if text else None
         if handled is not None:
             response = handled
         else:

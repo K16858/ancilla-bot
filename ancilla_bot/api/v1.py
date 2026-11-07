@@ -28,6 +28,9 @@ def route(path: str, q: dict[str, str]) -> tuple[int, Any]:
         if parts == ["nodes"]:
             keep = ("host_id", "connected", "last_seen", "os", "version", "hostname", "issued_at", "revoked_at")
             return 200, [{k: n[k] for k in keep} for n in store.list_nodes()]
+        if parts == ["approvals"]:
+            from ancilla_bot.runtime import approval
+            return 200, approval.list_pending()
         if parts == ["events"]:
             return _tool(events.homelab_get_events(q.get("subject", ""), q.get("since", ""), q.get("limit") or 50))
         if parts == ["incidents"]:

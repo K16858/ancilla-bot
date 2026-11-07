@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  Unauthorized, clearToken, get, getToken, setToken, stream,
-  type Conn, type Evidence, type Host, type Incident, type IncidentDetail, type NodeInfo, type Service, type Summary,
+  Unauthorized, clearToken, get, getToken, post, setToken, stream,
+  type Approval, type Conn, type Evidence, type Host, type Incident, type IncidentDetail, type Me, type NodeInfo, type Service, type Summary,
 } from "./api";
 
 type Ctx = { rev: number; now: number; logout: () => void };
@@ -392,6 +392,56 @@ function Nodes() {
   );
 }
 
+function Approvals({ me, onResult }: { me?: Me; onResult: () => void }) {
+  const r = useGet<Approval[]>("/approvals");
+  const [msg, setMsg] = useState<{ run: string; text: string; bad?: boolean }>();
+  const [busy, setBusy] = useState("");
+  const canOperate = me?.role === "operate";
+  const act = async (a: Approval, what: "approve" | "reject") => {
+    const label = what === "approve" ? "承認" : "却下";
+    if (!confirm(`${label}しますか？
+
+${a.description || a.tool}
+run_id: ${a.run_id}`)) return;
+    setBusy(a.run_id);
+    try {
+      const res = await post<{ message: string }>(`/approvals/${encodeURIComponent(a.run_id)}/${what}`);
+      setMsg({ run: a.run_id, text: res.message });
+    } catch (e) {
+      setMsg({ run: a.run_id, text: String((e as Error).message), bad: true });
+    }
+    setBusy("");
+    onResult();
+  };
+  return (
+    <>
+      {me && !canOperate && <p className="dim">この token は read 権限のため、閲覧のみです（承認・却下には operate が必要）。</p>}
+      {msg && <p role="status" className={msg.bad ? "err" : ""}>結果 ({msg.run}): {msg.text}</p>}
+      <Async r={r}>
+        {(as) => as.length === 0 ? <p>承認待ちはありません。</p> : (
+          <ul className="plain">
+            {as.map((a) => (
+              <li key={a.run_id} className="card">
+                <strong>{a.tool}</strong> <span className="dim">run_id: {a.run_id} / 依頼元: {a.source || "不明"}</span>
+                <pre className="wrap">{a.description || JSON.stringify(a.args)}</pre>
+                <p className="dim">
+                  依頼: <Time at={a.created_at.replace(" ", "T")} /> ({a.created_at}) / 期限: <Time at={a.expires_at.replace(" ", "T")} /> ({a.expires_at})
+                </p>
+                {canOperate && (
+                  <p>
+                    <button type="button" disabled={busy === a.run_id} onClick={() => void act(a, "approve")}>承認</button>{" "}
+                    <button type="button" disabled={busy === a.run_id} onClick={() => void act(a, "reject")}>却下</button>
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Async>
+    </>
+  );
+}
+
 // ---- 枠 ----
 
 function Login({ onLogin }: { onLogin: () => void }) {
@@ -422,7 +472,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-const NAV: [string, string][] = [["", "概要"], ["hosts", "Host"], ["services", "Service"], ["incidents", "Incident"], ["nodes", "Node"]];
+const NAV: [string, string][] = [["", "概要"], ["hosts", "Host"], ["services", "Service"], ["incidents", "Incident"], ["nodes", "Node"], ["approvals", "承認"]];
 const CONN: Record<Conn, string> = {
   connecting: "リアルタイム更新: 接続中…", open: "リアルタイム更新: 接続済み", retrying: "リアルタイム更新: 再接続中…",
 };
@@ -443,6 +493,12 @@ function Shell({ logout }: { logout: () => void }) {
   const [now, setNow] = useState(Date.now());
   const [conn, setConn] = useState<Conn>("connecting");
   const { kind, id } = useHash();
+  const [me, setMe] = useState<Me>();
+  const [pending, setPending] = useState(0);
+  useEffect(() => { get<Me>("/me").then(setMe).catch(() => {}); }, []);
+  useEffect(() => { // ナビのバッジ用
+    get<Approval[]>("/approvals").then((a) => setPending(a.length)).catch(() => {});
+  }, [rev]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 15000);
@@ -465,6 +521,7 @@ function Shell({ logout }: { logout: () => void }) {
   else if (kind === "services") view = id ? <ServiceDetail id={id} /> : <ServiceList />;
   else if (kind === "incidents") view = id ? <IncidentView id={id} /> : <IncidentList />;
   else if (kind === "nodes") view = <Nodes />;
+  else if (kind === "approvals") view = <Approvals me={me} onResult={() => setRev((x) => x + 1)} />;
   else view = <Overview />;
   const title = NAV.find(([k]) => k === kind)?.[1] ?? "概要";
 
@@ -474,7 +531,7 @@ function Shell({ logout }: { logout: () => void }) {
         <strong>Ancilla</strong>
         <nav aria-label="メイン">
           {NAV.map(([k, label]) => (
-            <a key={k} href={`#/${k}`} aria-current={k === kind ? "page" : undefined}>{label}</a>
+            <a key={k} href={`#/${k}`} aria-current={k === kind ? "page" : undefined}>{label}{k === "approvals" && pending > 0 ? ` (${pending})` : ""}</a>
           ))}
         </nav>
         <span className={`conn c-${conn}`} role="status">{CONN[conn]}</span>

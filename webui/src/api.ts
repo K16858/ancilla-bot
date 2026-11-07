@@ -14,6 +14,14 @@ export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   return body as T;
 }
 
+export async function post<T>(path: string): Promise<T> {
+  const r = await fetch(`/api/v1${path}`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` } });
+  if (r.status === 401) throw new Unauthorized();
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error ?? `HTTP ${r.status}`);
+  return body as T;
+}
+
 export type Conn = "connecting" | "open" | "retrying";
 
 /** SSE を fetch で読む（EventSource は Authorization を付けられない）。signal で停止。 */
@@ -53,7 +61,7 @@ export async function stream(
             else if (line.startsWith("id:")) id = line.slice(3).trim();
           }
           if (id) lastId = id;
-          if (name === "homelab_event" || name === "incidents_changed") onEvent(name);
+          if (name === "homelab_event" || name === "incidents_changed" || name === "approvals_changed") onEvent(name);
         }
       }
     } catch {
@@ -92,3 +100,8 @@ export type IncidentDetail = Incident & {
   affected_services: string[]; diagnosis: string | null;
   events: { id: number; role: string; subject: string; kind: string; from: string; to: string; detected_at: string; evidence: Evidence[] }[];
 };
+export type Approval = {
+  run_id: string; tool: string; args: Record<string, unknown>; description: string;
+  created_at: string; expires_at: string; source: string;
+};
+export type Me = { name: string; role: "read" | "operate" };

@@ -184,7 +184,8 @@ CREATE TABLE IF NOT EXISTS pending_approvals (
     skill_loads_json TEXT NOT NULL DEFAULT '[]',
     source TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
-    resolved_at TEXT
+    resolved_at TEXT,
+    resolved_by TEXT NOT NULL DEFAULT ''
 )
 """
 
@@ -404,6 +405,10 @@ def ensure_schema() -> None:
             )
         except sqlite3.OperationalError:
             pass
+        try:
+            c.execute("ALTER TABLE pending_approvals ADD COLUMN resolved_by TEXT NOT NULL DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
 
 
 def append_audit_log(tool_name: str, args_summary: str = "") -> None:
@@ -617,6 +622,33 @@ def resolve_pending_approval(approval_id: int, status: str) -> None:
             "UPDATE pending_approvals SET status = ?, resolved_at = ? WHERE id = ?",
             (status, now, approval_id),
         )
+
+
+def claim_pending_approval(approval_id: int, by: str) -> bool:
+    """pending -> claimed を原子的に行う。勝った 1 者だけ True（二重承認・承認と却下の競合を防ぐ）。"""
+    ensure_schema()
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE pending_approvals SET status = 'claimed', resolved_by = ? WHERE id = ? AND status = 'pending'",
+            (by, approval_id),
+        )
+        return cur.rowcount == 1
+
+
+def list_pending_approvals() -> list[dict[str, Any]]:
+    ensure_schema()
+    with _conn() as c:
+        cur = c.execute(
+            "SELECT run_id, tool_name, args_json, source, created_at FROM pending_approvals "
+            "WHERE status = 'pending' ORDER BY id"
+        )
+        return [_row_to_dict(cur, r) for r in cur.fetchall()]
+
+
+def pending_approvals_signature() -> list[tuple]:
+    ensure_schema()
+    with _conn() as c:
+        return [tuple(r) for r in c.execute("SELECT id, status FROM pending_approvals ORDER BY id")]
 
 
 def record_skill_run(*, name: str, version: int, run_id: str, outcome: str) -> None:

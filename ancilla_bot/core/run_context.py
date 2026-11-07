@@ -6,6 +6,9 @@ from contextvars import ContextVar
 
 run_source: ContextVar[str] = ContextVar("run_source", default="unknown")
 
+# 承認した人（cli / discord / slack / webui:<token名>）。承認後の実行中だけ入る
+approver: ContextVar[str] = ContextVar("approver", default="")
+
 _AUTONOMOUS = frozenset({"idle_reflection", "heartbeat", "proactive", "event"})
 
 

@@ -197,3 +197,90 @@ def test_token_cli(api, capsys):
     assert cmd_api(ns(token_command="revoke", name="webui")) == 0
     assert store.verify_api_token(token) is None
     assert cmd_api(ns(token_command="revoke", name="webui")) == 1
+
+
+# ---- 承認 API ----
+
+def _pending(run_id: str, source: str = "user", tool: str = "demo__write", args=None):
+    from ancilla_bot.runtime.approval import save_pending_approval
+
+    db.create_agent_run(run_id, source=source, user_input="x")
+    step_id = db.create_agent_run_step(run_id, turn_index=0, status="approval_pending", action=tool,
+                                       action_input={})
+    save_pending_approval(run_id=run_id, tool_name=tool, args=args or {}, turn_index=0, step_id=step_id,
+                          messages=[{"role": "user", "content": "x"}], source=source)
+
+
+@pytest.fixture
+def tool(monkeypatch):
+    from ancilla_bot.tools import registry
+
+    calls = []
+    monkeypatch.setitem(registry.TOOL_REGISTRY, "demo__write", lambda **kw: calls.append(kw) or "wrote")
+    monkeypatch.setattr("ancilla_bot.core.agent_loop._agent_loop_turns", lambda **kw: ("resumed", None))
+    return calls
+
+
+def post(url, token, path):
+    return httpx.post(f"{url}/api/v1/approvals/{path}", headers=auth(token), timeout=10)
+
+
+def test_approval_list_me_and_read_forbidden(api, tool):
+    _pending("r1", args={"x": 1})
+    r = store.create_api_token("viewer", "read")
+    assert httpx.get(f"{api}/api/v1/me", headers=auth(r)).json() == {"name": "viewer", "role": "read"}
+    [a] = httpx.get(f"{api}/api/v1/approvals", headers=auth(r)).json()
+    assert (a["run_id"], a["tool"], a["args"], a["source"]) == ("r1", "demo__write", {"x": 1}, "user")
+    assert a["expires_at"] > a["created_at"]
+    assert post(api, r, "r1/approve").status_code == 403
+    assert post(api, r, "r1/reject").status_code == 403
+    assert tool == [] and db.get_pending_approval("r1")
+
+
+def test_operate_approve_records_approver(api, tool):
+    _pending("r1")
+    o = store.create_api_token("ui", "operate")
+    out = post(api, o, "r1/approve")
+    assert out.status_code == 200 and "resumed" in out.json()["message"]
+    assert len(tool) == 1 and db.get_agent_run("r1")["status"] != "awaiting_approval"
+    with db._conn() as c:
+        assert c.execute("SELECT status, resolved_by FROM pending_approvals").fetchone() == ("approved", "webui:ui")
+
+
+def test_operate_reject(api, tool):
+    _pending("r1")
+    o = store.create_api_token("ui", "operate")
+    assert "Rejected" in post(api, o, "r1/reject").json()["message"]
+    assert tool == [] and db.get_agent_run("r1")["status"] == "cancelled"
+
+
+def test_expired_and_policy_deny_via_api(api, tool, monkeypatch):
+    o = store.create_api_token("ui", "operate")
+    _pending("old")
+    monkeypatch.setenv("ANCILLA_APPROVAL_TTL_HOURS", "-1")
+    assert "expired" in post(api, o, "old/approve").json()["message"]
+    monkeypatch.delenv("ANCILLA_APPROVAL_TTL_HOURS")
+    _pending("deny", source="heartbeat")  # 自律実行元の外部書き込みは承認時にも DENY
+    assert "denied" in post(api, o, "deny/approve").json()["message"]
+    assert tool == [] and db.get_agent_run("deny")["status"] == "failed"
+
+
+def test_double_approve_executes_once(api, tool, monkeypatch):
+    import time as _t
+    from ancilla_bot.tools import registry
+
+    monkeypatch.setitem(registry.TOOL_REGISTRY, "demo__write", lambda **kw: _t.sleep(0.3) or tool.append(kw) or "ok")
+    _pending("r1")
+    o = store.create_api_token("ui", "operate")
+    res = []
+    ts = [threading.Thread(target=lambda: res.append(post(api, o, "r1/approve").json()["message"])) for _ in range(4)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert len(tool) == 1
+    assert sum("resumed" in m for m in res) == 1
+
+
+def test_sse_approvals_changed(api, tool):
+    t = store.create_api_token("r", "read")
+    threading.Timer(0.5, lambda: _pending("r1")).start()
+    assert sse(f"{api}/api/v1/stream", t)[0][0] == "event: approvals_changed"

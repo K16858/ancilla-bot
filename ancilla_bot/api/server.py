@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 from loguru import logger
 
 from ancilla_bot.api import v1, webui
 from ancilla_bot.core.execution import ConversationBusy
 from ancilla_bot.homelab import events, incidents, store
+from ancilla_bot.runtime import approval
 
 SSE_POLL_SEC = 2.0
 SSE_HEARTBEAT_SEC = 15.0
@@ -50,7 +52,9 @@ def make_server(
         def _authorized(self, need: str) -> bool:
             """Bearer トークンを検証し、足りなければ 401 / 403 を返して False。"""
             auth = self.headers.get("Authorization", "")
-            role = store.verify_api_token(auth[7:].strip()) if auth[:7].lower() == "bearer " else None
+            info = store.verify_api_token_info(auth[7:].strip()) if auth[:7].lower() == "bearer " else None
+            role = info[1] if info else None
+            self._token_name = info[0] if info else ""
             if role is None:
                 self._json(401, {"error": "unauthorized"})
                 return False
@@ -102,6 +106,10 @@ def make_server(
                     self._json(200, {"ok": True})
                 return
             q = dict(parse_qsl(u.query))
+            if u.path == "/api/v1/me":
+                auth = self.headers.get("Authorization", "")
+                self._json(200, {"name": self._token_name, "role": store.verify_api_token(auth[7:].strip())})
+                return
             if u.path == "/api/v1/stream":
                 self._stream(q)
                 return
@@ -115,6 +123,7 @@ def make_server(
                 self._json(400, {"error": "Last-Event-ID / after は整数で指定してください"})
                 return
             sig = incidents.signature()
+            asig = approval.signature()
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
             self.send_header("Cache-Control", "no-cache")
@@ -138,6 +147,10 @@ def make_server(
                     if new_sig != sig:
                         sig = new_sig
                         send("event: incidents_changed\ndata: {}\n\n")
+                    new_asig = approval.signature()
+                    if new_asig != asig:
+                        asig = new_asig
+                        send("event: approvals_changed\ndata: {}\n\n")
                     if time.monotonic() - last_write >= SSE_HEARTBEAT_SEC:
                         send(": heartbeat\n\n")
                     time.sleep(SSE_POLL_SEC)
@@ -158,6 +171,11 @@ def make_server(
                 if cancel_handler is not None:
                     cancel_handler()
                 self._json(200, {"ok": True})
+                return
+            m = re.fullmatch(r"/api/v1/approvals/([^/]+)/(approve|reject)", u.path)
+            if m:  # CLI / Discord / Slack と同じ関数。TTL・policy の再検査は Core 側。承認は同期実行（最大 ~60s）
+                fn = approval.approve_run if m[2] == "approve" else approval.reject_run
+                self._json(200, {"message": fn(unquote(m[1]), f"webui:{self._token_name}")})
                 return
             if u.path not in ("/chat", "/api/v1/chat"):
                 self.send_error(404)

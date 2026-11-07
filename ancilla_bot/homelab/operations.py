@@ -36,13 +36,16 @@ def _incident_for(c, target: str, host_id: str) -> int | None:
 
 
 def _log(requested_by: str, run_id: str | None, decision: str, action: str, target: str, **kw: Any) -> int:
+    from ancilla_bot.core.run_context import approver
+
     with store._conn() as c:
         host_id = kw.get("host_id") or ""
         return c.execute(
             "INSERT INTO action_log (requested_by, run_id, incident_id, decision, action, target, host_id, "
-            "command_id, ok, output, error, started_at, finished_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "command_id, ok, output, error, started_at, finished_at, approved_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (requested_by, run_id, _incident_for(c, target, host_id), decision, action, target, host_id,
-             kw.get("command_id"), kw.get("ok"), kw.get("output"), kw.get("error"), _now(), kw.get("finished_at")),
+             kw.get("command_id"), kw.get("ok"), kw.get("output"), kw.get("error"), _now(), kw.get("finished_at"),
+             approver.get()),
         ).lastrowid
 
 
@@ -189,6 +192,6 @@ def homelab_get_actions(target: str = "", **kwargs: Any) -> str:
     with store._conn() as c:
         q, a = ("WHERE target=? ", (target,)) if target else ("", ())
         rows = c.execute(f"SELECT * FROM action_log {q}ORDER BY id DESC LIMIT 10", a).fetchall()
-    recent = [{k: r[k] for k in ("id", "requested_by", "decision", "action", "target", "ok", "error",
+    recent = [{k: r[k] for k in ("id", "requested_by", "approved_by", "decision", "action", "target", "ok", "error",
                                   "verification", "verification_result", "started_at")} for r in rows]
     return json.dumps({"declared": declared, "recent": recent}, ensure_ascii=False, indent=2)

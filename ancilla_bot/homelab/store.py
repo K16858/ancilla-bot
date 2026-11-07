@@ -113,7 +113,8 @@ CREATE TABLE IF NOT EXISTS action_log (
     verification_result TEXT,
     started_at TEXT NOT NULL,
     finished_at TEXT,
-    verified_at TEXT
+    verified_at TEXT,
+    approved_by TEXT NOT NULL DEFAULT ''
 )
 """
 
@@ -159,6 +160,8 @@ def _conn() -> Iterator[sqlite3.Connection]:
         c.execute(_SCHEMA_INCIDENTS)
         c.execute(_SCHEMA_INCIDENT_EVENTS)
         c.execute(_SCHEMA_ACTION_LOG)
+        if not any(r[1] == "approved_by" for r in c.execute("PRAGMA table_info(action_log)")):
+            c.execute("ALTER TABLE action_log ADD COLUMN approved_by TEXT NOT NULL DEFAULT ''")
         c.execute(_SCHEMA_INCIDENT_NOTES)
         c.execute(_SCHEMA_API_TOKENS)
         c.execute(_SCHEMA_SETTINGS)
@@ -282,15 +285,21 @@ def revoke_api_token(name: str) -> bool:
         return cur.rowcount > 0
 
 
-def verify_api_token(token: str) -> str | None:
-    """有効なトークンなら role、そうでなければ None（定数時間比較）。"""
+def verify_api_token_info(token: str) -> tuple[str, str] | None:
+    """有効なトークンなら (name, role)、そうでなければ None（定数時間比較）。"""
     digest = _hash(token)
     found = None
     with _conn() as c:
-        for r in c.execute("SELECT role, token_hash FROM api_tokens WHERE revoked_at IS NULL"):
+        for r in c.execute("SELECT name, role, token_hash FROM api_tokens WHERE revoked_at IS NULL"):
             if hmac.compare_digest(r["token_hash"], digest):
-                found = r["role"]
+                found = (r["name"], r["role"])
     return found
+
+
+def verify_api_token(token: str) -> str | None:
+    """有効なトークンなら role、そうでなければ None。"""
+    info = verify_api_token_info(token)
+    return info[1] if info else None
 
 
 def list_api_tokens() -> list[dict]:
