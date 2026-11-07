@@ -45,4 +45,16 @@ ancilla api token list
 - 追い付き：`Last-Event-ID` ヘッダー（または `?after=<id>`）を付けて再接続すると、その id より後の Event を送る。無指定なら接続後の新規のみ。
 - DB を約 2 秒ごとにポーリングする。接続ごとにスレッドを使うため他のリクエストは塞がれない。
 
-`/ui` は WebUI（静的配信）用に予約。
+## WebUI（`/ui`）
+
+Read-only の WebUI（React + Vite、`webui/`）を Core が `/ui/` で静的配信する（`/` は `/ui/` へ 302）。静的ファイルはトークン不要で、データは `/api/v1` がトークンで守る。
+
+```
+cd webui && npm ci && npm run build        # webui/dist に出力
+ancilla api token create webui --role read # ブラウザのログイン画面に貼る
+```
+
+- 配信元は `ANCILLA_WEBUI_DIR`（既定 `<ANCILLA_ROOT>/webui/dist`）。未ビルドなら `/ui/` は 404 でビルド手順を返す。
+- トークンは localStorage に保存。「ログアウト」で消える。401 でもログイン画面に戻る。
+- 開発: `cd webui && npm run dev`（Vite、`/api` は `http://127.0.0.1:8765` へプロキシ）。
+- 画面: 概要 / Host / Service / Incident / Node。会話・操作・承認は含まない（Phase 5）。

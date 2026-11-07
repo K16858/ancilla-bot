@@ -20,3 +20,7 @@ workspace/**
 !workspace/AGENT.native.md
 !workspace/skills/
 !workspace/skills/.gitkeep
+
+# WebUI のビルド成果物
+webui/node_modules
+webui/dist
