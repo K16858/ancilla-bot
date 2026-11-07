@@ -120,7 +120,7 @@ def inventory_path() -> Path:
     return get_root() / "data" / "homelab.yaml"
 
 
-_cache: tuple[Path, float, Inventory] | None = None
+_cache: tuple[Path, tuple[int, int], Inventory] | None = None
 
 
 def load_inventory() -> Inventory:
@@ -128,7 +128,8 @@ def load_inventory() -> Inventory:
     global _cache
     path = inventory_path()
     try:
-        mtime = path.stat().st_mtime_ns
+        stt = path.stat()
+        mtime = (stt.st_mtime_ns, stt.st_size)  # Windows は mtime が粗いので size も見る
     except OSError as e:
         raise InventoryError(f"{path}: 読み込めません: {e}") from e
     if _cache and _cache[0] == path and _cache[1] == mtime:

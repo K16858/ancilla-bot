@@ -123,3 +123,15 @@ def test_get_events_filters():
     assert len(json.loads(events.homelab_get_events(since=(T0 + timedelta(hours=1)).isoformat()))) == 0
     assert not events.homelab_get_events(since="1d").startswith("Error")  # 相対指定は実時刻基準
     assert events.homelab_get_events(since="xx").startswith("Error")
+
+
+def test_startup_grace_skips_process(monkeypatch):
+    import time
+
+    called = []
+    monkeypatch.setattr(st, "evaluate_all", lambda *a, **k: called.append(1) or {})
+    monkeypatch.setattr(events, "_started", time.monotonic())
+    assert events.process(interval=30) == [] and not called
+    monkeypatch.setattr(events, "_started", time.monotonic() - 91)
+    events.process(interval=30)
+    assert called
