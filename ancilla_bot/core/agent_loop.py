@@ -244,6 +244,14 @@ def continue_after_approval(
             _finish_run(run_id, "failed", last_error=f"unknown tool: {tool_name}")
             return f"Error: unknown tool {tool_name}", None
 
+        from ancilla_bot.runtime.policy import DENY, decide
+
+        decision = decide(tool_name)
+        if decision.verdict == DENY:
+            resolve_pending_approval(int(pending["id"]), "rejected")
+            _finish_run(run_id, "failed", last_error=decision.message)
+            return decision.message, None
+
         update_agent_run_status(run_id, "running")
         try:
             result = func(**args)

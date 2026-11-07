@@ -107,3 +107,49 @@ def test_approve_runs_tool_and_continues(tmp_path: Path, monkeypatch):
         assert db.get_pending_approval("run-2") is None
     finally:
         registry_mod.TOOL_REGISTRY.pop("demo__write", None)
+
+
+def _pending(run_id: str, source: str):
+    db.create_agent_run(run_id, source=source, user_input="x")
+    step_id = db.create_agent_run_step(
+        run_id, turn_index=0, status="approval_pending", action="demo__write", action_input={}
+    )
+    save_pending_approval(
+        run_id=run_id,
+        tool_name="demo__write",
+        args={},
+        turn_index=0,
+        step_id=step_id,
+        messages=[{"role": "user", "content": "x"}],
+        source=source,
+    )
+
+
+def test_expired_approval_is_rejected(tmp_path: Path, monkeypatch):
+    _db(tmp_path, monkeypatch)
+    called = {"n": 0}
+    registry_mod.TOOL_REGISTRY["demo__write"] = lambda **kw: called.update(n=1) or "ok"
+    monkeypatch.setenv("ANCILLA_APPROVAL_TTL_HOURS", "-1")
+    try:
+        _pending("run-exp", "user")
+        assert "expired" in approve_run("run-exp")
+        assert called["n"] == 0
+        assert db.get_agent_run("run-exp")["status"] == "cancelled"
+        assert db.get_pending_approval("run-exp") is None
+    finally:
+        registry_mod.TOOL_REGISTRY.pop("demo__write", None)
+
+
+def test_approval_rejected_when_policy_denies_at_approval_time(tmp_path: Path, monkeypatch):
+    _db(tmp_path, monkeypatch)
+    called = {"n": 0}
+    registry_mod.TOOL_REGISTRY["demo__write"] = lambda **kw: called.update(n=1) or "ok"
+    try:
+        _pending("run-deny", "heartbeat")  # external_write is DENY for autonomous sources
+        out = approve_run("run-deny")
+        assert "denied" in out
+        assert called["n"] == 0
+        assert db.get_agent_run("run-deny")["status"] == "failed"
+        assert db.get_pending_approval("run-deny") is None
+    finally:
+        registry_mod.TOOL_REGISTRY.pop("demo__write", None)

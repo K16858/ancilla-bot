@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+from datetime import datetime, timedelta
 from typing import Any
 
 from ancilla_bot.heartbeat.db import (
@@ -68,6 +70,12 @@ def try_handle_approval_command(text: str) -> str | None:
     return None
 
 
+def _expired(pending: dict[str, Any]) -> bool:
+    ttl = float(os.getenv("ANCILLA_APPROVAL_TTL_HOURS", "24") or 24)
+    created = datetime.strptime(str(pending["created_at"]), "%Y-%m-%d %H:%M:%S")
+    return datetime.now() - created > timedelta(hours=ttl)
+
+
 def reject_run(run_id: str) -> str:
     run = get_agent_run(run_id)
     if run is None:
@@ -91,5 +99,9 @@ def approve_run(run_id: str) -> str:
     pending = get_pending_approval(run_id)
     if pending is None:
         return f"No pending approval for run: {run_id}"
+    if _expired(pending):
+        resolve_pending_approval(int(pending["id"]), "rejected")
+        update_agent_run_status(run_id, "cancelled", last_error="approval expired")
+        return f"Approval for run {run_id} expired; rejected."
     answer, _emotion = continue_after_approval(run_id, pending)
     return answer
