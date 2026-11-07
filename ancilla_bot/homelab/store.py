@@ -66,6 +66,33 @@ CREATE TABLE IF NOT EXISTS events (
 )
 """
 
+# Incident（incidents.py が使う）。event は link 表で結ぶ。role: own=自分の主体 / host=Host 優先で寄せた / impact=依存先優先で寄せた
+_SCHEMA_INCIDENTS = """
+CREATE TABLE IF NOT EXISTS incidents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    detected_at TEXT NOT NULL,
+    acknowledged_at TEXT,
+    resolved_at TEXT,
+    resolved_by TEXT,
+    affected TEXT NOT NULL DEFAULT '[]',
+    diagnosis TEXT,
+    diagnosis_status TEXT NOT NULL DEFAULT 'none'
+)
+"""
+
+_SCHEMA_INCIDENT_EVENTS = """
+CREATE TABLE IF NOT EXISTS incident_events (
+    incident_id INTEGER NOT NULL,
+    event_id INTEGER NOT NULL,
+    role TEXT NOT NULL DEFAULT 'own',
+    PRIMARY KEY (incident_id, event_id)
+)
+"""
+
 
 @contextmanager
 def _conn() -> Iterator[sqlite3.Connection]:
@@ -75,6 +102,8 @@ def _conn() -> Iterator[sqlite3.Connection]:
         c.execute(_SCHEMA_OBS)
         c.execute(_SCHEMA_STATUS)
         c.execute(_SCHEMA_EVENTS)
+        c.execute(_SCHEMA_INCIDENTS)
+        c.execute(_SCHEMA_INCIDENT_EVENTS)
         with c:
             yield c
 

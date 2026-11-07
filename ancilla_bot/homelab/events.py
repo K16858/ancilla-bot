@@ -92,6 +92,7 @@ def update(statuses: dict[str, st.SubjectStatus], now: datetime | None = None) -
                     kind = _kind(s, r["state"])
                     if kind:
                         out.append(_save(s, r["state"], kind, now_s, c))
+    out.sort(key=lambda e: e["kind"] not in ("host_lost", "node_lost"))  # Host 優先: 同じ回の通知は Host の Event から
     for e in out:  # 保存（commit）後に通知する
         for fn in _subscribers:
             try:

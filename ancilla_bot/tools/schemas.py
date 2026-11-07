@@ -287,6 +287,16 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         {"id": {"type": "string", "description": "Host id"}},
         required=["id"],
     ),
+    "homelab_list_incidents": _schema(
+        {
+            "all": {"type": "boolean", "description": "Include resolved incidents"},
+            "limit": {"type": "integer", "description": "Max incidents (default 20)"},
+        },
+    ),
+    "homelab_get_incident": _schema(
+        {"id": {"type": "string", "description": "Incident id, e.g. INC-000001"}},
+        required=["id"],
+    ),
     "homelab_get_events": _schema(
         {
             "subject": {"type": "string", "description": "Host/Service id filter"},

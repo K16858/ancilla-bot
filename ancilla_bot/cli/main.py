@@ -1083,7 +1083,11 @@ def _run_resident(args: argparse.Namespace) -> None:
     from ancilla_bot.homelab import channel as node_channel
     from ancilla_bot.homelab import status as homelab_status
 
+    from ancilla_bot.homelab import events as homelab_events
+    from ancilla_bot.homelab import incidents as homelab_incidents
+
     node_channel.set_telemetry_handler(homelab_status.on_telemetry)
+    homelab_events.subscribe(homelab_incidents.handle)
     threading.Thread(target=homelab_status.run_health_loop, daemon=True, name="homelab-health").start()
     logger.info("API http://{}:{}/chat", api_host, api_port)
 
@@ -1373,6 +1377,11 @@ def main() -> int:
     st_p.add_argument("id", nargs="?", default="", help="Host ID または Service ID（省略で全体）")
     ev_p = homelab_sub.add_parser("events", help="確定した状態変化 Event")
     ev_p.add_argument("--subject", default="", help="Host ID または Service ID")
+    in_p = homelab_sub.add_parser("incidents", help="Incident 一覧（既定は未解決）")
+    in_p.add_argument("--all", action="store_true", help="解決済みも含める")
+    for name, h in (("incident", "Incident の詳細"), ("ack", "Incident を確認済みにする"),
+                    ("resolve", "Incident を手動で解決する")):
+        homelab_sub.add_parser(name, help=h).add_argument("id", help="例: INC-000001")
 
     skill_parser = subparsers.add_parser("skill", help="workspace Skill の昇格・ロールバック")
     skill_sub = skill_parser.add_subparsers(dest="skill_command", required=True)

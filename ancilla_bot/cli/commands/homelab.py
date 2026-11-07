@@ -39,6 +39,17 @@ def cmd_homelab(args: argparse.Namespace) -> int:
             from ancilla_bot.homelab.events import homelab_get_events
 
             print(homelab_get_events(args.subject))
+        elif action in ("incidents", "incident", "ack", "resolve"):
+            from ancilla_bot.homelab import incidents
+
+            out = {
+                "incidents": lambda: incidents.homelab_list_incidents(all=args.all),
+                "incident": lambda: incidents.homelab_get_incident(args.id),
+                "ack": lambda: incidents.acknowledge(args.id),
+                "resolve": lambda: incidents.resolve(args.id),
+            }[action]()
+            print(out)
+            return 1 if out.startswith("Error") else 0
         elif action == "hosts":
             print(inv.format_hosts(i))
         elif action == "services":

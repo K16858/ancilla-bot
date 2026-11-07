@@ -9,6 +9,7 @@ from ancilla_bot.heartbeat.db import manage_state as heartbeat_manage_state
 from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.homelab.inventory import homelab_inspect, homelab_list_hosts, homelab_list_services
 from ancilla_bot.homelab.events import homelab_get_events
+from ancilla_bot.homelab.incidents import homelab_get_incident, homelab_list_incidents
 from ancilla_bot.homelab.status import homelab_get_metrics, homelab_get_status
 from ancilla_bot.tools.end_edge_session import end_edge_session
 from ancilla_bot.tools.fetch_page import fetch_page
@@ -70,6 +71,14 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "homelab_get_events": (
         "Recent confirmed state-change events of HomeLab hosts/services (newest first). "
         "action_input: {} , optional {\"subject\": \"web\", \"since\": \"24h\" or ISO time, \"limit\": 50}."
+    ),
+    "homelab_list_incidents": (
+        "HomeLab incidents (open/acknowledged by default, newest first). "
+        "action_input: {} , optional {\"all\": true (include resolved), \"limit\": 20}."
+    ),
+    "homelab_get_incident": (
+        "Detail of one HomeLab incident: events, affected services, diagnosis. "
+        "action_input: {\"id\": \"INC-000001\"}."
     ),
     # ── File operations ───────────────────────────────────────────────────
     "list_workspace": (
@@ -367,6 +376,8 @@ TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "homelab_get_status": homelab_get_status,
     "homelab_get_metrics": homelab_get_metrics,
     "homelab_get_events": homelab_get_events,
+    "homelab_list_incidents": homelab_list_incidents,
+    "homelab_get_incident": homelab_get_incident,
     "list_workspace": list_workspace,
     "edit_file_safe": edit_file_safe,
     "bash": bash,
