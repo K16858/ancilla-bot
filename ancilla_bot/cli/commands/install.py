@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import getpass
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -16,9 +19,11 @@ def cmd_install(args: argparse.Namespace) -> int:
         return _install_core()
     if component == "client":
         return _install_client(args)
+    if component == "node":
+        return _install_node(args)
     return ux.fail(
         f"Unknown component: {component or '(none)'}",
-        next_cmds=["ancilla install core", "ancilla install client"],
+        next_cmds=["ancilla install core", "ancilla install client", "ancilla install node"],
     )
 
 
@@ -93,4 +98,70 @@ def _install_client(args: argparse.Namespace) -> int:
     print("Next:")
     print("  ancilla")
     print("  ancilla setup api")
+    return 0
+
+
+NODE_SERVICE = "ancilla-node"
+
+
+def node_unit_text(user: str, root: Path, exe: str) -> str:
+    # ProtectSystem=strict は全体が読み取り専用。main() が root 配下（data/ ログ等）に書くので root だけ許可する
+    return f"""[Unit]
+Description=Ancilla Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User={user}
+WorkingDirectory={root}
+Environment=ANCILLA_ROOT={root}
+ExecStart={exe} node
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths={root}
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+
+def _sudo(cmd: list[str], **kw) -> None:
+    subprocess.run(["sudo", *cmd], check=True, **kw)
+
+
+def _install_node(args: argparse.Namespace) -> int:
+    core, host_id, token = args.core, args.host_id, args.token
+    if not (core and host_id and token):
+        return ux.fail(
+            "install node には --core, --host-id, --token が必要です。",
+            next_cmds=["ancilla install node --core wss://core.home.arpa:8768 --host-id node-1 --token <token>"],
+        )
+    if not core.startswith(("ws://", "wss://")):
+        return ux.fail("--core は ws:// か wss:// で始まる URL を指定してください。")
+    root = get_root()
+    envfile.ensure_env_file(root)
+    envfile.set_values(
+        {"ANCILLA_NODE_CORE_URL": core, "ANCILLA_NODE_HOST_ID": host_id, "ANCILLA_NODE_TOKEN": token},
+        path=envfile.env_path(root),
+    )
+    print(f"Node settings written to {envfile.env_path(root)}")
+
+    if not sys.platform.startswith("linux"):
+        print("systemd 登録は Linux のみ対応です（Windows は別 PR で対応予定）。")
+        print("手動実行: ancilla node")
+        return 0
+
+    exe = shutil.which("ancilla") or str(Path(sys.argv[0]).resolve())
+    unit = node_unit_text(getpass.getuser(), root, exe)
+    try:
+        _sudo(["tee", f"/etc/systemd/system/{NODE_SERVICE}.service"], input=unit, text=True, stdout=subprocess.DEVNULL)
+        _sudo(["systemctl", "daemon-reload"])
+        _sudo(["systemctl", "enable", "--now", NODE_SERVICE])
+    except (OSError, subprocess.CalledProcessError) as e:
+        return ux.fail(f"systemd 登録に失敗しました: {e}", next_cmds=["ancilla node"])
+    print(f"{NODE_SERVICE} を登録して起動しました。")
+    print(f"  状態: systemctl status {NODE_SERVICE}")
+    print("  Core 側: ancilla homelab nodes")
     return 0
