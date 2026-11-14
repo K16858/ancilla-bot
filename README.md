@@ -1,4 +1,4 @@
-<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/ancilla_icon_dark.svg" /><img src="assets/ancilla_icon.svg" alt="" height="112" align="absmiddle" /></picture><picture><source media="(prefers-color-scheme: dark)" srcset="assets/ancilla_logo_dark.svg" /><img src="assets/ancilla_logo.svg" alt="Ancilla" height="122" align="absmiddle" /></picture></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/ancilla_icon_dark.svg" /><img src="assets/ancilla_icon.svg" alt="" height="64" align="absmiddle" /></picture><picture><source media="(prefers-color-scheme: dark)" srcset="assets/ancilla_logo_dark.svg" /><img src="assets/ancilla_logo.svg" alt="Ancilla" height="70" align="absmiddle" /></picture></p>
 
 # Ancilla
 
@@ -156,6 +156,6 @@ cd webui && npm ci && npm run build
 - [`.env.example`](.env.example) — Environment variable reference
 - [`homelab.yaml.example`](homelab.yaml.example) — Sample HomeLab inventory
 - [`.mcp.json.example`](.mcp.json.example) — Sample MCP server & plugin configuration
-- [`docs/homelab.md`](docs/homelab.md) — HomeLab monitoring, nodes, and self-healing guide *(Japanese)*
-- [`docs/client_api.md`](docs/client_api.md) — Client HTTP/SSE API (`/api/v1`) and WebUI reference *(Japanese)*
-- [`docs/ws_client_api.md`](docs/ws_client_api.md) — Edge WebSocket protocol specification *(Japanese)*
+- [`docs/homelab.md`](docs/homelab.md) — HomeLab monitoring, nodes, and self-healing guide _(Japanese)_
+- [`docs/client_api.md`](docs/client_api.md) — Client HTTP/SSE API (`/api/v1`) and WebUI reference _(Japanese)_
+- [`docs/ws_client_api.md`](docs/ws_client_api.md) — Edge WebSocket protocol specification _(Japanese)_
