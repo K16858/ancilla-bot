@@ -5,19 +5,6 @@ Client API の仕様は [`client_api.md`](client_api.md)。
 
 ## 概要とアーキテクチャ
 
-```
- 各ホスト                              Core（常駐）
-┌──────────────┐  wss/ws (8768)   ┌──────────────────────────────────┐
-│ ancilla node │ ───────────────► │ Node 用 WS ─► 観測 (DB)          │
-│ (telemetry,  │ ◄─── 命令 ────── │ ヘルスチェック(health_url)       │
-│  Node-A 実行)│                  │   └► 状態判定 ─► Event ─► Incident │
-└──────────────┘                  │        ├► 通知 (Discord / Slack)   │
-                                  │        ├► 診断 (LLM、別 Task)      │
-                                  │        └► 自動再起動 (任意)        │
- ブラウザ(WebUI) / Companion ───► │ /api/v1 (HTTP + SSE), /ui         │
-                                  └──────────────────────────────────┘
-```
-
 - 宣言（`homelab.yaml`）: Host / Service / 依存関係 / 許可する操作。
 - 観測: Node が報告間隔ごとに CPU・メモリ・ディスク・サービス状態を送り、Core が `health_url` を直接叩く。
 - 判定: 観測から `healthy / degraded / unhealthy / unknown` を決め、2 回続いた変化だけを Event にする（一瞬の揺らぎは無視）。
@@ -55,16 +42,16 @@ services:
     unit: prometheus
     health_url: http://core.home.arpa:9090/-/healthy
     actions:
-      logs: auto            # 承認なしで読み取り（approval | auto）
-      restart: approval     # approval | auto | auto_dry_run
+      logs: auto # 承認なしで読み取り（approval | auto）
+      restart: approval # approval | auto | auto_dry_run
 ```
 
-| 値 | 意味 |
-| --- | --- |
-| `restart: approval` | 承認後に再起動する |
-| `restart: auto_dry_run` | 自動再起動の条件を満たしたとき「再起動するはずだった」と通知するだけ（実行しない） |
-| `restart: auto` | 条件を満たせば承認なしで再起動する（下記 Self-Healing） |
-| `logs: auto` / `approval` | 直近 N 行（既定 100、最大 500）の取得。`auto` は承認なし |
+| 値                        | 意味                                                                               |
+| ------------------------- | ---------------------------------------------------------------------------------- |
+| `restart: approval`       | 承認後に再起動する                                                                 |
+| `restart: auto_dry_run`   | 自動再起動の条件を満たしたとき「再起動するはずだった」と通知するだけ（実行しない） |
+| `restart: auto`           | 条件を満たせば承認なしで再起動する（下記 Self-Healing）                            |
+| `logs: auto` / `approval` | 直近 N 行（既定 100、最大 500）の取得。`auto` は承認なし                           |
 
 `restart` / `logs` の対象になるのは `kind` が `systemd` か `docker` のサービスで、Host が `node: true` のものだけ。
 
@@ -114,16 +101,16 @@ Node の WS は既定で `127.0.0.1:8768`。別ホストから接続させるに
 
 ### CLI
 
-| コマンド | 内容 |
-| --- | --- |
-| `ancilla homelab status [id]` | Host / Service の状態。観測時刻と鮮度つき |
-| `ancilla homelab events [--subject id]` | 確定した状態変化 |
-| `ancilla homelab incidents [--all]` | Incident 一覧（既定は未解決） |
-| `ancilla homelab incident INC-000001` | 詳細（Event・影響・診断・操作履歴） |
-| `ancilla homelab ack INC-000001` | 確認済みにする |
-| `ancilla homelab resolve INC-000001` | 手動で解決する（回復すれば自動で解決する） |
-| `ancilla homelab diagnose INC-000001` | 再診断（同期実行） |
-| `ancilla homelab nodes` | Node の接続状態 |
+| コマンド                                | 内容                                       |
+| --------------------------------------- | ------------------------------------------ |
+| `ancilla homelab status [id]`           | Host / Service の状態。観測時刻と鮮度つき  |
+| `ancilla homelab events [--subject id]` | 確定した状態変化                           |
+| `ancilla homelab incidents [--all]`     | Incident 一覧（既定は未解決）              |
+| `ancilla homelab incident INC-000001`   | 詳細（Event・影響・診断・操作履歴）        |
+| `ancilla homelab ack INC-000001`        | 確認済みにする                             |
+| `ancilla homelab resolve INC-000001`    | 手動で解決する（回復すれば自動で解決する） |
+| `ancilla homelab diagnose INC-000001`   | 再診断（同期実行）                         |
+| `ancilla homelab nodes`                 | Node の接続状態                            |
 
 状態の見方: Node だけが落ちた Host は `unhealthy` ではなく `degraded` + `node_lost`（そのホストのサービスに `health_url` が生きていれば）か `unknown` になる。観測が古い（報告間隔の 3 倍超）値は `stale` として扱われる。
 
@@ -169,35 +156,35 @@ ancilla api token create webui --role read # 1 回だけ表示
 
 `.env.example` にも載っている。Core / Node のどちらで効くかを併記する。
 
-| 変数 | 既定 | 内容 |
-| --- | --- | --- |
-| `ANCILLA_HOMELAB_PATH` | `<ANCILLA_ROOT>/data/homelab.yaml` | Inventory のパス（Core） |
-| `ANCILLA_HOMELAB_INTERVAL` | `30` | 報告・ヘルスチェック・判定・鮮度・再起動後検証の間隔（秒）。Core に設定すれば Node へ配られる。起動直後の猶予は `max(90 秒, 3 間隔)`。動作確認以外は変えない |
-| `ANCILLA_NODE_HOST` / `ANCILLA_NODE_PORT` | `127.0.0.1` / `8768` | Node 用 WS の待ち受け（Core） |
-| `ANCILLA_NODE_TLS_CERT` / `ANCILLA_NODE_TLS_KEY` | 空 | 両方設定すると `wss://`（Core）。片方だけは起動エラー |
-| `ANCILLA_INSECURE_BIND` | 空 | `1` で平文 ws / MCP HTTP / WS を非ループバックに出すことを許す（Core） |
-| `ANCILLA_API_BIND_HOST` / `ANCILLA_API_PORT` | `127.0.0.1` / `8765` | API・WebUI の待ち受け（Core） |
-| `ANCILLA_WEBUI_DIR` | `<ANCILLA_ROOT>/webui/dist` | WebUI のビルド成果物（Core） |
-| `ANCILLA_APPROVAL_TTL_HOURS` | `24` | 承認待ちの有効期限（Core） |
-| `ANCILLA_NODE_CORE_URL` | 空 | Core の Node 用 URL（例 `wss://core.home.arpa:8768`）（Node） |
-| `ANCILLA_NODE_HOST_ID` | 空 | この Node の Host ID（Node） |
-| `ANCILLA_NODE_TOKEN` | 空 | `node-token` で発行したトークン。秘密（Node） |
-| `ANCILLA_NODE_CA_FILE` | 空 | 自己署名 Core の CA 証明書（Node） |
-| `ANCILLA_NODE_ALLOW_RESTART` / `ANCILLA_NODE_ALLOW_LOGS` | 空 | Node のローカル許可リスト（カンマ区切り unit）。空は全拒否。通常は `install node` が書く（Node） |
+| 変数                                                     | 既定                               | 内容                                                                                                                                                         |
+| -------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ANCILLA_HOMELAB_PATH`                                   | `<ANCILLA_ROOT>/data/homelab.yaml` | Inventory のパス（Core）                                                                                                                                     |
+| `ANCILLA_HOMELAB_INTERVAL`                               | `30`                               | 報告・ヘルスチェック・判定・鮮度・再起動後検証の間隔（秒）。Core に設定すれば Node へ配られる。起動直後の猶予は `max(90 秒, 3 間隔)`。動作確認以外は変えない |
+| `ANCILLA_NODE_HOST` / `ANCILLA_NODE_PORT`                | `127.0.0.1` / `8768`               | Node 用 WS の待ち受け（Core）                                                                                                                                |
+| `ANCILLA_NODE_TLS_CERT` / `ANCILLA_NODE_TLS_KEY`         | 空                                 | 両方設定すると `wss://`（Core）。片方だけは起動エラー                                                                                                        |
+| `ANCILLA_INSECURE_BIND`                                  | 空                                 | `1` で平文 ws / MCP HTTP / WS を非ループバックに出すことを許す（Core）                                                                                       |
+| `ANCILLA_API_BIND_HOST` / `ANCILLA_API_PORT`             | `127.0.0.1` / `8765`               | API・WebUI の待ち受け（Core）                                                                                                                                |
+| `ANCILLA_WEBUI_DIR`                                      | `<ANCILLA_ROOT>/webui/dist`        | WebUI のビルド成果物（Core）                                                                                                                                 |
+| `ANCILLA_APPROVAL_TTL_HOURS`                             | `24`                               | 承認待ちの有効期限（Core）                                                                                                                                   |
+| `ANCILLA_NODE_CORE_URL`                                  | 空                                 | Core の Node 用 URL（例 `wss://core.home.arpa:8768`）（Node）                                                                                                |
+| `ANCILLA_NODE_HOST_ID`                                   | 空                                 | この Node の Host ID（Node）                                                                                                                                 |
+| `ANCILLA_NODE_TOKEN`                                     | 空                                 | `node-token` で発行したトークン。秘密（Node）                                                                                                                |
+| `ANCILLA_NODE_CA_FILE`                                   | 空                                 | 自己署名 Core の CA 証明書（Node）                                                                                                                           |
+| `ANCILLA_NODE_ALLOW_RESTART` / `ANCILLA_NODE_ALLOW_LOGS` | 空                                 | Node のローカル許可リスト（カンマ区切り unit）。空は全拒否。通常は `install node` が書く（Node）                                                             |
 
 ## トラブルシューティング
 
-| 症状 | 確認 |
-| --- | --- |
+| 症状                                          | 確認                                                                                                                                                                                                                                |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `homelab nodes` が `disconnected` / `revoked` | Node のログ（`journalctl -u ancilla-node` / `schtasks /Query /TN AncillaNode`）。`HTTP 401` はトークン不一致か失効 → `node-token` で再発行して `.env` を更新。`ConnectionRefused` は Core の `ANCILLA_NODE_HOST/PORT`・FW・TLS 設定 |
-| `wss://` で接続できない | 自己署名なら `ANCILLA_NODE_CA_FILE`。証明書の SAN と接続先ホスト名を合わせる |
-| Core が起動時に bind で止まる | 平文のまま非ループバックに出している。TLS にするか `ANCILLA_INSECURE_BIND=1` |
-| 状態が `unknown` のまま | Node が未接続か、`health_url` の無いサービス。`homelab status <id>` の evidence で観測時刻を見る |
-| `homelab check` がエラー | メッセージの行を直す。`on/off/yes/no` の ID は引用符、未知の参照・重複 ID・範囲外の値が主な原因 |
-| 再起動が拒否される | (1) `actions` に宣言があるか (2) Host が `node: true` か (3) Node の許可リストに unit があるか（`.env` の `ANCILLA_NODE_ALLOW_RESTART`）(4) polkit ルールがあるか (5) 命令の期限（120 秒）切れ＝Core と Node の時計ずれ |
-| 診断が「未実施」 | LLM に接続できない。`ancilla doctor` で確認し、復旧後に `homelab diagnose <id>` |
-| 通知が来ない | Discord / Slack Bot が起動しているか、通知先の設定（`.env.example` の `DISCORD_*` / `SLACK_*`）。通知は `data/notifications/` に必ず追記される |
-| WebUI が 404 | `webui/dist` が無い。`npm run build` |
+| `wss://` で接続できない                       | 自己署名なら `ANCILLA_NODE_CA_FILE`。証明書の SAN と接続先ホスト名を合わせる                                                                                                                                                        |
+| Core が起動時に bind で止まる                 | 平文のまま非ループバックに出している。TLS にするか `ANCILLA_INSECURE_BIND=1`                                                                                                                                                        |
+| 状態が `unknown` のまま                       | Node が未接続か、`health_url` の無いサービス。`homelab status <id>` の evidence で観測時刻を見る                                                                                                                                    |
+| `homelab check` がエラー                      | メッセージの行を直す。`on/off/yes/no` の ID は引用符、未知の参照・重複 ID・範囲外の値が主な原因                                                                                                                                     |
+| 再起動が拒否される                            | (1) `actions` に宣言があるか (2) Host が `node: true` か (3) Node の許可リストに unit があるか（`.env` の `ANCILLA_NODE_ALLOW_RESTART`）(4) polkit ルールがあるか (5) 命令の期限（120 秒）切れ＝Core と Node の時計ずれ             |
+| 診断が「未実施」                              | LLM に接続できない。`ancilla doctor` で確認し、復旧後に `homelab diagnose <id>`                                                                                                                                                     |
+| 通知が来ない                                  | Discord / Slack Bot が起動しているか、通知先の設定（`.env.example` の `DISCORD_*` / `SLACK_*`）。通知は `data/notifications/` に必ず追記される                                                                                      |
+| WebUI が 404                                  | `webui/dist` が無い。`npm run build`                                                                                                                                                                                                |
 
 ## 既知の制限
 
