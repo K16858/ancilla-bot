@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
@@ -14,10 +15,21 @@ from ancilla_bot.api import v1, webui
 from ancilla_bot.assistant import timers
 from ancilla_bot.core.execution import ConversationBusy
 from ancilla_bot.homelab import events, incidents, store
+from ancilla_bot.notifications import store as notif_store
 from ancilla_bot.runtime import approval
 
 SSE_POLL_SEC = 2.0
 SSE_HEARTBEAT_SEC = 15.0
+
+_stream_cond = threading.Condition()
+_stream_gen = 0
+
+
+def notify_stream_change(*_args) -> None:
+    global _stream_gen
+    with _stream_cond:
+        _stream_gen += 1
+        _stream_cond.notify_all()
 
 
 def _peer(handler: BaseHTTPRequestHandler) -> str:
@@ -123,8 +135,16 @@ def make_server(
             except ValueError:
                 self._json(400, {"error": "Last-Event-ID / after は整数で指定してください"})
                 return
+            raw_notif = q.get("after_notification") or ""
+            try:
+                notif_cursor = int(raw_notif) if raw_notif else notif_store.last_notification_id()
+            except ValueError:
+                self._json(400, {"error": "after_notification は整数で指定してください"})
+                return
             sig = incidents.signature()
             asig = approval.signature()
+            tsig = timers.signature()
+            seen_firing = {t["id"] for t in timers.list_timers() if t["status"] == "firing"}
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
             self.send_header("Cache-Control", "no-cache")
@@ -141,6 +161,8 @@ def make_server(
             try:
                 send(": connected\n\n")
                 while True:
+                    with _stream_cond:
+                        gen = _stream_gen
                     for e in events.events_after(cursor):
                         cursor = e["id"]
                         send(f"id: {cursor}\nevent: homelab_event\ndata: {json.dumps(e, ensure_ascii=False)}\n\n")
@@ -152,9 +174,24 @@ def make_server(
                     if new_asig != asig:
                         asig = new_asig
                         send("event: approvals_changed\ndata: {}\n\n")
+                    for n in notif_store.notifications_after(notif_cursor):
+                        notif_cursor = n["id"]
+                        send(f"event: notification\ndata: {json.dumps(n, ensure_ascii=False)}\n\n")
+                    new_tsig = timers.signature()
+                    if new_tsig != tsig:
+                        tsig = new_tsig
+                        payload = timers.list_timers_payload()
+                        current_firing = {t["id"] for t in payload["timers"] if t["status"] == "firing"}
+                        for t in payload["timers"]:
+                            if t["status"] == "firing" and t["id"] not in seen_firing:
+                                send(f"event: timer_fired\ndata: {json.dumps(t, ensure_ascii=False)}\n\n")
+                        seen_firing = current_firing
+                        send(f"event: timers_changed\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n")
                     if time.monotonic() - last_write >= SSE_HEARTBEAT_SEC:
                         send(": heartbeat\n\n")
-                    time.sleep(SSE_POLL_SEC)
+                    with _stream_cond:
+                        if _stream_gen == gen:
+                            _stream_cond.wait(timeout=SSE_POLL_SEC)
             except OSError:  # 切断（BrokenPipe / ConnectionReset / Abort）
                 return
 
@@ -291,6 +328,8 @@ def make_server(
         def log_message(self, format, *args):
             pass
 
+    timers.subscribe_changes(notify_stream_change)
+    notif_store.subscribe_notifications(notify_stream_change)
     return ThreadingHTTPServer((host, port), ChatHandler)
 
 

@@ -364,3 +364,60 @@ def test_notifications_endpoint(api):
     assert since_rows.status_code == 200
     assert [x["id"] for x in since_rows.json()] == [id2]
     assert httpx.get(f"{api}/api/v1/notifications?since_id=bad", headers=auth(r)).status_code == 400
+
+
+def test_sse_timers_and_notifications_realtime(api, monkeypatch):
+    from datetime import timedelta
+    from ancilla_bot.assistant import timers
+    from ancilla_bot.notifications.store import append_notification
+
+    t = store.create_api_token("r", "read")
+    monkeypatch.setattr(server, "SSE_POLL_SEC", 5.0)
+
+    assert httpx.get(f"{api}/api/v1/stream?after_notification=bad", headers=auth(t)).status_code == 400
+
+    # タイマー作成で SSE_POLL_SEC (5.0s) を待たずに timers_changed が即時配信される
+    t0 = time.monotonic()
+    got = sse(
+        f"{api}/api/v1/stream",
+        t,
+        timeout=2.5,
+        on_connected=lambda: timers.create_timer(60, label="お茶"),
+    )
+    assert time.monotonic() - t0 < 2.5
+    assert got[0][0] == "event: timers_changed"
+    payload = json.loads(got[0][1][len("data: "):])
+    assert [x["label"] for x in payload["timers"]] == ["お茶"]
+
+    # タイマー満了で timer_fired + timers_changed + notification が即時配信される
+    t1 = time.monotonic()
+    got_fire = sse(
+        f"{api}/api/v1/stream",
+        t,
+        n=3,
+        timeout=2.5,
+        on_connected=lambda: timers.process_due_timers(
+            now=datetime.now().astimezone() + timedelta(seconds=120)
+        ),
+    )
+    assert time.monotonic() - t1 < 2.5
+    ev_names = [blk[0].split("event: ", 1)[1] for blk in got_fire]
+    assert set(ev_names) == {"timer_fired", "timers_changed", "notification"}
+
+    # 自発通知（Incident）が即時配信され、after_notification で追い付きもできる
+    nid1 = append_notification("first", level="info", category="system")
+    got_n = sse(
+        f"{api}/api/v1/stream",
+        t,
+        timeout=2.5,
+        on_connected=lambda: append_notification(
+            "critical down", level="critical", title="INC-000001", category="incident"
+        ),
+    )
+    assert got_n[0][0] == "event: notification"
+    ev_data = json.loads(got_n[0][1][len("data: "):])
+    assert ev_data["category"] == "incident" and ev_data["level"] == "critical"
+
+    catch_up = sse(f"{api}/api/v1/stream?after_notification={nid1}", t, timeout=2.5)
+    assert catch_up[0][0] == "event: notification"
+    assert json.loads(catch_up[0][1][len("data: "):])["message"] == "critical down"
