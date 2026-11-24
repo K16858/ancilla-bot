@@ -17,20 +17,26 @@ export function getAudioContext(): AudioContext {
   return sharedCtx;
 }
 
+async function resumeWithTimeout(ctx: AudioContext, ms = 350): Promise<void> {
+  if (ctx.state !== "suspended") return;
+  await Promise.race([
+    ctx.resume().catch(() => {}),
+    new Promise<void>((resolve) => window.setTimeout(resolve, ms)),
+  ]);
+}
+
 /** ユーザータップ内で呼び出し、iOS Safari / Android Chrome の自動再生制限を解除する。 */
 export async function unlockAudio(): Promise<void> {
-  const ctx = getAudioContext();
-  if (ctx.state === "suspended") {
-    await ctx.resume();
-  }
   try {
+    const ctx = getAudioContext();
+    await resumeWithTimeout(ctx);
     const buffer = ctx.createBuffer(1, 1, 22050);
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     src.connect(ctx.destination);
     src.start(0);
   } catch {
-    // ignore if already unlocked
+    // ignore if audio output is unavailable or already unlocked
   }
 }
 
@@ -49,9 +55,7 @@ export async function playWav(
   stopAllPlayback();
 
   const ctx = getAudioContext();
-  if (ctx.state === "suspended") {
-    await ctx.resume();
-  }
+  await resumeWithTimeout(ctx);
   const audioBuf = await ctx.decodeAudioData(wavBytes.slice(0));
   if (signal?.aborted) return;
 

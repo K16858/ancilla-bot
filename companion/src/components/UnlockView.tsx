@@ -20,15 +20,17 @@ export function UnlockView({ me, onUnlocked, onLogout }: UnlockViewProps) {
     setBusy(true);
     try {
       await unlockAudio();
-      try {
-        await (navigator as NavigatorWithWakeLock).wakeLock?.request("screen");
-      } catch {
-        // WakeLock が使えない環境でも進行する
-      }
-      onUnlocked();
+    } catch {
+      // 音声デバイスが使えない環境でも進行する
     } finally {
       setBusy(false);
     }
+    try {
+      void (navigator as NavigatorWithWakeLock).wakeLock?.request("screen")?.catch(() => {});
+    } catch {
+      // WakeLock が使えない環境でも進行する
+    }
+    onUnlocked();
   };
 
   return (
