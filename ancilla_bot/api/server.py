@@ -11,6 +11,7 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 from loguru import logger
 
 from ancilla_bot.api import v1, webui
+from ancilla_bot.assistant import timers
 from ancilla_bot.core.execution import ConversationBusy
 from ancilla_bot.homelab import events, incidents, store
 from ancilla_bot.runtime import approval
@@ -157,13 +158,32 @@ def make_server(
             except OSError:  # 切断（BrokenPipe / ConnectionReset / Abort）
                 return
 
+        def _read_raw(self) -> bytes | None:
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                if length < 0:
+                    raise ValueError
+                return self.rfile.read(length)  # 拒否前に読み切る（RST 回避）
+            except ValueError:
+                self.send_error(400, "Bad Request")
+                return None
+
+        def _parse_json_dict(self, raw: bytes) -> dict | None:
+            try:
+                data = json.loads(raw.decode("utf-8") or "{}")
+            except (ValueError, UnicodeDecodeError):
+                self._json(400, {"error": "不正な JSON です"})
+                return None
+            if not isinstance(data, dict):
+                self._json(400, {"error": "JSON object を指定してください"})
+                return None
+            return data
+
         def do_POST(self):
             u = urlsplit(self.path)
             is_v1 = u.path.startswith("/api/v1/")
-            try:
-                raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))  # 拒否前に読み切る（RST 回避）
-            except ValueError:
-                self.send_error(400, "Bad Request")
+            raw = self._read_raw()
+            if raw is None:
                 return
             if not self._gate(is_v1, "operate"):
                 return
@@ -171,6 +191,24 @@ def make_server(
                 if cancel_handler is not None:
                     cancel_handler()
                 self._json(200, {"ok": True})
+                return
+            if u.path == "/api/v1/timers":
+                data = self._parse_json_dict(raw)
+                if data is None:
+                    return
+                if "duration_sec" not in data or data["duration_sec"] is None:
+                    self._json(400, {"error": "duration_sec は必須です"})
+                    return
+                try:
+                    item = timers.create_timer(
+                        data["duration_sec"],
+                        label=data.get("label") or "",
+                        source=f"api:{self._token_name}",
+                    )
+                except ValueError as e:
+                    self._json(400, {"error": str(e)})
+                    return
+                self._json(201, item)
                 return
             m = re.fullmatch(r"/api/v1/approvals/([^/]+)/(approve|reject)", u.path)
             if m:  # CLI / Discord / Slack と同じ関数。TTL・policy の再検査は Core 側。承認は同期実行（最大 ~60s）
@@ -197,6 +235,58 @@ def make_server(
                 self._json(409, {"ok": False})
             else:
                 self._json(200, {"response": response_text})
+
+        def do_PATCH(self):
+            u = urlsplit(self.path)
+            is_v1 = u.path.startswith("/api/v1/")
+            raw = self._read_raw()
+            if raw is None:
+                return
+            if not self._gate(is_v1, "operate"):
+                return
+            m = re.fullmatch(r"/api/v1/timers/([^/]+)", u.path)
+            if not m:
+                self._json(404, {"error": "not found"})
+                return
+            data = self._parse_json_dict(raw)
+            if data is None:
+                return
+            tid = unquote(m[1])
+            try:
+                if data.get("action") == "stop":
+                    items = timers.stop_timer(tid)
+                    self._json(200, items[0])
+                else:
+                    item = timers.update_timer(
+                        tid,
+                        duration_sec=data.get("duration_sec"),
+                        add_sec=data.get("add_sec"),
+                        label=data.get("label"),
+                    )
+                    self._json(200, item)
+            except LookupError as e:
+                self._json(404, {"error": str(e)})
+            except ValueError as e:
+                self._json(400, {"error": str(e)})
+
+        def do_DELETE(self):
+            u = urlsplit(self.path)
+            is_v1 = u.path.startswith("/api/v1/")
+            raw = self._read_raw()
+            if raw is None:
+                return
+            if not self._gate(is_v1, "operate"):
+                return
+            m = re.fullmatch(r"/api/v1/timers/([^/]+)", u.path)
+            if not m:
+                self._json(404, {"error": "not found"})
+                return
+            try:
+                item = timers.cancel_timer(unquote(m[1]))
+            except LookupError as e:
+                self._json(404, {"error": str(e)})
+                return
+            self._json(200, item)
 
         def log_message(self, format, *args):
             pass

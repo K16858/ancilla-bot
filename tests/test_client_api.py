@@ -284,3 +284,82 @@ def test_sse_approvals_changed(api, tool):
     t = store.create_api_token("r", "read")
     threading.Timer(0.5, lambda: _pending("r1")).start()
     assert sse(f"{api}/api/v1/stream", t)[0][0] == "event: approvals_changed"
+
+
+# ---- タイマー & 通知 API ----
+
+def test_timers_crud_and_permissions(api):
+    r = store.create_api_token("reader", "read")
+    o = store.create_api_token("op", "operate")
+
+    assert httpx.get(f"{api}/api/v1/timers").status_code == 401
+    assert httpx.get(f"{api}/api/v1/timers", headers=auth(r)).status_code == 200
+    assert httpx.post(f"{api}/api/v1/timers", json={"duration_sec": 60}, headers=auth(r)).status_code == 403
+    assert httpx.patch(f"{api}/api/v1/timers/TMR-0001", json={"label": "x"}, headers=auth(r)).status_code == 403
+    assert httpx.delete(f"{api}/api/v1/timers/TMR-0001", headers=auth(r)).status_code == 403
+
+    assert httpx.post(f"{api}/api/v1/timers", json={}, headers=auth(o)).status_code == 400
+    assert httpx.post(f"{api}/api/v1/timers", json={"duration_sec": 0}, headers=auth(o)).status_code == 400
+    assert httpx.post(f"{api}/api/v1/timers", content=b"{bad", headers=auth(o)).status_code == 400
+
+    res = httpx.post(f"{api}/api/v1/timers", json={"duration_sec": 180, "label": "パスタ"}, headers=auth(o))
+    assert res.status_code == 201
+    t1 = res.json()
+    assert t1["id"] == "TMR-0001"
+    assert t1["source"] == "api:op"
+    assert t1["label"] == "パスタ"
+
+    listed = httpx.get(f"{api}/api/v1/timers", headers=auth(r)).json()
+    assert listed["server_now"] and len(listed["timers"]) == 1
+    assert httpx.get(f"{api}/api/v1/timers/TMR-0001", headers=auth(r)).json()["id"] == "TMR-0001"
+    assert httpx.get(f"{api}/api/v1/timers/TMR-9999", headers=auth(r)).status_code == 404
+
+    upd = httpx.patch(
+        f"{api}/api/v1/timers/TMR-0001",
+        json={"add_sec": 60, "label": "うどん"},
+        headers=auth(o),
+    )
+    assert upd.status_code == 200 and upd.json()["duration_sec"] == 240 and upd.json()["label"] == "うどん"
+    assert httpx.patch(f"{api}/api/v1/timers/TMR-9999", json={"label": "x"}, headers=auth(o)).status_code == 404
+    assert httpx.patch(f"{api}/api/v1/timers/TMR-0001", json={"action": "stop"}, headers=auth(o)).status_code == 400
+
+    from ancilla_bot.assistant import timers
+
+    with timers._conn() as c:
+        c.execute("UPDATE timers SET status='firing', fired_at=created_at WHERE id=1")
+    stopped = httpx.patch(f"{api}/api/v1/timers/TMR-0001", json={"action": "stop"}, headers=auth(o))
+    assert stopped.status_code == 200 and stopped.json()["status"] == "stopped"
+    assert httpx.get(f"{api}/api/v1/timers", headers=auth(r)).json()["timers"] == []
+    assert len(httpx.get(f"{api}/api/v1/timers?all=1", headers=auth(r)).json()["timers"]) == 1
+
+    t2 = httpx.post(f"{api}/api/v1/timers", json={"duration_sec": 90}, headers=auth(o)).json()
+    deleted = httpx.delete(f"{api}/api/v1/timers/{t2['id']}", headers=auth(o))
+    assert deleted.status_code == 200 and deleted.json()["status"] == "cancelled"
+    assert httpx.delete(f"{api}/api/v1/timers/TMR-9999", headers=auth(o)).status_code == 404
+
+
+def test_timers_and_notifications_work_without_homelab_yaml(api, monkeypatch, tmp_path):
+    r = store.create_api_token("reader", "read")
+    monkeypatch.setenv("ANCILLA_HOMELAB_PATH", str(tmp_path / "missing.yaml"))
+    assert httpx.get(f"{api}/api/v1/summary", headers=auth(r)).status_code == 503
+    assert httpx.get(f"{api}/api/v1/timers", headers=auth(r)).status_code == 200
+    assert httpx.get(f"{api}/api/v1/notifications", headers=auth(r)).status_code == 200
+
+
+def test_notifications_endpoint(api):
+    from ancilla_bot.notifications.store import append_notification, append_report
+
+    r = store.create_api_token("reader", "read")
+    assert httpx.get(f"{api}/api/v1/notifications").status_code == 401
+
+    id1 = append_notification("node down", level="critical", title="INC-000001", category="incident")
+    id2 = append_report("daily", "all green")
+
+    all_rows = httpx.get(f"{api}/api/v1/notifications", headers=auth(r))
+    assert all_rows.status_code == 200
+    assert [x["id"] for x in all_rows.json()] == [id2, id1]
+
+    since_rows = httpx.get(f"{api}/api/v1/notifications?since_id={id1}&limit=10", headers=auth(r))
+    assert since_rows.status_code == 200
+    assert [x["id"] for x in since_rows.json()] == [id2]
+    assert httpx.get(f"{api}/api/v1/notifications?since_id=bad", headers=auth(r)).status_code == 400

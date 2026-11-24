@@ -10,9 +10,11 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 
+from ancilla_bot.assistant import timers
 from ancilla_bot.homelab import events, incidents, status
 from ancilla_bot.homelab import inventory as inv
 from ancilla_bot.homelab import store
+from ancilla_bot.notifications import store as notif_store
 
 
 def _tool(out: str) -> tuple[int, Any]:
@@ -37,6 +39,19 @@ def route(path: str, q: dict[str, str]) -> tuple[int, Any]:
             return _tool(incidents.homelab_list_incidents(all=q.get("all", ""), limit=200))
         if len(parts) == 2 and parts[0] == "incidents":
             return _tool(incidents.homelab_get_incident(parts[1]))
+        if parts == ["timers"]:
+            inc = (q.get("all") or "").strip().lower() in ("1", "true", "yes")
+            return 200, timers.list_timers_payload(include_finished=inc)
+        if len(parts) == 2 and parts[0] == "timers":
+            item = timers.get_timer(parts[1])
+            return (200, item) if item else (404, {"error": "not found"})
+        if parts == ["notifications"]:
+            try:
+                since_id = int(q.get("since_id") or 0)
+                limit = int(q.get("limit") or 50)
+            except ValueError:
+                return 400, {"error": "since_id / limit は整数で指定してください"}
+            return 200, notif_store.list_notifications(since_id=since_id, limit=limit)
 
         i = inv.load_inventory()
         sts = {k: asdict(v) for k, v in status.evaluate_all(i=i).items()}
