@@ -501,3 +501,100 @@ def test_companion_chat_session_end_and_cancel_endpoints(api, monkeypatch):
     assert c_res.status_code == 200 and c_res.json() == {"ok": True}
     assert cancelled == [True]
     companion_session.clear_sessions()
+
+
+# ---- Voice STT / TTS API ----
+
+def test_voice_stt_and_tts_endpoints(api, monkeypatch):
+    from types import SimpleNamespace
+    from ancilla_bot.api import stt_client, tts_client
+
+    r = store.create_api_token("reader", "read")
+    o = store.create_api_token("op", "operate")
+
+    # ---- STT ----
+    assert httpx.post(f"{api}/api/v1/voice/stt", content=b"123").status_code == 401
+    assert httpx.post(f"{api}/api/v1/voice/stt", content=b"123", headers=auth(r)).status_code == 403
+    assert httpx.post(f"{api}/api/v1/voice/stt", content=b"", headers=auth(o)).status_code == 400
+
+    monkeypatch.delenv("STT_BASE_URL", raising=False)
+    assert httpx.post(f"{api}/api/v1/voice/stt", content=b"123", headers=auth(o)).status_code == 503
+
+    monkeypatch.setattr(server, "MAX_VOICE_AUDIO_BYTES", 16)
+    oversized = httpx.post(f"{api}/api/v1/voice/stt", content=b"x" * 32, headers=auth(o))
+    assert oversized.status_code == 413
+    assert httpx.post(f"{api}/api/v1/voice/stt", content=b"x" * 32, headers=auth(r)).status_code == 403
+
+    monkeypatch.setenv("STT_BASE_URL", "http://127.0.0.1:19999")
+    stt_calls = []
+
+    class _FakeResp:
+        def __init__(self, json_data=None, content=b""):
+            self._json = json_data
+            self.content = content
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._json
+
+    def fake_stt_post(url, *, files=None, data=None, timeout=None):
+        stt_calls.append((url, files, data, timeout))
+        return _FakeResp(json_data={"text": "タイマー3分"})
+
+    monkeypatch.setattr(
+        stt_client,
+        "httpx",
+        SimpleNamespace(post=fake_stt_post, HTTPError=httpx.HTTPError),
+    )
+    stt_ok = httpx.post(
+        f"{api}/api/v1/voice/stt?prompt=%E3%82%A2%E3%83%B3%E3%82%B7%E3%83%A9",
+        content=b"webm-bytes",
+        headers={**auth(o), "Content-Type": "audio/webm;codecs=opus"},
+    )
+    assert stt_ok.status_code == 200
+    assert stt_ok.json() == {"text": "タイマー3分"}
+    assert len(stt_calls) == 1
+    assert stt_calls[0][0] == "http://127.0.0.1:19999/v1/audio/transcriptions"
+    assert stt_calls[0][1]["file"] == ("audio.webm", b"webm-bytes", "audio/webm")
+    assert stt_calls[0][2] == {"language": "ja", "prompt": "アンシラ"}
+
+    # ---- TTS ----
+    assert httpx.post(f"{api}/api/v1/voice/tts", json={"text": "hi"}).status_code == 401
+    assert httpx.post(f"{api}/api/v1/voice/tts", json={"text": "hi"}, headers=auth(r)).status_code == 403
+    assert httpx.post(f"{api}/api/v1/voice/tts", content=b"{bad", headers=auth(o)).status_code == 400
+    assert httpx.post(f"{api}/api/v1/voice/tts", json={"text": "   "}, headers=auth(o)).status_code == 400
+    assert httpx.post(
+        f"{api}/api/v1/voice/tts",
+        json={"text": "あ" * (server.MAX_TTS_TEXT_CHARS + 1)},
+        headers=auth(o),
+    ).status_code == 400
+
+    monkeypatch.delenv("TTS_BASE_URL", raising=False)
+    assert httpx.post(f"{api}/api/v1/voice/tts", json={"text": "こんにちは"}, headers=auth(o)).status_code == 503
+
+    monkeypatch.setenv("TTS_BASE_URL", "http://127.0.0.1:19998")
+    monkeypatch.setattr(
+        tts_client,
+        "httpx",
+        SimpleNamespace(
+            post=lambda *a, **kw: _FakeResp(content=b"RIFFdemo"),
+            HTTPError=httpx.HTTPError,
+        ),
+    )
+    tts_ok = httpx.post(f"{api}/api/v1/voice/tts", json={"text": "こんにちは"}, headers=auth(o))
+    assert tts_ok.status_code == 200
+    assert tts_ok.headers["content-type"] == "audio/wav"
+    assert tts_ok.headers["cache-control"] == "no-store"
+    assert tts_ok.content == b"RIFFdemo"
+
+    def fail_tts(*_a, **_kw):
+        raise httpx.HTTPError("down")
+
+    monkeypatch.setattr(
+        tts_client,
+        "httpx",
+        SimpleNamespace(post=fail_tts, HTTPError=httpx.HTTPError),
+    )
+    assert httpx.post(f"{api}/api/v1/voice/tts", json={"text": "こんにちは"}, headers=auth(o)).status_code == 502

@@ -11,7 +11,7 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 
 from loguru import logger
 
-from ancilla_bot.api import v1, webui
+from ancilla_bot.api import stt_client, tts_client, v1, webui
 from ancilla_bot.assistant import companion_session, timers
 from ancilla_bot.core.cancel import request_cancel
 from ancilla_bot.core.execution import ConversationBusy
@@ -21,6 +21,8 @@ from ancilla_bot.runtime import approval
 
 SSE_POLL_SEC = 2.0
 SSE_HEARTBEAT_SEC = 15.0
+MAX_VOICE_AUDIO_BYTES = 10 * 1024 * 1024
+MAX_TTS_TEXT_CHARS = 1000
 
 _stream_cond = threading.Condition()
 _stream_gen = 0
@@ -222,11 +224,18 @@ def make_server(
         def do_POST(self):
             u = urlsplit(self.path)
             is_v1 = u.path.startswith("/api/v1/")
+            if u.path == "/api/v1/voice/stt":
+                self._handle_voice_stt(u, is_v1)
+                return
             raw = self._read_raw()
             if raw is None:
                 return
             if not self._gate(is_v1, "operate"):
                 return
+            if u.path == "/api/v1/voice/tts":
+                self._handle_voice_tts(raw)
+                return
+
             if (u.path == "/cancel" and not is_v1) or u.path == "/api/v1/chat/cancel":
                 (cancel_handler or request_cancel)()
                 self._json(200, {"ok": True})
@@ -307,6 +316,65 @@ def make_server(
                 self._json(409, {"ok": False})
             else:
                 self._json(200, {"response": response_text})
+
+        def _handle_voice_stt(self, u, is_v1: bool) -> None:
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                if length < 0:
+                    raise ValueError
+            except ValueError:
+                self.send_error(400, "Bad Request")
+                return
+            if length > MAX_VOICE_AUDIO_BYTES:
+                if length <= 1024 * 1024:
+                    self.rfile.read(length)
+                if not self._gate(is_v1, "operate"):
+                    return
+                self._json(413, {"error": "音声データが大きすぎます"})
+                return
+            raw = self.rfile.read(length)
+            if not self._gate(is_v1, "operate"):
+                return
+            if not raw:
+                self._json(400, {"error": "音声データが空です"})
+                return
+            if not stt_client.is_configured():
+                self._json(503, {"error": "STT_BASE_URL が未設定です"})
+                return
+            q = dict(parse_qsl(u.query))
+            prompt = q.get("prompt", "")
+            ctype = (self.headers.get("Content-Type") or "audio/wav").split(";")[0].strip().lower() or "audio/wav"
+            text = stt_client.transcribe(raw, content_type=ctype, prompt=prompt)
+            self._json(200, {"text": text})
+
+        def _handle_voice_tts(self, raw: bytes) -> None:
+            data = self._parse_json_dict(raw)
+            if data is None:
+                return
+            raw_text = data.get("text")
+            text = raw_text.strip() if isinstance(raw_text, str) else ""
+            if not text:
+                self._json(400, {"error": "text は必須です"})
+                return
+            if len(text) > MAX_TTS_TEXT_CHARS:
+                self._json(400, {"error": f"text は {MAX_TTS_TEXT_CHARS} 文字以内で指定してください"})
+                return
+            if not tts_client.is_configured():
+                self._json(503, {"error": "TTS_BASE_URL が未設定です"})
+                return
+            wav = tts_client.synthesize(text)
+            if not wav:
+                self._json(502, {"error": "TTS 合成に失敗しました"})
+                return
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/wav")
+                self.send_header("Content-Length", str(len(wav)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(wav)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
 
         def do_PATCH(self):
             u = urlsplit(self.path)

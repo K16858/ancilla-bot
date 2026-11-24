@@ -15,6 +15,11 @@ def _base_url() -> str:
     return (os.getenv("TTS_BASE_URL") or "").rstrip("/")
 
 
+def is_configured() -> bool:
+    """TTS_BASE_URL が設定されているか返す。"""
+    return bool(_base_url())
+
+
 def synthesize(text: str) -> bytes:
     """
     Coeiroink の POST /v1/synthesis でテキストを音声化する。
