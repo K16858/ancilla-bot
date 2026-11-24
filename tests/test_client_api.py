@@ -598,3 +598,58 @@ def test_voice_stt_and_tts_endpoints(api, monkeypatch):
         SimpleNamespace(post=fail_tts, HTTPError=httpx.HTTPError),
     )
     assert httpx.post(f"{api}/api/v1/voice/tts", json={"text": "こんにちは"}, headers=auth(o)).status_code == 502
+
+
+# ---- Static SPA (/companion & /ui) ----
+
+def test_companion_and_webui_static_serving(api, monkeypatch, tmp_path):
+    # リダイレクト
+    r_comp = httpx.get(f"{api}/companion", follow_redirects=False)
+    assert r_comp.status_code == 302 and r_comp.headers["location"] == "/companion/"
+    r_ui = httpx.get(f"{api}/ui", follow_redirects=False)
+    assert r_ui.status_code == 302 and r_ui.headers["location"] == "/ui/"
+
+    # 未ビルド時 404 ヒント
+    comp_dist = tmp_path / "companion_dist"
+    monkeypatch.setenv("ANCILLA_COMPANION_DIR", str(comp_dist))
+    missing = httpx.get(f"{api}/companion/")
+    assert missing.status_code == 404 and "companion をビルドしてください" in missing.text
+
+    # ビルド済み Companion 配信 + MIME + SPA フォールバック + パストラバーサル拒否
+    (tmp_path / "secret.txt").write_text("SECRET", encoding="utf-8")
+    (comp_dist / "assets").mkdir(parents=True)
+    (comp_dist / "index.html").write_text("<html><body>COMPANION</body></html>", encoding="utf-8")
+    (comp_dist / "manifest.webmanifest").write_text('{"name":"Ancilla"}', encoding="utf-8")
+    (comp_dist / "icon.svg").write_text("<svg></svg>", encoding="utf-8")
+    (comp_dist / "assets" / "app.js").write_text("console.log('ok');", encoding="utf-8")
+
+    idx = httpx.get(f"{api}/companion/")
+    assert idx.status_code == 200 and "COMPANION" in idx.text and idx.headers["cache-control"] == "no-cache"
+
+    mf = httpx.get(f"{api}/companion/manifest.webmanifest")
+    assert mf.status_code == 200 and mf.headers["content-type"].startswith("application/manifest+json")
+
+    svg = httpx.get(f"{api}/companion/icon.svg")
+    assert svg.status_code == 200 and svg.headers["content-type"] == "image/svg+xml"
+
+    js = httpx.get(f"{api}/companion/assets/app.js")
+    assert js.status_code == 200 and "javascript" in js.headers["content-type"]
+    assert "immutable" in js.headers["cache-control"]
+
+    spa = httpx.get(f"{api}/companion/settings")
+    assert spa.status_code == 200 and "COMPANION" in spa.text
+
+    assert httpx.get(f"{api}/companion/assets/nope.js").status_code == 404
+    assert httpx.get(f"{api}/companion/%2e%2e/secret.txt").status_code == 404
+
+    # /ui 回帰確認
+    ui_dist = tmp_path / "webui_dist"
+    (ui_dist / "assets").mkdir(parents=True)
+    (ui_dist / "index.html").write_text("<html>WEBUI</html>", encoding="utf-8")
+    (ui_dist / "assets" / "main.js").write_text("export {};", encoding="utf-8")
+    monkeypatch.setenv("ANCILLA_WEBUI_DIR", str(ui_dist))
+
+    assert httpx.get(f"{api}/ui/").text == "<html>WEBUI</html>"
+    assert httpx.get(f"{api}/ui/unknown/route").text == "<html>WEBUI</html>"
+    ui_js = httpx.get(f"{api}/ui/assets/main.js")
+    assert ui_js.status_code == 200 and "immutable" in ui_js.headers["cache-control"]

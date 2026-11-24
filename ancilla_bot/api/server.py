@@ -91,26 +91,33 @@ def make_server(
             self._json(403, {"error": "forbidden"})
             return False
 
+        def _serve_static(self, resolved: tuple[int, str, bytes, str]) -> None:
+            status, ctype, body, cache = resolved
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", cache)
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
         def do_GET(self):
             u = urlsplit(self.path)
             is_v1 = u.path.startswith("/api/v1/")
-            if u.path in ("/", "/ui"):  # WebUI の入口
+            if u.path in ("/", "/ui", "/companion"):  # WebUI / Companion の入口
+                target = "/companion/" if u.path == "/companion" else "/ui/"
                 self.send_response(302)
-                self.send_header("Location", "/ui/")
+                self.send_header("Location", target)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
             if u.path.startswith("/ui/"):  # 静的ファイル。トークン不要
-                status, ctype, body, cache = webui.resolve(u.path)
-                try:
-                    self.send_response(status)
-                    self.send_header("Content-Type", ctype)
-                    self.send_header("Content-Length", str(len(body)))
-                    self.send_header("Cache-Control", cache)
-                    self.end_headers()
-                    self.wfile.write(body)
-                except (BrokenPipeError, ConnectionResetError):
-                    pass
+                self._serve_static(webui.resolve(u.path))
+                return
+            if u.path.startswith("/companion/"):  # Companion 静的ファイル。トークン不要
+                self._serve_static(webui.resolve_companion(u.path))
                 return
             if u.path == "/health":  # 生存確認だけ（{"ok": true}）。外部の死活監視用にトークン不要
                 self._json(200, {"ok": True})
@@ -366,15 +373,7 @@ def make_server(
             if not wav:
                 self._json(502, {"error": "TTS 合成に失敗しました"})
                 return
-            try:
-                self.send_response(200)
-                self.send_header("Content-Type", "audio/wav")
-                self.send_header("Content-Length", str(len(wav)))
-                self.send_header("Cache-Control", "no-store")
-                self.end_headers()
-                self.wfile.write(wav)
-            except (BrokenPipeError, ConnectionResetError):
-                pass
+            self._serve_static((200, "audio/wav", wav, "no-store"))
 
         def do_PATCH(self):
             u = urlsplit(self.path)
