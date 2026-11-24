@@ -5,6 +5,13 @@
 from datetime import datetime
 from typing import Any, Callable
 
+from ancilla_bot.assistant.timers import (
+    tool_timer_cancel,
+    tool_timer_list,
+    tool_timer_set,
+    tool_timer_stop,
+    tool_timer_update,
+)
 from ancilla_bot.heartbeat.db import manage_state as heartbeat_manage_state
 from ancilla_bot.memory.core import build_core_memory
 from ancilla_bot.homelab.inventory import homelab_inspect, homelab_list_hosts, homelab_list_services
@@ -36,6 +43,26 @@ from ancilla_bot.tools.use_edgedevice import use_edgedevice
 TOOL_DESCRIPTIONS: dict[str, str] = {
     # ── Information retrieval ─────────────────────────────────────────────
     "get_time": "Return current date/time. action_input: {}.",
+    "timer_set": (
+        "Create a countdown timer in seconds. "
+        "action_input: {\"duration_sec\": 180, \"label\": \"\"} (label optional)."
+    ),
+    "timer_list": (
+        "List active countdown timers (and optionally finished ones). "
+        "action_input: {} , optional {\"include_finished\": true}."
+    ),
+    "timer_update": (
+        "Update a running timer's duration, add/subtract seconds, or rename its label. "
+        "action_input: {\"timer_id\": \"TMR-0001\"}, optional {\"duration_sec\": 300, \"add_sec\": 60, \"label\": \"...\"}."
+    ),
+    "timer_stop": (
+        "Stop a firing (ringing) timer alarm. Omit timer_id to stop all firing timers. "
+        "action_input: {} , optional {\"timer_id\": \"TMR-0001\"}."
+    ),
+    "timer_cancel": (
+        "Cancel a running or firing timer. "
+        "action_input: {\"timer_id\": \"TMR-0001\"}."
+    ),
     "web_search": (
         "Search the web. "
         "action_input: {\"unknown\": \"search terms\", \"hypothesis\": \"optional guess\", \"max_results\": 5}. "
@@ -378,6 +405,11 @@ def finish(message: str, **kwargs: Any) -> str:
 
 TOOL_REGISTRY: dict[str, Callable[..., str]] = {
     "get_time": get_time,
+    "timer_set": tool_timer_set,
+    "timer_list": tool_timer_list,
+    "timer_update": tool_timer_update,
+    "timer_stop": tool_timer_stop,
+    "timer_cancel": tool_timer_cancel,
     "web_search": web_search,
     "fetch_page": fetch_page,
     "search_arxiv": search_arxiv,

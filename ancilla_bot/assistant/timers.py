@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from contextlib import closing, contextmanager
@@ -10,6 +11,7 @@ from typing import Any, Callable, Iterator
 
 from loguru import logger
 
+from ancilla_bot.core.run_context import run_source
 from ancilla_bot.heartbeat import db
 from ancilla_bot.notifications import append_notification
 
@@ -429,3 +431,67 @@ def start_timer_watcher(*, poll_cap_sec: float = 5.0) -> threading.Event:
 def stop_timer_watcher(stop: threading.Event) -> None:
     stop.set()
     _notify_wake()
+
+
+# ---- Agent Tool ラッパー ----
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes")
+    return bool(value)
+
+
+def tool_timer_set(duration_sec: int, label: str = "", **kwargs: Any) -> str:
+    """秒精度のタイマーを作成する。"""
+    _ = kwargs
+    try:
+        src = run_source.get()
+        item = create_timer(duration_sec, label=label, source="user" if src == "unknown" else src)
+        return json.dumps(item, ensure_ascii=False)
+    except (ValueError, LookupError) as exc:
+        return f"Error: {exc}"
+
+
+def tool_timer_list(include_finished: bool = False, **kwargs: Any) -> str:
+    """タイマー一覧と server_now を返す。"""
+    _ = kwargs
+    return json.dumps(
+        list_timers_payload(include_finished=_as_bool(include_finished)),
+        ensure_ascii=False,
+    )
+
+
+def tool_timer_update(
+    timer_id: str,
+    duration_sec: int | None = None,
+    add_sec: int | None = None,
+    label: str | None = None,
+    **kwargs: Any,
+) -> str:
+    """実行中タイマーの時間またはラベルを更新する。"""
+    _ = kwargs
+    try:
+        item = update_timer(timer_id, duration_sec=duration_sec, add_sec=add_sec, label=label)
+        return json.dumps(item, ensure_ascii=False)
+    except (ValueError, LookupError) as exc:
+        return f"Error: {exc}"
+
+
+def tool_timer_stop(timer_id: str = "", **kwargs: Any) -> str:
+    """鳴動中のタイマーを停止する（timer_id 省略時は鳴動中すべて）。"""
+    _ = kwargs
+    try:
+        items = stop_timer(timer_id)
+        return json.dumps({"stopped": items}, ensure_ascii=False)
+    except (ValueError, LookupError) as exc:
+        return f"Error: {exc}"
+
+
+def tool_timer_cancel(timer_id: str, **kwargs: Any) -> str:
+    """実行中または鳴動中のタイマーを取消する。"""
+    _ = kwargs
+    try:
+        item = cancel_timer(timer_id)
+        return json.dumps(item, ensure_ascii=False)
+    except (ValueError, LookupError) as exc:
+        return f"Error: {exc}"

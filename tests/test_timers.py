@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import threading
@@ -238,4 +239,77 @@ def test_watcher_loop_wakes_and_fires():
         assert timers.get_timer(t["id"])["status"] == "firing"
     finally:
         timers.stop_timer_watcher(stop)
+
+
+def test_timer_tools_and_skill(monkeypatch, tmp_path):
+    from ancilla_bot.runtime.capability import get_capability
+    from ancilla_bot.skills.loader import read_skill
+    from ancilla_bot.tools.schemas import get_native_parameters
+
+    for name in ("timer_set", "timer_list", "timer_update", "timer_stop", "timer_cancel"):
+        assert get_capability(name) is not None
+        assert get_native_parameters(name)["type"] == "object"
+
+    assert timers.tool_timer_set(0).startswith("Error:")
+    created = json.loads(timers.tool_timer_set(180, label="麺"))
+    tid = created["id"]
+
+    listed = json.loads(timers.tool_timer_list())
+    assert len(listed["timers"]) == 1 and listed["timers"][0]["id"] == tid
+
+    updated = json.loads(timers.tool_timer_update(tid, add_sec=60, label="うどん"))
+    assert updated["label"] == "うどん" and updated["duration_sec"] == 240
+    assert timers.tool_timer_update("TMR-9999", label="x").startswith("Error:")
+
+    assert timers.tool_timer_stop(tid).startswith("Error:")
+    with timers._conn() as c:
+        c.execute("UPDATE timers SET status='firing', fired_at=created_at WHERE id=1")
+    stopped = json.loads(timers.tool_timer_stop())
+    assert len(stopped["stopped"]) == 1 and stopped["stopped"][0]["status"] == "stopped"
+
+    t2 = json.loads(timers.tool_timer_set(60))
+    cancelled = json.loads(timers.tool_timer_cancel(t2["id"]))
+    assert cancelled["status"] == "cancelled"
+    assert json.loads(timers.tool_timer_list(include_finished="true"))["timers"].__len__() == 2
+
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("ANCILLA_SKILLS_DIR", str(root / "skills"))
+    monkeypatch.setenv("ANCILLA_WORKSPACE_DIR", str(tmp_path))
+    body = read_skill("timers")
+    assert not body.startswith("Error:") and "timer_set" in body
+
+
+def test_timer_cli(capsys):
+    from ancilla_bot.cli.commands.timer import cmd_timer
+
+    ns = lambda **k: argparse.Namespace(**k)  # noqa: E731
+
+    assert cmd_timer(ns(timer_command="list", all=False)) == 0
+    assert "(タイマーなし)" in capsys.readouterr().out
+
+    assert cmd_timer(ns(timer_command="set", duration_sec=0, label="")) == 1
+    assert "Error:" in capsys.readouterr().out
+
+    assert cmd_timer(ns(timer_command="set", duration_sec=90, label="紅茶")) == 0
+    assert "TMR-0001" in capsys.readouterr().out
+
+    assert cmd_timer(ns(timer_command="list", all=False)) == 0
+    out = capsys.readouterr().out
+    assert "TMR-0001" in out and "紅茶" in out
+
+    assert cmd_timer(ns(timer_command="stop", id="")) == 0
+    assert "鳴動中のタイマーはありません" in capsys.readouterr().out
+
+    with timers._conn() as c:
+        c.execute("UPDATE timers SET status='firing', fired_at=created_at WHERE id=1")
+    assert cmd_timer(ns(timer_command="stop", id="TMR-0001")) == 0
+    assert "停止しました" in capsys.readouterr().out
+
+    assert cmd_timer(ns(timer_command="set", duration_sec=45, label="")) == 0
+    capsys.readouterr()
+    assert cmd_timer(ns(timer_command="cancel", id="TMR-0002")) == 0
+    assert "取り消しました" in capsys.readouterr().out
+    assert cmd_timer(ns(timer_command="cancel", id="TMR-9999")) == 1
+    capsys.readouterr()
+
 

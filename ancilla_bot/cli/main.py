@@ -1411,6 +1411,18 @@ def main() -> int:
     api_tok_sub.add_parser("revoke", help="トークンを失効").add_argument("name")
     api_tok_sub.add_parser("list", help="トークン一覧")
 
+    timer_parser = subparsers.add_parser("timer", help="カウントダウンタイマーの操作")
+    timer_sub = timer_parser.add_subparsers(dest="timer_command", required=True)
+    tl_p = timer_sub.add_parser("list", help="タイマー一覧")
+    tl_p.add_argument("--all", action="store_true", help="停止・取消済みも含める")
+    ts_p = timer_sub.add_parser("set", help="タイマーを設定")
+    ts_p.add_argument("duration_sec", type=int, help="秒数")
+    ts_p.add_argument("--label", default="", help="ラベル")
+    tst_p = timer_sub.add_parser("stop", help="鳴動中タイマーを停止")
+    tst_p.add_argument("id", nargs="?", default="", help="タイマーID（省略で鳴動中すべて）")
+    tc_p = timer_sub.add_parser("cancel", help="タイマーを取り消す")
+    tc_p.add_argument("id", help="例: TMR-0001")
+
     skill_parser = subparsers.add_parser("skill", help="workspace Skill の昇格・ロールバック")
     skill_sub = skill_parser.add_subparsers(dest="skill_command", required=True)
     promote_p = skill_sub.add_parser("promote", help="trial Skill を active に昇格")
@@ -1479,6 +1491,10 @@ def main() -> int:
         from ancilla_bot.cli.commands.api import cmd_api
 
         return cmd_api(args)
+    if args.command == "timer":
+        from ancilla_bot.cli.commands.timer import cmd_timer
+
+        return cmd_timer(args)
     if args.command == "skill":
         from ancilla_bot.skills.evolution import promote_skill, rollback_skill
 

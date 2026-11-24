@@ -322,6 +322,38 @@ TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         },
         required=["query"],
     ),
+    "timer_set": _schema(
+        {
+            "duration_sec": {"type": "integer", "description": "Timer duration in seconds (1..604800)"},
+            "label": {"type": "string", "description": "Optional timer label"},
+        },
+        required=["duration_sec"],
+    ),
+    "timer_list": _schema(
+        {
+            "include_finished": {"type": "boolean", "description": "Include stopped/cancelled timers"},
+        },
+    ),
+    "timer_update": _schema(
+        {
+            "timer_id": {"type": "string", "description": "Timer ID, e.g. TMR-0001"},
+            "duration_sec": {"type": "integer", "description": "New remaining duration in seconds"},
+            "add_sec": {"type": "integer", "description": "Seconds to add (negative to shorten)"},
+            "label": {"type": "string", "description": "New timer label"},
+        },
+        required=["timer_id"],
+    ),
+    "timer_stop": _schema(
+        {
+            "timer_id": {"type": "string", "description": "Timer ID to stop (omit to stop all firing timers)"},
+        },
+    ),
+    "timer_cancel": _schema(
+        {
+            "timer_id": {"type": "string", "description": "Timer ID to cancel, e.g. TMR-0001"},
+        },
+        required=["timer_id"],
+    ),
 }
 
 
