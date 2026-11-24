@@ -1098,6 +1098,9 @@ def _run_resident(args: argparse.Namespace) -> None:
     homelab_incidents.subscribe_created(homelab_autoheal.enqueue)
     homelab_autoheal.start_worker()
     threading.Thread(target=homelab_status.run_health_loop, daemon=True, name="homelab-health").start()
+    from ancilla_bot.assistant import timers as assistant_timers
+
+    assistant_timers.start_timer_watcher()
     logger.info("API http://{}:{}/chat", api_host, api_port)
 
     from ancilla_bot.mcp.manager import get_manager

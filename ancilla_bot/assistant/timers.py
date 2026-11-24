@@ -11,6 +11,7 @@ from typing import Any, Callable, Iterator
 from loguru import logger
 
 from ancilla_bot.heartbeat import db
+from ancilla_bot.notifications import append_notification
 
 MAX_DURATION_SEC = 86400 * 7
 ACTIVE_STATUSES = ("running", "firing")
@@ -32,6 +33,12 @@ CREATE TABLE IF NOT EXISTS timers (
 
 _hooks_lock = threading.Lock()
 _change_hooks: list[Callable[[str, dict[str, Any]], None]] = []
+_wake_cond = threading.Condition()
+
+
+def _notify_wake() -> None:
+    with _wake_cond:
+        _wake_cond.notify_all()
 
 
 def _now() -> datetime:
@@ -120,6 +127,8 @@ def clear_hooks() -> None:
 
 
 def _emit(event: str, item: dict[str, Any]) -> None:
+    if event == "changed":
+        _notify_wake()
     with _hooks_lock:
         hooks = list(_change_hooks)
     for cb in hooks:
@@ -342,3 +351,81 @@ def signature() -> tuple[tuple[Any, ...], ...]:
             "SELECT id, status, ends_at, fired_at, stopped_at, label FROM timers ORDER BY id ASC"
         ).fetchall()
     return tuple((r[0], r[1], r[2], r[3], r[4], r[5]) for r in rows)
+
+
+def process_due_timers(*, now: datetime | None = None) -> list[dict[str, Any]]:
+    ref = now or _now()
+    fired_iso = _iso(ref.replace(microsecond=0))
+    fired_items: list[dict[str, Any]] = []
+
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, ends_at FROM timers WHERE status='running' ORDER BY ends_at ASC, id ASC"
+        ).fetchall()
+        due_ids = [int(r["id"]) for r in rows if _parse_dt(str(r["ends_at"])) <= ref]
+        for tid in due_ids:
+            cur = c.execute(
+                "UPDATE timers SET status='firing', fired_at=? WHERE id=? AND status='running'",
+                (fired_iso, tid),
+            )
+            if cur.rowcount != 1:
+                continue
+            updated = c.execute("SELECT * FROM timers WHERE id=?", (tid,)).fetchone()
+            if updated:
+                fired_items.append(_row_to_dict(updated, now=ref))
+
+    for item in fired_items:
+        _emit("fired", item)
+        label_part = f"（{item['label']}）" if item["label"] else ""
+        msg = f"タイマー {item['id']}{label_part} の時間になりました。"
+        try:
+            append_notification(message=msg, source="system", level="info", title=item["id"])
+        except Exception as exc:
+            logger.warning("timer notify failed ({}): {}", item["id"], exc)
+
+    return fired_items
+
+
+def next_due_delay_sec(*, now: datetime | None = None) -> float | None:
+    ref = now or _now()
+    with _conn() as c:
+        rows = c.execute("SELECT ends_at FROM timers WHERE status='running'").fetchall()
+    if not rows:
+        return None
+    earliest = min(_parse_dt(str(r["ends_at"])) for r in rows)
+    return max(0.0, (earliest - ref).total_seconds())
+
+
+def run_timer_loop(stop: threading.Event | None = None, *, poll_cap_sec: float = 5.0) -> None:
+    stop = stop or threading.Event()
+    while not stop.is_set():
+        try:
+            process_due_timers()
+        except Exception as exc:
+            logger.warning("timer watcher failed: {}", exc)
+        if stop.is_set():
+            break
+        try:
+            delay = next_due_delay_sec()
+        except Exception:
+            delay = poll_cap_sec
+        wait_sec = poll_cap_sec if delay is None else min(poll_cap_sec, max(0.05, delay))
+        with _wake_cond:
+            if not stop.is_set():
+                _wake_cond.wait(timeout=wait_sec)
+
+
+def start_timer_watcher(*, poll_cap_sec: float = 5.0) -> threading.Event:
+    stop = threading.Event()
+    threading.Thread(
+        target=run_timer_loop,
+        kwargs={"stop": stop, "poll_cap_sec": poll_cap_sec},
+        daemon=True,
+        name="timer-watcher",
+    ).start()
+    return stop
+
+
+def stop_timer_watcher(stop: threading.Event) -> None:
+    stop.set()
+    _notify_wake()

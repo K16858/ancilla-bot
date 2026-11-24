@@ -1,4 +1,9 @@
+import json
+import os
+import threading
+import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -166,3 +171,71 @@ def test_signature_and_change_hooks():
         ("changed", t["id"], "running"),
         ("changed", t["id"], "cancelled"),
     ]
+
+
+def test_process_due_timers_fires_once_and_notifies(monkeypatch):
+    t0 = datetime(2026, 11, 24, 14, 0, 0, tzinfo=JST)
+    now = [t0]
+    monkeypatch.setattr(timers, "_now", lambda: now[0])
+
+    seen = []
+    timers.subscribe_changes(lambda ev, item: seen.append((ev, item["id"], item["status"])))
+
+    t = timers.create_timer(30, label="お茶")
+    assert timers.process_due_timers(now=t0 + timedelta(seconds=29)) == []
+
+    fired = timers.process_due_timers(now=t0 + timedelta(seconds=30))
+    assert len(fired) == 1
+    assert fired[0]["id"] == t["id"]
+    assert fired[0]["status"] == "firing"
+    assert fired[0]["fired_at"] == "2026-11-24T14:00:30+09:00"
+    assert ("fired", t["id"], "firing") in seen
+
+    # 二重発火しない
+    assert timers.process_due_timers(now=t0 + timedelta(seconds=31)) == []
+
+    # 通知キューへ書かれている
+    pending = Path(os.environ["ANCILLA_NOTIFICATIONS_DIR"]) / "pending.jsonl"
+    records = [json.loads(line) for line in pending.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 1
+    assert records[0]["title"] == t["id"]
+    assert "お茶" in records[0]["message"]
+
+    # 通知が例外を出しても発火自体は壊れない
+    monkeypatch.setattr(timers, "append_notification", lambda **kw: (_ for _ in ()).throw(RuntimeError("notify fail")))
+    t2 = timers.create_timer(10)
+    fired2 = timers.process_due_timers(now=t0 + timedelta(seconds=100))
+    assert [x["id"] for x in fired2] == [t2["id"]]
+
+
+def test_next_due_delay_sec(monkeypatch):
+    t0 = datetime(2026, 11, 24, 14, 0, 0, tzinfo=JST)
+    monkeypatch.setattr(timers, "_now", lambda: t0)
+    assert timers.next_due_delay_sec(now=t0) is None
+
+    timers.create_timer(50)
+    timers.create_timer(20)
+    assert timers.next_due_delay_sec(now=t0 + timedelta(seconds=5)) == pytest.approx(15.0)
+    assert timers.next_due_delay_sec(now=t0 + timedelta(seconds=25)) == 0.0
+
+
+def test_watcher_loop_wakes_and_fires():
+    fired_event = threading.Event()
+    fired_ids = []
+
+    def on_ev(ev, item):
+        if ev == "fired":
+            fired_ids.append(item["id"])
+            fired_event.set()
+
+    timers.subscribe_changes(on_ev)
+    stop = timers.start_timer_watcher(poll_cap_sec=5.0)
+    try:
+        time.sleep(0.05)
+        t = timers.create_timer(1, label="即時起床")
+        assert fired_event.wait(timeout=3.0), "タイマー監視ループが 3 秒以内に発火しませんでした"
+        assert t["id"] in fired_ids
+        assert timers.get_timer(t["id"])["status"] == "firing"
+    finally:
+        timers.stop_timer_watcher(stop)
+
