@@ -24,3 +24,8 @@ workspace/**
 # WebUI のビルド成果物
 webui/node_modules
 webui/dist
+
+# Companion のビルド成果物
+companion/node_modules
+companion/dist
+

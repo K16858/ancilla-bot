@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" fill="none">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="42%" r="60%">
+      <stop offset="0%" stop-color="#1e2d5a" />
+      <stop offset="100%" stop-color="#0b1020" />
+    </radialGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7dd3fc" />
+      <stop offset="100%" stop-color="#a78bfa" />
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="40" fill="url(#bgGlow)" />
+  <!-- Cat ears -->
+  <path d="M52 80 L42 36 L82 60 Z" fill="#182342" stroke="url(#accent)" stroke-width="4" stroke-linejoin="round" />
+  <path d="M140 80 L150 36 L110 60 Z" fill="#182342" stroke="url(#accent)" stroke-width="4" stroke-linejoin="round" />
+  <path d="M56 72 L50 48 L72 62 Z" fill="#f472b6" opacity="0.65" />
+  <path d="M136 72 L142 48 L120 62 Z" fill="#f472b6" opacity="0.65" />
+  <!-- Headband frill & ribbon -->
+  <path d="M68 62 Q96 52 124 62" stroke="#f8fafc" stroke-width="5" stroke-linecap="round" />
+  <circle cx="96" cy="56" r="5" fill="#f472b6" />
+  <!-- Face -->
+  <circle cx="96" cy="108" r="46" fill="#182342" stroke="url(#accent)" stroke-width="4" />
+  <!-- Eyes -->
+  <circle cx="78" cy="104" r="6.5" fill="#7dd3fc" />
+  <circle cx="114" cy="104" r="6.5" fill="#7dd3fc" />
+  <circle cx="80" cy="101.5" r="2" fill="#ffffff" />
+  <circle cx="116" cy="101.5" r="2" fill="#ffffff" />
+  <!-- Smile -->
+  <path d="M84 123 Q96 133 108 123" stroke="#e2e8f0" stroke-width="4" stroke-linecap="round" fill="none" />
+</svg>

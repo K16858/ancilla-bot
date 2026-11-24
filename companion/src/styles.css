@@ -1,0 +1,53 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b1020;
+  --bg-elev: rgba(20, 29, 54, 0.85);
+  --border: rgba(148, 163, 184, 0.2);
+  --text: #f1f5f9;
+  --muted: #94a3b8;
+  --accent: #7dd3fc;
+  --accent-2: #a78bfa;
+  --danger: #fb7185;
+  --warn: #fbbf24;
+  --ok: #34d399;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 50% 25%, #16203d 0%, var(--bg) 70%);
+  color: var(--text);
+  font-family: "Hiragino Sans", "Yu Gothic UI", "BIZ UDPGothic", system-ui, -apple-system, sans-serif;
+  user-select: none;
+}
+
+.companion-shell {
+  width: 100%;
+  min-height: 100dvh;
+  padding: max(16px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  display: flex;
+  flex-direction: column;
+}
+
+.companion-center {
+  margin: auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
