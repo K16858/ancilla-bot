@@ -421,3 +421,83 @@ def test_sse_timers_and_notifications_realtime(api, monkeypatch):
     catch_up = sse(f"{api}/api/v1/stream?after_notification={nid1}", t, timeout=2.5)
     assert catch_up[0][0] == "event: notification"
     assert json.loads(catch_up[0][1][len("data: "):])["message"] == "critical down"
+
+
+# ---- Companion & Cancel API ----
+
+def test_companion_chat_session_end_and_cancel_endpoints(api, monkeypatch):
+    from ancilla_bot.assistant import companion_session
+    from ancilla_bot.core.execution import AgentRuntime
+
+    r = store.create_api_token("reader", "read")
+    o = store.create_api_token("op", "operate")
+
+    # 認証・権限チェック
+    assert httpx.post(f"{api}/api/v1/companion/chat", json={"message": "hi"}).status_code == 401
+    assert httpx.post(f"{api}/api/v1/companion/chat", json={"message": "hi"}, headers=auth(r)).status_code == 403
+    assert httpx.post(f"{api}/api/v1/companion/session/end", json={}, headers=auth(r)).status_code == 403
+    assert httpx.post(f"{api}/api/v1/chat/cancel", headers=auth(r)).status_code == 403
+
+    # バリデーションエラー
+    assert httpx.post(f"{api}/api/v1/companion/chat", json={}, headers=auth(o)).status_code == 400
+    assert httpx.post(f"{api}/api/v1/companion/chat", json={"message": "   "}, headers=auth(o)).status_code == 400
+    assert httpx.post(f"{api}/api/v1/companion/chat", content=b"{bad", headers=auth(o)).status_code == 400
+
+    # 正常チャット・session/end
+    companion_session.clear_sessions()
+    rt = AgentRuntime()
+    monkeypatch.setattr(
+        "ancilla_bot.assistant.companion_session.run_agent_loop_with_tools",
+        lambda msg, hist, **kw: (f"voice:{msg}", "happy"),
+    )
+    monkeypatch.setattr("ancilla_bot.assistant.companion_session.get_runtime", lambda: rt)
+
+    res = httpx.post(
+        f"{api}/api/v1/companion/chat",
+        json={"message": "おはよう", "session_id": "ipad-1", "reset_pending": True},
+        headers=auth(o),
+    )
+    assert res.status_code == 200
+    assert res.json() == {
+        "reply": "voice:おはよう",
+        "emotion": "happy",
+        "end_conversation": False,
+        "session_id": "ipad-1",
+    }
+
+    end_res = httpx.post(
+        f"{api}/api/v1/companion/session/end",
+        json={"session_id": "ipad-1"},
+        headers=auth(o),
+    )
+    assert end_res.status_code == 200 and end_res.json() == {
+        "ok": True,
+        "ended": True,
+        "session_id": "ipad-1",
+    }
+    end_empty = httpx.post(f"{api}/api/v1/companion/session/end", headers=auth(o))
+    assert end_empty.status_code == 200 and end_empty.json() == {
+        "ok": True,
+        "ended": False,
+        "session_id": "default",
+    }
+
+    # 409 ConversationBusy
+    rt.begin("interactive")
+    try:
+        busy_res = httpx.post(
+            f"{api}/api/v1/companion/chat",
+            json={"message": "今いい？"},
+            headers=auth(o),
+        )
+        assert busy_res.status_code == 409
+    finally:
+        rt.end()
+
+    # /api/v1/chat/cancel
+    cancelled = []
+    monkeypatch.setattr("ancilla_bot.api.server.request_cancel", lambda: cancelled.append(True))
+    c_res = httpx.post(f"{api}/api/v1/chat/cancel", headers=auth(o))
+    assert c_res.status_code == 200 and c_res.json() == {"ok": True}
+    assert cancelled == [True]
+    companion_session.clear_sessions()

@@ -6,13 +6,14 @@ import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Callable
+from typing import Any, Callable
 from urllib.parse import parse_qsl, unquote, urlsplit
 
 from loguru import logger
 
 from ancilla_bot.api import v1, webui
-from ancilla_bot.assistant import timers
+from ancilla_bot.assistant import companion_session, timers
+from ancilla_bot.core.cancel import request_cancel
 from ancilla_bot.core.execution import ConversationBusy
 from ancilla_bot.homelab import events, incidents, store
 from ancilla_bot.notifications import store as notif_store
@@ -50,6 +51,8 @@ def make_server(
     handler: Callable[[str, list[str] | None], str],
     *,
     cancel_handler: Callable[[], None] | None = None,
+    companion_handler: Callable[..., dict[str, Any]] | None = None,
+    companion_end_handler: Callable[[str], bool] | None = None,
 ) -> ThreadingHTTPServer:
     # ThreadingHTTPServer は接続ごとにスレッド（daemon）を使うので、SSE が他のリクエストを塞がない
     class ChatHandler(BaseHTTPRequestHandler):
@@ -224,10 +227,42 @@ def make_server(
                 return
             if not self._gate(is_v1, "operate"):
                 return
-            if u.path == "/cancel" and not is_v1:
-                if cancel_handler is not None:
-                    cancel_handler()
+            if (u.path == "/cancel" and not is_v1) or u.path == "/api/v1/chat/cancel":
+                (cancel_handler or request_cancel)()
                 self._json(200, {"ok": True})
+                return
+            if u.path == "/api/v1/companion/chat":
+                data = self._parse_json_dict(raw)
+                if data is None:
+                    return
+                message = data.get("message")
+                if not isinstance(message, str) or not message.strip():
+                    self._json(400, {"error": "message は必須です"})
+                    return
+                session_id = str(data.get("session_id") or "").strip() or "default"
+                reset_pending = bool(data.get("reset_pending", False))
+                chat_fn = companion_handler or companion_session.handle_companion_message
+                try:
+                    res = chat_fn(
+                        message.strip(),
+                        session_id=session_id,
+                        reset_pending=reset_pending,
+                    )
+                except ConversationBusy:
+                    self._json(409, {"ok": False, "error": "conversation busy"})
+                except ValueError as e:
+                    self._json(400, {"error": str(e)})
+                else:
+                    self._json(200, res)
+                return
+            if u.path == "/api/v1/companion/session/end":
+                data = self._parse_json_dict(raw)
+                if data is None:
+                    return
+                session_id = str(data.get("session_id") or "").strip() or "default"
+                end_fn = companion_end_handler or companion_session.end_session
+                ended = bool(end_fn(session_id))
+                self._json(200, {"ok": True, "ended": ended, "session_id": session_id})
                 return
             if u.path == "/api/v1/timers":
                 data = self._parse_json_dict(raw)
@@ -339,5 +374,14 @@ def run_server(
     handler: Callable[[str, list[str] | None], str],
     *,
     cancel_handler: Callable[[], None] | None = None,
+    companion_handler: Callable[..., dict[str, Any]] | None = None,
+    companion_end_handler: Callable[[str], bool] | None = None,
 ) -> None:
-    make_server(host, port, handler, cancel_handler=cancel_handler).serve_forever()
+    make_server(
+        host,
+        port,
+        handler,
+        cancel_handler=cancel_handler,
+        companion_handler=companion_handler,
+        companion_end_handler=companion_end_handler,
+    ).serve_forever()

@@ -44,6 +44,7 @@ from ancilla_bot.heartbeat.db import (
 )
 from ancilla_bot.ambient.aggregator import collect_context_snapshot
 from ancilla_bot.api.server import run_server
+from ancilla_bot.assistant import companion_session
 from ancilla_bot.api.ws_server import (
     ObservationConfig,
     is_device_connected,
@@ -1074,9 +1075,27 @@ def _run_resident(args: argparse.Namespace) -> None:
             source="api",
         )
 
+    def companion_handler(
+        msg: str,
+        *,
+        session_id: str = "default",
+        reset_pending: bool = False,
+    ) -> dict[str, Any]:
+        return companion_session.handle_companion_message(
+            msg,
+            session_id=session_id,
+            reset_pending=reset_pending,
+            agent_runtime=runtime,
+        )
+
     api_thread = threading.Thread(
         target=lambda: run_server(
-            api_host, api_port, chat_handler, cancel_handler=request_cancel
+            api_host,
+            api_port,
+            chat_handler,
+            cancel_handler=request_cancel,
+            companion_handler=companion_handler,
+            companion_end_handler=companion_session.end_session,
         ),
         daemon=True,
         name="api",
