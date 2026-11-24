@@ -60,15 +60,19 @@ def add_incident(subject="dbs"):
               "flags": [], "detected_at": datetime.now().isoformat(timespec="seconds"), "evidence": []})
 
 
-def sse(url, token, headers=None, n=1, timeout=5):
+def sse(url, token, headers=None, n=1, timeout=5, on_connected=None):
     """data 行を持つブロックを n 個集めて返す。"""
     out, block = [], []
+    triggered = False
     with httpx.stream("GET", url, headers=auth(token) | (headers or {}), timeout=timeout) as r:
         assert r.status_code == 200
         for line in r.iter_lines():
             if line == "":
                 if any(b.startswith("data:") for b in block):
                     out.append(block)
+                elif on_connected is not None and not triggered and ": connected" in block:
+                    triggered = True
+                    threading.Thread(target=on_connected, daemon=True).start()
                 block = []
                 if len(out) >= n:
                     break
@@ -144,16 +148,14 @@ def test_sse_new_events_and_catch_up(api):
     # ?after= でも同じ
     assert sse(f"{api}/api/v1/stream?after={first}", t)[0][0] == f"id: {second}"
     # ID 無しは接続後の新規だけ
-    threading.Timer(0.5, add_event).start()
-    got = sse(f"{api}/api/v1/stream", t)
+    got = sse(f"{api}/api/v1/stream", t, on_connected=add_event)
     assert got[0][0] != f"id: {second}" and got[0][1] == "event: homelab_event"
 
 
 def test_sse_incidents_changed(api):
     t = store.create_api_token("r", "read")
     add_incident()
-    threading.Timer(0.5, lambda: I.acknowledge("INC-000001")).start()  # 別プロセスの CLI 相当
-    got = sse(f"{api}/api/v1/stream", t)
+    got = sse(f"{api}/api/v1/stream", t, on_connected=lambda: I.acknowledge("INC-000001"))
     assert got[0][0] == "event: incidents_changed"
 
 
@@ -282,8 +284,7 @@ def test_double_approve_executes_once(api, tool, monkeypatch):
 
 def test_sse_approvals_changed(api, tool):
     t = store.create_api_token("r", "read")
-    threading.Timer(0.5, lambda: _pending("r1")).start()
-    assert sse(f"{api}/api/v1/stream", t)[0][0] == "event: approvals_changed"
+    assert sse(f"{api}/api/v1/stream", t, on_connected=lambda: _pending("r1"))[0][0] == "event: approvals_changed"
 
 
 # ---- タイマー & 通知 API ----
