@@ -5,6 +5,13 @@ RUN npm ci
 COPY webui ./
 RUN npm run build
 
+FROM node:22-slim AS companion
+WORKDIR /companion
+COPY companion/package.json companion/package-lock.json ./
+RUN npm ci
+COPY companion ./
+RUN npm run build
+
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -17,6 +24,7 @@ COPY ancilla_bot ./ancilla_bot
 COPY data/prompts ./data/prompts
 COPY skills ./skills
 COPY --from=webui /webui/dist ./webui/dist
+COPY --from=companion /companion/dist ./companion/dist
 
 RUN pip install --no-cache-dir .
 
