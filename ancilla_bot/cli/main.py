@@ -425,6 +425,7 @@ def _fast_heartbeat_loop(runtime: AgentRuntime, stop: threading.Event) -> None:
                                     source="system",
                                     level="info",
                                     detail=f"tasks={len(tasks)}, reminders={len(reminders)}",
+                                    category="reminder" if reminders else "system",
                                 )
                             logger.info("fast heartbeat: processed {} tasks, {} reminders", len(tasks), len(reminders))
                         else:

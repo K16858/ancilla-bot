@@ -99,7 +99,13 @@ def _dur(a: str, b: str) -> str:
 
 def _notify(text: str, level: str, iid: int) -> None:
     try:
-        append_notification(message=text, source="system", level=level, title=fmt_id(iid))
+        append_notification(
+            message=text,
+            source="system",
+            level=level,
+            title=fmt_id(iid),
+            category="incident",
+        )
     except Exception as ex:  # 通知の失敗で Incident 処理を止めない
         logger.warning("incident notify failed: {}", ex)
 

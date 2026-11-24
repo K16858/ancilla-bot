@@ -381,7 +381,13 @@ def process_due_timers(*, now: datetime | None = None) -> list[dict[str, Any]]:
         label_part = f"（{item['label']}）" if item["label"] else ""
         msg = f"タイマー {item['id']}{label_part} の時間になりました。"
         try:
-            append_notification(message=msg, source="system", level="info", title=item["id"])
+            append_notification(
+                message=msg,
+                source="system",
+                level="info",
+                title=item["id"],
+                category="timer",
+            )
         except Exception as exc:
             logger.warning("timer notify failed ({}): {}", item["id"], exc)
 
