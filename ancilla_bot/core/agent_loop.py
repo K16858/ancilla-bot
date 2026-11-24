@@ -99,8 +99,19 @@ def is_exit_command(text: str) -> bool:
     return normalized in EXIT_COMMANDS
 
 
+_COMPANION_VOICE_INSTRUCTIONS = (
+    "## 音声コンパニオン応答ルール\n"
+    "- 応答は音声で読み上げるため、短く自然な日本語の話し言葉にする（目安 1〜3 文）。\n"
+    "- Markdown 記法（見出し・箇条書きの記号・太字・コードブロック・URL の羅列）は避ける。\n"
+    "- タイマーの秒数など必要な情報が欠けている場合は、勝手に補完せず短く聞き返す。\n"
+    "- ユーザーが会話を終える意思を示した場合（挨拶の終了・お礼・キャンセル等）は、返答の末尾に `[END_CONVERSATION]` を付ける。"
+)
+
+
 def compose_run_system(user_input: str, *, task_key: str = "", source: str = "") -> str:
     system = build_tools_system_prompt()
+    if source == "companion":
+        system = system + "\n\n" + _COMPANION_VOICE_INSTRUCTIONS
     if source == "idle_reflection":
         return system
     memory = retrieve_context(user_input, MemoryContext(task_id=task_key))
