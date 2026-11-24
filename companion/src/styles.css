@@ -502,3 +502,139 @@ button {
     height: 84px;
   }
 }
+
+/* ---- ChatView ---- */
+
+.chat-shell {
+  gap: 12px;
+}
+
+.state-pill {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  font-size: 0.9rem;
+  color: var(--accent);
+}
+
+.state-pill.state-thinking {
+  color: #c4b5fd;
+  border-color: rgba(167, 139, 250, 0.45);
+}
+
+.chat-stage {
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
+.subtitles-box {
+  width: min(680px, 100%);
+  max-height: 30dvh;
+  overflow-y: auto;
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.subtitle-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.subtitle-row.role-user {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.subtitle-row.role-assistant {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.subtitle-speaker {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.subtitle-text {
+  margin: 0;
+  font-size: clamp(0.98rem, 2vw, 1.12rem);
+  line-height: 1.5;
+  padding: 8px 12px;
+  border-radius: 12px;
+  max-width: 88%;
+  user-select: text;
+}
+
+.subtitle-row.role-user .subtitle-text {
+  background: rgba(125, 211, 252, 0.14);
+  border: 1px solid rgba(125, 211, 252, 0.25);
+}
+
+.subtitle-row.role-assistant .subtitle-text {
+  background: rgba(167, 139, 250, 0.14);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+}
+
+.status-note {
+  margin: 0;
+  color: var(--warn);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.chat-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.silence-bar-wrap {
+  width: min(460px, 100%);
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.2);
+  overflow: hidden;
+}
+
+.silence-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.35s linear;
+}
+
+.chat-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.danger-outline {
+  border-color: rgba(251, 113, 133, 0.6);
+  color: var(--danger);
+}
+
+.text-fallback-form {
+  width: min(640px, 100%);
+  display: flex;
+  gap: 8px;
+}
+
+.text-fallback-form .text-input {
+  flex: 1;
+}
+

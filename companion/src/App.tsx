@@ -9,6 +9,7 @@ import {
   streamCompanion,
 } from "./api";
 import { playChime, stopAllPlayback } from "./audio/audioEngine";
+import { ChatView } from "./components/ChatView";
 import { LoginView } from "./components/LoginView";
 import { StandbyClockView } from "./components/StandbyClockView";
 import { UnlockView } from "./components/UnlockView";
@@ -22,6 +23,7 @@ import type {
   NotificationItem,
   TimerItem,
 } from "./types";
+import { useCompanionChat } from "./useCompanionChat";
 
 export default function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -53,6 +55,12 @@ export default function App() {
     setToasts([]);
     setBannerError("");
   }, []);
+
+  const chat = useCompanionChat({
+    settings,
+    onStateChange: setState,
+    onUnauthorized: handleLogout,
+  });
 
   // Verify saved token on mount
   useEffect(() => {
@@ -205,6 +213,33 @@ export default function App() {
     );
   }
 
+  if (
+    state === "listening" ||
+    state === "thinking" ||
+    state === "speaking" ||
+    state === "idle_in_chat"
+  ) {
+    return (
+      <ChatView
+        state={state}
+        emotion={chat.emotion}
+        audioLevel={chat.audioLevel}
+        turns={chat.turns}
+        silenceLeftSec={chat.silenceLeftSec}
+        silenceTimeoutSec={settings.silenceTimeoutSec}
+        micAvailable={chat.micAvailable}
+        statusNote={chat.statusNote}
+        onFinishSpeakingNow={chat.finishListeningNow}
+        onCancelThinking={chat.cancelThinking}
+        onInterruptSpeaking={chat.interruptSpeaking}
+        onListenAgain={chat.listenAgain}
+        onSubmitText={chat.submitText}
+        onTypingActiveChange={chat.setTypingActive}
+        onEndConversation={() => chat.exitToStandby(true)}
+      />
+    );
+  }
+
   return (
     <StandbyClockView
       me={me}
@@ -219,7 +254,10 @@ export default function App() {
       bannerError={bannerError}
       onDismissToast={(id) => setToasts((prev) => prev.filter((x) => x.id !== id))}
       onToggleDnd={handleToggleDnd}
-      onStartChat={() => setBannerError("対話画面は次のステップで接続されます")}
+      onStartChat={() => {
+        setBannerError("");
+        void chat.startChat();
+      }}
       onCancelTimer={handleCancelTimer}
       onOpenNotifications={() => {
         setUnreadCount(0);
