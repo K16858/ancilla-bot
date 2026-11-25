@@ -5,9 +5,9 @@
   "scope": "/companion/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0b1020",
-  "theme_color": "#0b1020",
-  "description": "Ancilla voice companion and smart standby display",
+  "background_color": "#0d111a",
+  "theme_color": "#0d111a",
+  "description": "Ancilla voice companion and ambient standby display",
   "icons": [
     {
       "src": "/companion/icon.svg",

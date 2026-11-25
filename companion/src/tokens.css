@@ -1,0 +1,96 @@
+:root {
+  color-scheme: dark;
+  --space-3xs: 2px;
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 40px;
+  --space-2xl: 64px;
+  --space-3xl: 96px;
+  --space-4xl: 144px;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.2rem;
+  --text-xl: 1.44rem;
+  --text-2xl: 1.728rem;
+  --text-3xl: 2.074rem;
+  --text-display-s: 1.44rem;
+  --text-display: 1.728rem;
+  --text-section: 1.2rem;
+  --text-title: 1rem;
+  --text-lead: 1rem;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long: 420ms;
+
+  --container: 1120px;
+  --gutter: 24px;
+  --gap-columns: 24px;
+  --section-gap-s: 80px;
+  --section-gap: 96px;
+  --section-gap-l: 120px;
+
+  --z-base: 1;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-sticky-nav: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+
+  /* Ribbon · two-in-the-morning nocturnal colourway */
+  --color-paper: oklch(13.2% 0.022 258);
+  --color-paper-2: oklch(16.4% 0.022 258);
+  --color-paper-3: oklch(20.2% 0.022 258);
+  --color-ink: oklch(93.5% 0.012 85);
+  --color-ink-2: oklch(84% 0.014 85);
+  --color-muted: oklch(72% 0.02 255);
+  --color-rule: oklch(27% 0.018 258);
+  --color-rule-2: oklch(22% 0.018 258);
+
+  --color-accent: oklch(82% 0.095 68);
+  --color-accent-soft: oklch(25% 0.045 68);
+  --color-accent-ink: oklch(20% 0.03 62);
+  --color-focus: oklch(84% 0.12 68);
+
+  --color-ok: oklch(72% 0.095 168);
+  --color-warn: oklch(80% 0.11 78);
+  --color-danger: oklch(50% 0.17 24);
+  --color-danger-ink: oklch(96% 0.01 85);
+  --color-danger-soft: oklch(23% 0.055 24);
+  --color-error: oklch(68% 0.16 24);
+  --color-success: oklch(72% 0.095 168);
+  --color-scrim: oklch(8% 0.015 258 / 0.84);
+
+  --metal-hi: oklch(44% 0.012 255);
+  --metal-lo: oklch(25% 0.014 255);
+  --edge-light: inset 0 1px 0 oklch(94% 0.01 255 / 0.14);
+  --shadow-part: 0 1px 0 oklch(5% 0.01 258 / 0.5), 0 10px 18px -6px oklch(5% 0.01 258 / 0.6);
+  --shadow-panel: 0 1px 0 oklch(5% 0.01 258 / 0.45), 0 24px 48px -16px oklch(5% 0.015 258 / 0.72);
+  --shadow-toast: 0 12px 28px -8px oklch(5% 0.015 258 / 0.7);
+  --surface-panel: linear-gradient(180deg, var(--color-paper-2), var(--color-paper));
+  --surface-control: linear-gradient(180deg, var(--color-paper-3), var(--color-paper-2));
+  --surface-night: linear-gradient(180deg, oklch(15.2% 0.026 258) 0%, oklch(12.2% 0.02 258) 100%);
+  --surface-alert: linear-gradient(180deg, oklch(19% 0.045 24) 0%, oklch(12.8% 0.022 258) 72%);
+
+  --font-display: "Instrument Sans", "Hiragino Sans", "Yu Gothic UI", "BIZ UDPGothic", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Figtree", "Hiragino Sans", "Yu Gothic UI", "BIZ UDPGothic", ui-sans-serif, system-ui, sans-serif;
+  --font-outlier: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-card: 20px;
+  --radius-part: 8px;
+  --radius-pill: 999px;
+  --rule-hair: 1px;
+  --shadow-card: none;
+  --tracking-display: -0.035em;
+  --display-weight: 400;
+}
