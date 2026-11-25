@@ -1,4 +1,4 @@
-<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/ancilla_icon_dark.svg" /><img src="assets/ancilla_icon.svg" alt="" height="64" align="absmiddle" /></picture><picture><source media="(prefers-color-scheme: dark)" srcset="assets/ancilla_logo_dark.svg" /><img src="assets/ancilla_logo.svg" alt="Ancilla" height="70" align="absmiddle" /></picture></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/ancilla_icon_dark.svg" /><img src="assets/ancilla_icon.svg" alt="" height="80" align="absmiddle" /></picture><picture><source media="(prefers-color-scheme: dark)" srcset="assets/ancilla_logo_dark.svg" /><img src="assets/ancilla_logo.svg" alt="Ancilla" height="88" align="absmiddle" /></picture></p>
 
 # Ancilla
 
