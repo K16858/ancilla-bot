@@ -41,20 +41,22 @@ export function UnlockView({ me, onUnlocked, onLogout }: UnlockViewProps) {
           audioLevel={0}
           statusText="タップして音声と通知を有効化してください"
         />
-        <div className="unlock-meta">
-          <span className="pill">接続: {me.name} ({me.role})</span>
+        <p className="muted unlock-meta">
+          接続端末: {me.name} ({me.role})
+        </p>
+        <div className="unlock-actions">
+          <button
+            type="button"
+            className="primary-btn large-btn"
+            onClick={handleStart}
+            disabled={busy}
+          >
+            {busy ? "準備中…" : "タップして開始"}
+          </button>
+          <button type="button" className="ghost-btn" onClick={onLogout}>
+            トークンを変更
+          </button>
         </div>
-        <button
-          type="button"
-          className="primary-btn large-btn"
-          onClick={handleStart}
-          disabled={busy}
-        >
-          {busy ? "準備中..." : "タップして開始"}
-        </button>
-        <button type="button" className="ghost-btn" onClick={onLogout}>
-          トークンを変更
-        </button>
       </div>
     </main>
   );

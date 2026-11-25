@@ -37,28 +37,38 @@ export function LoginView({ onLoggedIn }: LoginViewProps) {
 
   return (
     <main className="companion-shell">
-      <section className="card-panel">
-        <h1>Ancilla Companion</h1>
-        <p className="muted">
-          Core API の Bearer トークンを入力して接続します。
-        </p>
+      <section className="card-panel login-panel">
+        <header className="panel-head">
+          <h1>Ancilla Companion</h1>
+          <p className="muted">
+            Core API の Bearer トークンでコンパニオン端末を接続します。
+          </p>
+        </header>
         <form onSubmit={handleSubmit} className="login-form">
-          <input
-            type="password"
-            className="text-input"
-            placeholder="Bearer トークン"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            autoComplete="current-password"
-            disabled={busy}
-          />
+          <div className="field-block">
+            <label htmlFor="companion-token" className="field-label">
+              アクセストークン
+            </label>
+            <input
+              id="companion-token"
+              type="password"
+              className="text-input"
+              placeholder="トークン文字列を貼り付け"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              autoComplete="current-password"
+              disabled={busy}
+            />
+          </div>
+          <p className="field-helper error-text" role={error ? "alert" : undefined}>
+            {error}
+          </p>
           <button type="submit" className="primary-btn" disabled={busy}>
-            {busy ? "確認中..." : "接続する"}
+            {busy ? "確認中…" : "接続する"}
           </button>
         </form>
-        {error && <p className="error-text">{error}</p>}
-        <div className="hint-box">
-          <div className="muted">音声会話・タイマー操作には operate トークンが必要です:</div>
+        <div className="panel-footer-note">
+          <p className="muted">音声会話・タイマー操作には operate トークンが必要です。</p>
           <code>ancilla api token create companion --role operate</code>
         </div>
       </section>

@@ -443,7 +443,7 @@ export default function App() {
     return (
       <main className="companion-shell">
         <div className="companion-center">
-          <p className="muted">接続を確認しています...</p>
+          <p className="muted">接続を確認しています…</p>
         </div>
       </main>
     );

@@ -74,23 +74,23 @@ export function StandbyClockView({
     }
   };
 
-  const connLabel = conn === "open" ? "オンライン" : conn === "retrying" ? "再接続中..." : "接続中...";
+  const connLabel = conn === "open" ? "オンライン" : conn === "retrying" ? "再接続中…" : "接続中…";
 
   return (
     <main className="companion-shell standby-shell">
       <header className="top-bar">
         <div className="top-left">
-          <span className={`conn-pill conn-${conn}`}>
-            <span className="dot" />
+          <span className="wordmark">Ancilla</span>
+          <span className={`conn-status conn-${conn}`} role="status">
+            <span className="dot" aria-hidden="true" />
             {connLabel}
           </span>
-          <span className="muted compact-label">Ancilla</span>
         </div>
 
-        <div className="top-actions">
+        <nav className="top-actions" aria-label="端末操作">
           <button
             type="button"
-            className={`icon-btn ${dndActive ? "active-dnd" : ""}`}
+            className={`nav-btn ${dndActive ? "is-active" : ""}`}
             onClick={onToggleDnd}
             title="おやすみモード切替"
           >
@@ -98,30 +98,31 @@ export function StandbyClockView({
           </button>
           <button
             type="button"
-            className="icon-btn"
+            className="nav-btn"
             onClick={onOpenNotifications}
           >
             通知
             {unreadCount > 0 && <span className="badge">{unreadCount}</span>}
           </button>
-          <button type="button" className="icon-btn" onClick={onOpenSettings}>
+          <button type="button" className="nav-btn" onClick={onOpenSettings}>
             設定
           </button>
-          <button type="button" className="icon-btn" onClick={toggleFullscreen}>
+          <span className="nav-sep" aria-hidden="true" />
+          <button type="button" className="nav-btn subtle" onClick={toggleFullscreen}>
             {isFullscreen ? "解除" : "全画面"}
           </button>
-          <button type="button" className="icon-btn" onClick={onLogout}>
+          <button type="button" className="nav-btn subtle" onClick={onLogout}>
             ログアウト
           </button>
-        </div>
+        </nav>
       </header>
 
       {toasts.length > 0 && (
         <div className="toast-stack" aria-live="polite">
           {toasts.map((item) => (
-            <div key={item.id} className={`toast-card level-${item.level}`}>
+            <div key={item.id} className="toast-card">
               <div className="toast-body">
-                <strong>{item.title || item.category}</strong>
+                <strong className={`toast-title level-${item.level}`}>{item.title || item.category}</strong>
                 <span>{item.message}</span>
               </div>
               <button
@@ -137,7 +138,7 @@ export function StandbyClockView({
         </div>
       )}
 
-      <section className="clock-center">
+      <section className="clock-center" aria-label="待機時計">
         <div className="clock-date">{dateLabel}</div>
         <div className="clock-digits tabular">
           <span className="clock-hm">{hhmm}</span>
@@ -149,25 +150,25 @@ export function StandbyClockView({
         </div>
 
         {runningTimers.length > 0 && (
-          <div className="timers-strip">
+          <div className="timers-list" aria-label="動作中タイマー">
             {runningTimers.map((t) => {
               const rem = remainingSeconds(t, clockOffsetMs, now.getTime());
               return (
-                <div key={t.id} className="timer-chip">
-                  <div className="timer-chip-info">
-                    <span className="timer-label">{t.label || "タイマー"}</span>
+                <div key={t.id} className="timer-row">
+                  <span className="timer-label">{t.label || "タイマー"}</span>
+                  <div className="timer-row-right">
                     <span className="timer-time tabular">{formatCountdown(rem)}</span>
+                    {me.role === "operate" && (
+                      <button
+                        type="button"
+                        className="chip-cancel"
+                        onClick={() => onCancelTimer(t.id)}
+                        title="タイマーを取り消す"
+                      >
+                        取消
+                      </button>
+                    )}
                   </div>
-                  {me.role === "operate" && (
-                    <button
-                      type="button"
-                      className="chip-cancel"
-                      onClick={() => onCancelTimer(t.id)}
-                      title="タイマーを取り消す"
-                    >
-                      取消
-                    </button>
-                  )}
                 </div>
               );
             })}

@@ -68,7 +68,7 @@ export function NotificationsDrawer({
       >
         <header className="drawer-header">
           <h2>通知・タイマー</h2>
-          <button type="button" className="icon-btn" onClick={onClose}>
+          <button type="button" className="nav-btn" onClick={onClose}>
             閉じる
           </button>
         </header>
@@ -80,7 +80,7 @@ export function NotificationsDrawer({
               <div className="preset-row">
                 <button
                   type="button"
-                  className="icon-btn"
+                  className="ghost-btn"
                   disabled={busy}
                   onClick={() => void runCreate(60, "")}
                 >
@@ -88,7 +88,7 @@ export function NotificationsDrawer({
                 </button>
                 <button
                   type="button"
-                  className="icon-btn"
+                  className="ghost-btn"
                   disabled={busy}
                   onClick={() => void runCreate(180, "")}
                 >
@@ -96,7 +96,7 @@ export function NotificationsDrawer({
                 </button>
                 <button
                   type="button"
-                  className="icon-btn"
+                  className="ghost-btn"
                   disabled={busy}
                   onClick={() => void runCreate(300, "")}
                 >
@@ -107,12 +107,14 @@ export function NotificationsDrawer({
                 <input
                   type="number"
                   min={1}
+                  aria-label="タイマーの長さ"
                   className="text-input num-input"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   disabled={busy}
                 />
                 <select
+                  aria-label="単位"
                   className="text-input unit-select"
                   value={unit}
                   onChange={(e) => setUnit(e.target.value as "min" | "sec")}
@@ -123,6 +125,7 @@ export function NotificationsDrawer({
                 </select>
                 <input
                   type="text"
+                  aria-label="タイマーのラベル"
                   className="text-input"
                   placeholder="ラベル（任意）"
                   value={label}
@@ -143,24 +146,26 @@ export function NotificationsDrawer({
             <ul className="drawer-list">
               {running.map((t) => (
                 <li key={t.id} className="drawer-item">
-                  <div>
-                    <strong>{t.label || "タイマー"}</strong>
-                    <div className="muted">
-                      {t.id} ・ 残り{" "}
-                      <span className="tabular">
-                        {formatCountdown(remainingSeconds(t, clockOffsetMs, nowMs))}
-                      </span>
+                  <div className="drawer-item-row">
+                    <div>
+                      <strong>{t.label || "タイマー"}</strong>
+                      <div className="muted mono-meta">
+                        {t.id} / 残り{" "}
+                        <span className="tabular">
+                          {formatCountdown(remainingSeconds(t, clockOffsetMs, nowMs))}
+                        </span>
+                      </div>
                     </div>
+                    {me.role === "operate" && (
+                      <button
+                        type="button"
+                        className="chip-cancel"
+                        onClick={() => void onCancelTimer(t.id)}
+                      >
+                        取消
+                      </button>
+                    )}
                   </div>
-                  {me.role === "operate" && (
-                    <button
-                      type="button"
-                      className="chip-cancel"
-                      onClick={() => void onCancelTimer(t.id)}
-                    >
-                      取消
-                    </button>
-                  )}
                 </li>
               ))}
             </ul>
@@ -174,9 +179,9 @@ export function NotificationsDrawer({
           ) : (
             <ul className="drawer-list">
               {notifications.map((n) => (
-                <li key={n.id} className={`drawer-item level-${n.level}`}>
+                <li key={n.id} className="drawer-item">
                   <div className="notif-meta">
-                    <span className="pill">
+                    <span className={`meta-tag level-${n.level}`}>
                       {n.category} / {n.level}
                     </span>
                     <span className="muted">{n.created_at.slice(11, 19)}</span>

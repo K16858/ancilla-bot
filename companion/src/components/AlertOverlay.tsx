@@ -34,16 +34,16 @@ export function AlertOverlay({
           <div className="alert-details">
             {alertContext.timers.map((t) => (
               <div key={t.id} className="alert-timer-row">
-                <h2>{t.label || "タイマー"} — 時間です！</h2>
-                <p className="muted">
-                  ID: {t.id} / 設定 {t.duration_sec} 秒
+                <h2>{t.label || "タイマー"}：時間です！</h2>
+                <p className="muted mono-meta">
+                  {t.id} / 設定 {t.duration_sec} 秒
                 </p>
               </div>
             ))}
           </div>
         ) : (
           <div className="alert-details">
-            <span className="pill alert-pill">
+            <span className="alert-tag">
               {alertContext.notification.category === "reminder"
                 ? "リマインダ"
                 : `HomeLab (${alertContext.notification.level})`}
@@ -60,7 +60,7 @@ export function AlertOverlay({
 
         <button
           type="button"
-          className="primary-btn large-btn stop-alert-btn"
+          className="primary-btn large-btn"
           onClick={onStopAlert}
         >
           {isTimer ? "アラームを止める" : "閉じる"}

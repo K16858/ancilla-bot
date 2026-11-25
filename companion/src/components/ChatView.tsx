@@ -57,14 +57,17 @@ export function ChatView({
   const [textInput, setTextInput] = useState("");
   const [showKeyboard, setShowKeyboard] = useState<boolean>(() => !micAvailable);
   const [inputFocused, setInputFocused] = useState<boolean>(false);
-  const subtitleEndRef = useRef<HTMLDivElement | null>(null);
+  const subtitlesBoxRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!micAvailable) setShowKeyboard(true);
   }, [micAvailable]);
 
   useEffect(() => {
-    subtitleEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const box = subtitlesBoxRef.current;
+    if (box) {
+      box.scrollTop = box.scrollHeight;
+    }
   }, [turns]);
 
   useEffect(() => {
@@ -89,10 +92,11 @@ export function ChatView({
   return (
     <main className="companion-shell chat-shell">
       <header className="top-bar">
-        <span className={`state-pill state-${state}`}>
+        <span className={`state-status state-${state}`} role="status">
+          <span className="dot" aria-hidden="true" />
           {stateLabel(state, silenceLeftSec)}
         </span>
-        <button type="button" className="icon-btn" onClick={onEndConversation}>
+        <button type="button" className="nav-btn" onClick={onEndConversation}>
           会話を終える
         </button>
       </header>
@@ -101,7 +105,7 @@ export function ChatView({
         <AvatarView state={state} emotion={emotion} audioLevel={audioLevel} />
 
         {recentTurns.length > 0 && (
-          <div className="subtitles-box" aria-live="polite">
+          <div className="subtitles-box" aria-live="polite" ref={subtitlesBoxRef}>
             {recentTurns.map((t) => (
               <div key={t.id} className={`subtitle-row role-${t.role}`}>
                 <span className="subtitle-speaker">
@@ -110,7 +114,6 @@ export function ChatView({
                 <p className="subtitle-text">{t.text}</p>
               </div>
             ))}
-            <div ref={subtitleEndRef} />
           </div>
         )}
 
@@ -120,7 +123,10 @@ export function ChatView({
       <footer className="chat-footer">
         {state === "idle_in_chat" && silenceLeftSec !== null && (
           <div className="silence-bar-wrap" aria-label="無言タイムアウト計測">
-            <div className="silence-bar-fill" style={{ width: `${progressPct}%` }} />
+            <div
+              className="silence-bar-fill"
+              style={{ transform: `scaleX(${(progressPct / 100).toFixed(4)})` }}
+            />
           </div>
         )}
 
@@ -147,7 +153,7 @@ export function ChatView({
           )}
           <button
             type="button"
-            className="icon-btn"
+            className="ghost-btn"
             onClick={() => setShowKeyboard((v) => !v)}
           >
             {showKeyboard ? "キーボードを隠す" : "文字で入力"}
@@ -159,6 +165,7 @@ export function ChatView({
             <input
               type="text"
               className="text-input"
+              aria-label="送信するメッセージ"
               placeholder="メッセージを入力して送信…"
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
